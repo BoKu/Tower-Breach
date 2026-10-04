@@ -23,6 +23,17 @@ const COL = {
 
 /** Christmas: Santa-suit police and elf enemies */
 const XM = { red: 0xc41e24, red2: 0x9a161c, fur: 0xf4f1ea, gold: 0xe0b040 };
+/** Easter: police in bunny costumes and dentist enemies (pastels, clinic white, nitrile-blue gloves) */
+const EA = { suit: [0xf6f4f0, 0xf4c4d4, 0xd4c6ee, 0xbce8d4], white: 0xf6f4f0, pink: 0xf0a0b4, mask: 0xa6cce4, latex: 0x8eb0e6, chrome: 0xd8dde2 };
+
+/** Two tall bunny ears (pink insides) on top of a hood, head-group space. */
+function bunnyEars(hb: Builder, color: number, top: number, size = 1) {
+  for (const sx of [-1, 1]) {
+    const L = 0.085 * size, x = sx * 0.05, y = top + L - 0.01, rz = -sx * 0.22;
+    hb.geo(new THREE.SphereGeometry(0.03, 10, 8), color, x, y, 0, 0, 0, rz, 'solid', 0.85, L / 0.03, 0.4)
+      .geo(new THREE.SphereGeometry(0.02, 8, 6), EA.pink, x - sx * 0.002, y - 0.005, 0.01, 0, 0, rz, 'solid', 0.85, (L * 0.85) / 0.02, 0.3);
+  }
+}
 
 /** Tapered cylinder (radius rb at the base, rt at the tip) pointing along `dir`, centred on its midpoint. */
 function taper(rb: number, rt: number, len: number, dir: THREE.Vector3, seg = 10) {
@@ -169,10 +180,10 @@ export interface OfficerLook {
   extra?: 'none' | 'earpiece' | 'scar' | 'headset' | 'bandage' | 'earring';
 }
 
-/** Police head from a look, in head-group space (head sphere r ≈ 0.1 centred at y 0.06, face towards +z). */
-function policeHead(hb: Builder, skin: number, lk: OfficerLook, santa = false) {
-  // Christmas: every hat becomes a Santa hat (a beanie-like fit over the hair)
-  const hat = santa ? 'beanie' : lk.hat ?? 'cap', hair = lk.hair ?? 'short', hc = lk.hairColor ?? 0x2a2018, fc = lk.facialColor ?? hc;
+/** Police head from a look, in head-group space (head sphere r ≈ 0.1 centred at y 0.06, face towards +z). bunny = the Easter costume's hood colour. */
+function policeHead(hb: Builder, skin: number, lk: OfficerLook, santa = false, bunny?: number) {
+  // Christmas: every hat becomes a Santa hat (a beanie-like fit over the hair); Easter: a bunny hood hides hat and hair
+  const hat = santa ? 'beanie' : lk.hat ?? 'cap', hair = bunny !== undefined ? 'bald' : lk.hair ?? 'short', hc = lk.hairColor ?? 0x2a2018, fc = lk.facialColor ?? hc;
   const S = (r: number, c: number, x: number, y: number, z: number, sx = 1, sy = 1, sz = 1) => hb.geo(new THREE.SphereGeometry(r, 12, 9), c, x, y, z, 0, 0, 0, 'solid', sx, sy, sz);
   // hair (the part a cap leaves showing, or the full style bare-headed)
   if (hair !== 'bald') {
@@ -216,7 +227,13 @@ function policeHead(hb: Builder, skin: number, lk: OfficerLook, santa = false) {
   }
   // hats
   if (santa) pointyHat(hb, XM.red, XM.fur, XM.fur, 0.2, 0.75);
-  else if (hat === 'cap' || hat === 'chief') {
+  else if (bunny !== undefined) {
+    // costume hood framing the face (open at the front), tall ears on top: the Chief's are the biggest
+    hb.geo(new THREE.SphereGeometry(0.124, 16, 12, Math.PI / 2 + 0.95, Math.PI * 2 - 1.9, 0, Math.PI * 0.82), bunny, 0, 0.065, -0.008)
+      .geo(new THREE.SphereGeometry(0.124, 16, 6, 0, Math.PI * 2, 0, Math.PI * 0.3), bunny, 0, 0.065, -0.008)
+      .geo(new THREE.TorusGeometry(0.1, 0.016, 6, 18, Math.PI * 1.25), EA.white, 0, 0.06, 0.07, 0, 0, -Math.PI * 0.125); // fluffy trim round the face
+    bunnyEars(hb, bunny, 0.18, hat === 'chief' ? 2.1 : 1.5);
+  } else if (hat === 'cap' || hat === 'chief') {
     hb.geo(new THREE.CylinderGeometry(0.12, 0.105, 0.075, 18), 0x121a30, 0, 0.16, 0) // crown
       .geo(new THREE.CylinderGeometry(0.105, 0.105, 0.03, 18), hat === 'chief' ? 0xd9b040 : 0x141516, 0, 0.125, 0) // band (gold for the Chief)
       .rbox(0.17, 0.012, 0.08, 0.005, 0, 0.115, 0.1, 0x141516, 0.15) // visor
@@ -301,7 +318,20 @@ export class OperatorRig {
     // Christmas: street police wear Santa suits; loyalists and cyborgs are Santa's (still armed) elves
     const xmas = currentHoliday() === 'xmas';
     const santa = cop && xmas, elf = (loy || cyb) && !zom && xmas;
-    const NAVY = santa ? XM.red : 0x1f3668, NAVY2 = santa ? XM.red2 : 0x15264a, TROUSER = santa ? XM.red : 0x161e36;
+    // Easter: police wear bunny ears; loyalists and cyborgs are (still armed) dentists
+    const easter = currentHoliday() === 'easter';
+    const bunny = cop && easter, dentist = (loy || cyb) && !zom && easter;
+    // dentist palette: white coats over pale-blue scrubs (cyborgs: mint scrubs), seniors in navy coats with a gold badge
+    const D = elite
+      ? { coat: 0x1e2a4c, coat2: 0x151e38, scrub: cyb ? 0x8ed2c0 : 0x9cc6e6, badge: XM.gold }
+      : cyb ? { coat: 0x8ed2c0, coat2: 0x72b8a6, scrub: 0x8ed2c0, badge: EA.white } : { coat: 0xeef1f3, coat2: 0xd2d9df, scrub: 0x9cc6e6, badge: 0xd8e8f4 };
+    const scrubs = dentist && cyb && !elite; // the cyborg junior works in scrubs, no coat
+    if (dentist) Object.assign(P, { uniform: D.coat, uniform2: D.coat2, glove: EA.latex, boot: 0xe6e9ec });
+    const DGLOW = 0x40d8ff; // cyborg dentists' implants glow clinical cyan
+    // bunny onesie colour per officer (white, pink, lavender, mint), a shade darker for seams
+    const SUIT = EA.suit[((opts.look?.skin ?? skin) >> 3) % EA.suit.length], SUIT2 = new THREE.Color(SUIT).multiplyScalar(0.88).getHex();
+    const chief = opts.look?.hat === 'chief';
+    const NAVY = santa ? XM.red : bunny ? SUIT : 0x1f3668, NAVY2 = santa ? XM.red2 : bunny ? SUIT2 : 0x15264a, TROUSER = santa ? XM.red : bunny ? SUIT : 0x161e36;
     // elf palette: green tunics with red stockings; elites in red with gold trim and green stockings
     const E = elite
       ? { coat: XM.red, coat2: XM.red2, trim: XM.gold, stripe: 0x1e7a34, shoe: 0x1e6a2e, glove: 0x5a1010, hat: XM.red, band: XM.gold }
@@ -327,6 +357,11 @@ export class OperatorRig {
         .rbox(0.07, 0.06, 0.02, 0.01, 0, 0.08, 0.135, XM.gold);
       if (elite) pb.rbox(0.37, 0.025, 0.25, 0.01, 0, -0.1, 0, E.trim);
       for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2; spike(pb, i % 2 ? E.coat : E.coat2, V(Math.sin(a) * 0.16, -0.1, Math.cos(a) * 0.11), V(Math.sin(a) * 0.3, -1, Math.cos(a) * 0.3), 0.1, 0.045, 0.004, 4); }
+    } else if (dentist) {
+      // scrub trousers with a drawstring, the coat's skirt hanging over them (shorter tunic hem in scrubs)
+      pb.rbox(0.33, 0.2, 0.21, 0.07, 0, 0, 0, D.scrub).rbox(0.02, 0.07, 0.01, 0.004, 0.02, 0.06, 0.112, EA.white);
+      if (scrubs) pb.rbox(0.36, 0.1, 0.24, 0.04, 0, 0.06, 0, D.coat);
+      else pb.rbox(0.37, 0.3, 0.25, 0.06, 0, -0.04, -0.005, D.coat).rbox(0.02, 0.3, 0.012, 0.004, 0, -0.04, 0.125, D.coat2); // coat tails, front opening
     } else if (cop) {
       pb.rbox(0.33, 0.2, 0.21, 0.07, 0, 0, 0, TROUSER)
         .rbox(0.37, 0.055, 0.24, 0.02, 0, 0.08, 0, P.black) // duty belt
@@ -334,6 +369,7 @@ export class OperatorRig {
         .rbox(0.05, 0.06, 0.04, 0.012, 0.13, 0.07, 0.12, P.black) // cuff pouch
         .rbox(0.04, 0.07, 0.04, 0.012, -0.17, 0.06, 0.08, P.black) // spray
         .rbox(0.03, 0.03, 0.01, 0.005, -0.02, 0.085, 0.125, 0xc9b060); // buckle
+      if (bunny) pb.geo(new THREE.SphereGeometry(0.06, 10, 8), EA.white, 0, -0.02, -0.13); // pom-pom tail
     } else {
       pb.rbox(0.34, 0.2, 0.22, 0.07, 0, 0.0, 0, P.uniform2)
         .rbox(0.38, 0.06, 0.25, 0.02, 0, 0.08, 0, P.strap)
@@ -367,6 +403,30 @@ export class OperatorRig {
         for (const x of [-0.08, 0.08]) cb.geo(new THREE.CylinderGeometry(0.012, 0.012, 0.36, 6), 0x111214, x, 0.3, -0.12, 0.2, 0, 0);
         cb.rbox(0.05, 0.05, 0.015, 0.01, 0.08, 0.3, 0.11, GLOW, 0, 0, 0.4, 'emit');
       }
+    } else if (dentist) {
+      // clinic coat (or scrub top): lapels, name badge, breast pocket with pens; cyborgs keep the spine implant and core
+      cb.limb(0.145, 0.48, 0, 0.44, 0, D.coat, 0, 0, 1.25, 0.8)
+        .rbox(0.16, 0.06, 0.14, 0.03, 0, 0.47, 0, scrubs ? D.coat2 : D.coat) // collar
+        .rbox(0.07, 0.08, 0.012, 0.006, -0.1, 0.24, 0.115, D.coat2) // breast pocket
+        .rbox(0.07, 0.022, 0.012, 0.004, 0.1, 0.33, 0.118, D.badge); // name badge
+      for (const [x, c] of [[-0.115, 0x2050c0], [-0.095, 0xc02020]] as [number, number][]) cb.geo(new THREE.CylinderGeometry(0.006, 0.006, 0.06, 6), c, x, 0.29, 0.118);
+      if (scrubs) cb.rbox(0.08, 0.014, 0.012, 0.004, -0.032, 0.42, 0.108, D.coat2, 0, 0, -0.6).rbox(0.08, 0.014, 0.012, 0.004, 0.032, 0.42, 0.108, D.coat2, 0, 0, 0.6); // V-neck
+      else for (const sx of [-1, 1]) cb.rbox(0.07, 0.24, 0.014, 0.006, sx * 0.05, 0.33, 0.112, D.coat2, 0, 0, sx * 0.25); // lapels
+      if (cyb) {
+        cb.rbox(0.08, 0.36, 0.06, 0.02, 0, 0.26, -0.13, 0x8a9096);
+        cb.rbox(0.05, 0.05, 0.015, 0.01, 0.07, 0.18, 0.11, DGLOW, 0, 0, 0, 'emit');
+        // a giant toothbrush slung across the back: handle, bristle head
+        cb.geo(new THREE.CylinderGeometry(0.018, 0.018, 0.62, 8), 0x40a0e0, 0, 0.26, -0.17, 0, 0, 0.7).rbox(0.07, 0.11, 0.035, 0.01, -0.2, 0.5, -0.17, 0x40a0e0, 0, 0, 0.7)
+          .rbox(0.06, 0.12, 0.05, 0.01, -0.21, 0.51, -0.2, EA.white, 0, 0, 0.7);
+      }
+    } else if (bunny) {
+      // bunny onesie: white tummy patch, zip, badge (gold for the Chief) and shoulder radio kept on
+      cb.limb(0.15, 0.48, 0, 0.44, 0, SUIT, 0, 0, 1.25, 0.8)
+        .geo(new THREE.SphereGeometry(0.1, 12, 10), SUIT === EA.white ? 0xf8dce4 : EA.white, 0, 0.2, 0.06, 0, 0, 0, 'solid', 1.2, 1.5, 0.75) // tummy patch
+        .rbox(0.012, 0.36, 0.01, 0.004, 0, 0.27, 0.118, SUIT2) // zip
+        .rbox(0.07, 0.08, 0.012, 0.006, -0.1, 0.34, 0.112, chief ? XM.gold : 0xd9c070) // badge
+        .rbox(0.045, 0.065, 0.035, 0.01, -0.13, 0.42, 0.1, P.black) // shoulder mic
+        .geo(new THREE.CylinderGeometry(0.004, 0.004, 0.08), P.black, -0.13, 0.48, 0.1);
     } else if (cop) {
       // uniform shirt, slim duty vest, badge, name bar, epaulettes, shoulder radio
       cb.limb(0.145, 0.48, 0, 0.44, 0, NAVY, 0, 0, 1.25, 0.78)
@@ -427,7 +487,24 @@ export class OperatorRig {
       .limb(0.05, 0.12, 0, 0.02, 0, skin)
       .geo(new THREE.SphereGeometry(0.105, 16, 12), skin, 0, 0.06, 0.01, 0, 0, 0, 'solid', 0.9, 1.05, 1);
     if (cop) {
-      policeHead(hb, skin, opts.look ?? {}, santa);
+      policeHead(hb, skin, opts.look ?? {}, santa, bunny ? SUIT : undefined);
+    } else if (dentist) {
+      // surgical mask with ear loops, a head mirror on a band, scrub cap or hair; seniors wear loupes; cyborgs a cyber eye
+      const cap = cyb || ((skin >> 4) & 1) === 1;
+      hb.geo(new THREE.SphereGeometry(0.108, 14, 10, 0, Math.PI * 2, Math.PI * 0.56, Math.PI * 0.3), EA.mask, 0, 0.06, 0.012, 0, 0, 0, 'solid', 0.94, 1.05, 1.03)
+        .rbox(0.06, 0.006, 0.01, 0.003, 0, 0.036, 0.108, 0x86b0cc).rbox(0.06, 0.006, 0.01, 0.003, 0, 0.015, 0.106, 0x86b0cc); // pleats
+      for (const sx of [-1, 1]) hb.rbox(0.004, 0.035, 0.03, 0.002, sx * 0.098, 0.06, 0.02, EA.white); // ear loops
+      hb.geo(new THREE.SphereGeometry(cap ? 0.114 : 0.108, 14, 10, 0, Math.PI * 2, 0, Math.PI * (cap ? 0.42 : 0.5)), cap ? (elite ? 0x1e2a4c : cyb ? 0x8ed2c0 : 0x9cc6e6) : 0x2a2018, 0, 0.065, -0.006, 0, 0, 0, 'solid', 0.94, 1.03, 1.04);
+      for (const sx of [-1, 1]) hb.rbox(0.03, 0.008, 0.01, 0.003, sx * 0.035, 0.1, 0.098, 0x2a2018); // brows
+      hb.geo(new THREE.TorusGeometry(0.112, 0.008, 4, 18), 0x1a1c20, 0, 0.12, -0.006, Math.PI / 2 - 0.15) // headband
+        .geo(new THREE.CylinderGeometry(0.046, 0.046, 0.008, 18), EA.chrome, 0, 0.165, 0.1, 1.0) // the round head mirror, tipped up
+        .geo(new THREE.CylinderGeometry(0.012, 0.012, 0.012, 8), 0x1a1c20, 0, 0.154, 0.094, 1.0);
+      if (cyb) hb.rbox(0.05, 0.06, 0.03, 0.012, -0.06, 0.07, 0.07, 0x8a9096, 0, 0.5).geo(new THREE.SphereGeometry(0.016, 8, 6), DGLOW, -0.035, 0.075, 0.097, 0, 0, 0, 'emit');
+      else hb.geo(new THREE.SphereGeometry(0.012, 6, 5), 0x1a1410, -0.035, 0.075, 0.094);
+      hb.geo(new THREE.SphereGeometry(0.012, 6, 5), 0x1a1410, 0.035, 0.075, 0.094);
+      // loupes: little magnifier barrels on a frame (seniors both eyes, cyborgs the human eye)
+      for (const sx of elite ? [-1, 1] : cyb ? [1] : []) hb.geo(new THREE.CylinderGeometry(0.016, 0.014, 0.035, 10), 0x22252a, sx * 0.036, 0.075, 0.118, Math.PI / 2).geo(new THREE.CylinderGeometry(0.013, 0.013, 0.004, 10), 0x9ad0f0, sx * 0.036, 0.075, 0.137, Math.PI / 2);
+      if (elite || cyb) hb.box(0.1, 0.006, 0.006, 0, 0.088, 0.105, 0x22252a).box(0.004, 0.004, 0.09, 0.09, 0.088, 0.06, 0x22252a).box(0.004, 0.004, 0.09, -0.09, 0.088, 0.06, 0x22252a);
     } else if (elf) {
       // rosy cheeks, a grin, pointy ears and a tall floppy hat; cyborg elves keep a cheek plate, a metal ear and a glowing eye
       hb.geo(new THREE.SphereGeometry(0.012, 6, 5), 0x1a1410, 0.035, 0.075, 0.094).rbox(0.025, 0.035, 0.03, 0.01, 0, 0.05, 0.1, skin)
@@ -495,20 +572,22 @@ export class OperatorRig {
       this.chest.add(a.up);
       const metal = cyb && side === 'R';
       const ub = new Builder().limb(metal ? 0.052 : 0.058, L_UP, 0, 0.02, 0, metal ? 0x8a9096 : sleeve).rbox(0.12, 0.08, 0.12, 0.035, sgn * 0.01, 0.0, 0, metal ? 0x5d646b : sleeve2);
-      if (loy && side === 'L') ub.rbox(0.13, 0.05, 0.13, 0.02, 0, -0.1, 0, 0xb81414); // loyalist armband
+      if (loy && side === 'L' && !dentist) ub.rbox(0.13, 0.05, 0.13, 0.02, 0, -0.1, 0, 0xb81414); // loyalist armband
       if (metal && elf) ub.rbox(0.115, 0.04, 0.115, 0.015, 0, -0.1, 0, XM.red).rbox(0.115, 0.04, 0.115, 0.015, 0, -0.22, 0, XM.red); // candy-cane stripes
       a.up.add(meshes(ub, metal ? gunMat : clothMat));
       a.fore.position.y = -L_UP;
       a.up.add(a.fore);
       const fb = new Builder().limb(0.05, L_FORE, 0, 0, 0, metal ? 0x8a9096 : zom ? skin : sleeve).limb(0.047, 0.1, 0, -L_FORE + 0.1, 0, cop ? sleeve2 : P.glove);
-      if ((santa || elf) && !metal) fb.limb(0.06, 0.08, 0, -L_FORE + 0.12, 0, santa ? XM.fur : E.trim); // fur / trim cuff
+      if ((santa || elf || bunny) && !metal) fb.limb(0.06, 0.08, 0, -L_FORE + 0.12, 0, santa || bunny ? XM.fur : E.trim); // fur / trim cuff
       if (metal && elf) fb.rbox(0.105, 0.035, 0.105, 0.012, 0, -0.08, 0, XM.red);      if (zom && !metal) fb.rbox(0.12, 0.06, 0.12, 0.02, 0, -0.02, 0, sleeve, 0.2, 0, sgn * 0.2).rbox(0.04, 0.08, 0.012, 0.01, 0, -0.16, 0.048, BLOOD); // ragged sleeve end, gash
-      if (cyb && side === 'R') fb.geo(new THREE.CylinderGeometry(0.014, 0.014, 0.05, 8), elf ? GLOW : 0xff2020, 0, -0.12, 0.045, Math.PI / 2, 0, 0, 'emit');
+      if (cyb && side === 'R') fb.geo(new THREE.CylinderGeometry(0.014, 0.014, 0.05, 8), elf ? GLOW : dentist ? DGLOW : 0xff2020, 0, -0.12, 0.045, Math.PI / 2, 0, 0, 'emit');
+      if (dentist && !metal) fb.limb(0.056, 0.05, 0, -L_FORE + 0.15, 0, D.coat2); // coat cuff above the glove
       if (cop && side === 'L') fb.rbox(0.05, 0.02, 0.06, 0.008, 0, -L_FORE + 0.08, 0.03, 0x111111); // watch
       a.fore.add(meshes(fb, cyb && side === 'R' ? gunMat : clothMat));
       a.hand.position.y = -L_FORE;
       a.fore.add(a.hand);
       const hb2 = new Builder().rbox(0.065, 0.09, 0.05, 0.02, 0, -0.04, 0.005, hand);
+      if (dentist && metal) { hb2.geo(new THREE.CylinderGeometry(0.012, 0.012, 0.03, 8), 0x3a3e44, 0.02, -0.095, 0.02); spike(hb2, EA.chrome, V(0.02, -0.11, 0.02), DOWN, 0.06, 0.007, 0.002, 6); } // drill-tipped finger
       if (zom) for (const fx of [-0.022, 0, 0.022]) hb2.limb(0.009, 0.07, fx, -0.08, 0.02, metal ? 0x8a9096 : 0x2a2618, 0.5); // claws
       a.hand.add(meshes(hb2, clothMat));
     }
@@ -519,16 +598,19 @@ export class OperatorRig {
       this.hips.add(l.thigh);
       // elves: striped stockings (white with coloured rings)
       const stripes = (b: Builder, r: number, len: number) => { for (let y = -0.07; y > -len + 0.04; y -= 0.09) b.geo(new THREE.CylinderGeometry(r, r, 0.045, 10), E.stripe, 0, y, 0, 0, 0, 0, 'solid', 1, 1, 1.05); };
-      const tb = new Builder().limb(0.085, L_THIGH, 0, 0.02, 0, cop ? TROUSER : elf ? XM.fur : P.uniform, 0, 0, 1, 1.05);
+      const tb = new Builder().limb(0.085, L_THIGH, 0, 0.02, 0, cop ? TROUSER : elf ? XM.fur : dentist ? D.scrub : P.uniform, 0, 0, 1, 1.05);
       if (elf) stripes(tb, 0.088, L_THIGH);
+      else if (dentist) { if (!scrubs) tb.rbox(0.2, 0.16, 0.2, 0.05, -sgn * 0.02, -0.06, -0.01, D.coat); } // coat tails over the thighs
       else if (zom) { if (side === 'R') tb.rbox(0.1, 0.14, 0.02, 0.02, 0, -0.2, 0.078, BLOOD); }
       else if (!cop) tb.rbox(0.07, 0.12, 0.05, 0.015, sgn * 0.075, -0.18, 0.01, P.pouch);
       l.thigh.add(meshes(tb, clothMat));
       l.shin.position.y = -L_THIGH;
       l.thigh.add(l.shin);
-      const sb = new Builder().limb(0.068, L_SHIN, 0, 0, 0, cop ? TROUSER : elf ? XM.fur : P.uniform);
-      if (santa) sb.rbox(0.15, 0.17, 0.16, 0.045, 0, -L_SHIN + 0.07, 0, 0x0e0e10).rbox(0.165, 0.045, 0.175, 0.02, 0, -L_SHIN + 0.16, 0, XM.fur); // tall black boot, fur top
+      const sb = new Builder().limb(0.068, L_SHIN, 0, 0, 0, cop ? TROUSER : elf ? XM.fur : dentist ? D.scrub : P.uniform);
+      if (bunny) sb.geo(new THREE.SphereGeometry(0.09, 10, 8), EA.white, 0, -L_SHIN + 0.1, 0, 0, 0, 0, 'solid', 1, 0.7, 1); // fluffy ankle cuff
+      else if (santa) sb.rbox(0.15, 0.17, 0.16, 0.045, 0, -L_SHIN + 0.07, 0, 0x0e0e10).rbox(0.165, 0.045, 0.175, 0.02, 0, -L_SHIN + 0.16, 0, XM.fur); // tall black boot, fur top
       else if (elf) stripes(sb, 0.071, L_SHIN);
+      else if (dentist) { /* plain scrub trousers */ }
       else if (zom) { if (side === 'L') sb.rbox(0.1, 0.18, 0.03, 0.02, 0, -0.26, 0.055, skin); } // trouser leg torn away
       else if (!cop) sb.rbox(0.11, 0.11, 0.06, 0.03, 0, -0.03, 0.06, P.knee);
       l.shin.add(meshes(sb, clothMat));
@@ -541,6 +623,10 @@ export class OperatorRig {
         const t1 = spike(ftb, E.shoe, V(0, -0.05, 0.11), V(0, 0.15, 1), 0.12, 0.042, 0.02, 8);
         const t2 = spike(ftb, E.shoe, t1, V(0, 1, -0.2), 0.06, 0.02, 0.008, 6);
         ftb.geo(new THREE.SphereGeometry(0.016, 8, 6), bell ? XM.gold : E.trim, t2.x, t2.y, t2.z);
+      } else if (bunny) {
+        // big round bunny-paw slippers with pink toe pads
+        ftb.geo(new THREE.SphereGeometry(0.08, 12, 8), EA.white, 0, -0.04, 0.06, 0, 0, 0, 'solid', 0.85, 0.6, 1.5);
+        for (const tx of [-0.03, 0, 0.03]) ftb.geo(new THREE.SphereGeometry(0.016, 6, 5), EA.pink, tx, -0.03, 0.172);
       } else ftb.rbox(0.11, 0.09, 0.26, 0.035, 0, -0.035, 0.05, cop ? 0x0e0e10 : P.boot).rbox(0.115, 0.022, 0.27, 0.01, 0, -0.078, 0.05, P.black);
       l.foot.add(meshes(ftb, gearMat));
     }

@@ -4,7 +4,8 @@ import { currentHoliday } from '../config/holiday';
 
 /**
  * Articulated street animals: pigeons (head-bob walk, two-joint wings) and rats (scurry gait, segmented tail).
- * Halloween: crows and black rats. Christmas: white doves and grey rabbits (same rigs and behaviour).
+ * Halloween: crows and black rats. Christmas: white doves and grey rabbits. Easter: fluffy yellow chicks and white or
+ * light-brown baby bunnies with pastel ribbons (same rigs and behaviour).
  */
 const furMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0 });
 const sheenMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0.45 }); // iridescent neck
@@ -46,37 +47,44 @@ export class Pigeon {
     const crow = currentHoliday() === 'halloween';
     // Christmas: a slimmer pure-white dove (pale grey wingtips, small dark eyes and beak, pinkish-orange feet)
     const dove = currentHoliday() === 'xmas';
-    const grey = crow ? [0x18191d, 0x1c1d22, 0x141518, 0x202126][variant % 4] : dove ? [0xe6e7e6, 0xe2e3e5, 0xeaeae8, 0xdfe0e3][variant % 4] : [0x7b8089, 0x8c9098, 0x676b74, 0x9a8f86][variant % 4];
-    const dark = crow ? 0x0b0b0e : dove ? 0xc4c8ce : 0x3b3e45;
-    const white = dove ? 0xeeeeec : 0;
+    // Easter: a round fluffy yellow chick (big head, a head tuft, tiny orange beak and feet, stubby wings)
+    const chick = currentHoliday() === 'easter';
+    const grey = chick ? [0xf6d44a, 0xf8dc5c, 0xf2cc3c, 0xfae070][variant % 4] : crow ? [0x18191d, 0x1c1d22, 0x141518, 0x202126][variant % 4] : dove ? [0xe6e7e6, 0xe2e3e5, 0xeaeae8, 0xdfe0e3][variant % 4] : [0x7b8089, 0x8c9098, 0x676b74, 0x9a8f86][variant % 4];
+    const dark = chick ? 0xe8b830 : crow ? 0x0b0b0e : dove ? 0xc4c8ce : 0x3b3e45;
+    const white = dove ? 0xeeeeec : chick ? 0xfff0a0 : 0;
 
     // crows are a size up; scaled inside root because the street and sandbox set root.scale themselves
     const size = new THREE.Group();
     if (crow) size.scale.setScalar(1.35);
     if (dove) size.scale.set(0.85, 0.95, 1.05);
+    if (chick) size.scale.setScalar(0.9);
     this.root.add(size);
     size.add(this.body);
     this.body.position.y = 0.11;
     const bb = new Builder()
-      .geo(ell(0.075), grey, 0, 0, 0, 0, 0, 0, 'solid', 1, 0.85, 1.5)
-      .geo(ell(0.06), crow ? 0x222329 : dove ? white : 0xa4a8b0, 0, -0.022, 0.03, 0, 0, 0, 'solid', 1, 0.8, 1.2); // pale breast
+      .geo(ell(0.075), grey, 0, 0, 0, 0, 0, 0, 'solid', chick ? 1.05 : 1, chick ? 1 : 0.85, chick ? 1.1 : 1.5)
+      .geo(ell(0.06), crow ? 0x222329 : dove || chick ? white : 0xa4a8b0, 0, -0.022, 0.03, 0, 0, 0, 'solid', 1, 0.8, 1.2); // pale breast
     this.body.add(mesh(bb));
     // neck with iridescent green/purple sheen
     this.neck.position.set(0, 0.045, 0.075);
     this.body.add(this.neck);
     const nb = new Builder()
-      .geo(ell(0.042), crow ? 0x1a1f2c : dove ? white : 0x3f7f62, 0, 0.02, 0, 0.2, 0, 0, 'solid', 1, 1.35, 1)
-      .geo(ell(0.043), crow ? 0x1e1a28 : dove ? white : 0x6a4a8e, 0, 0.005, -0.004, 0.2, 0, 0, 'solid', 1.02, 0.9, 1);
-    this.neck.add(mesh(nb, dove ? furMat : sheenMat));
+      .geo(ell(0.042), chick ? grey : crow ? 0x1a1f2c : dove ? white : 0x3f7f62, 0, 0.02, 0, 0.2, 0, 0, 'solid', 1, 1.35, 1)
+      .geo(ell(0.043), chick ? grey : crow ? 0x1e1a28 : dove ? white : 0x6a4a8e, 0, 0.005, -0.004, 0.2, 0, 0, 'solid', 1.02, 0.9, 1);
+    this.neck.add(mesh(nb, dove || chick ? furMat : sheenMat));
     this.head.position.set(0, 0.06, 0.018);
     this.neck.add(this.head);
-    const hb = new Builder().geo(ell(0.036), crow ? 0x16171b : dove ? white : 0x5c616b, 0, 0, 0, 0, 0, 0, 'solid', 0.95, 1, 1.12);
-    if (dove) hb.geo(new THREE.ConeGeometry(0.009, 0.03, 8), 0x4a3c3c, 0, -0.006, 0.046, Math.PI / 2).geo(ell(0.007), 0xe8d8d0, 0, 0.003, 0.035); // small dark beak, pale cere
+    const hb = new Builder().geo(ell(chick ? 0.05 : 0.036), chick ? grey : crow ? 0x16171b : dove ? white : 0x5c616b, 0, 0, 0, 0, 0, 0, 'solid', 0.95, 1, chick ? 1 : 1.12);
+    if (chick) {
+      hb.geo(new THREE.ConeGeometry(0.01, 0.022, 8), 0xf08a1c, 0, -0.006, 0.058, Math.PI / 2); // tiny orange beak
+      for (const a of [-0.4, 0, 0.4]) hb.geo(ell(0.012), grey, Math.sin(a) * 0.012, 0.05, -0.006, 0, 0, a, 'solid', 0.5, 1.6, 0.5); // fluffy tuft
+    } else if (dove) hb.geo(new THREE.ConeGeometry(0.009, 0.03, 8), 0x4a3c3c, 0, -0.006, 0.046, Math.PI / 2).geo(ell(0.007), 0xe8d8d0, 0, 0.003, 0.035); // small dark beak, pale cere
     else if (crow) hb.geo(new THREE.ConeGeometry(0.015, 0.05, 8), 0x0c0c0e, 0, -0.004, 0.054, Math.PI / 2); // heavy crow beak
     else hb.geo(new THREE.ConeGeometry(0.011, 0.034, 8), 0x8a7870, 0, -0.006, 0.047, Math.PI / 2).geo(ell(0.009), 0xe8e4dc, 0, 0.004, 0.036); // beak, cere
     this.head.add(mesh(hb));
-    const eye = crow ? 0xff1a10 : dove ? 0x0c0c0e : 0xff8a20, er = crow ? 0.0095 : dove ? 0.007 : 0.0085;
-    const eb = new Builder().geo(ell(er), eye, -0.026, 0.008, 0.016).geo(ell(er), eye, 0.026, 0.008, 0.016);
+    const eye = crow ? 0xff1a10 : dove || chick ? 0x0c0c0e : 0xff8a20, er = crow ? 0.0095 : dove ? 0.007 : 0.0085;
+    const ex = chick ? 0.032 : 0.026, ez = chick ? 0.038 : 0.016;
+    const eb = new Builder().geo(ell(er), eye, -ex, 0.008, ez).geo(ell(er), eye, ex, 0.008, ez);
     this.head.add(mesh(eb, crow ? glowEyeMat : eyeMat));
     // folded wings: shaped panels hugging the flanks, dark wing bars, primaries crossing over the tail
     const fb = new Builder();
@@ -102,12 +110,13 @@ export class Pigeon {
     }
     this.tail.position.set(0, 0.012, -0.1);
     this.body.add(this.tail);
+    if (chick) this.tail.scale.set(0.8, 2, 0.35); // a short fluffy stub
     this.tail.add(mesh(new Builder().rbox(0.07, 0.01, 0.1, 0.005, 0, 0, -0.045, grey).rbox(0.072, 0.011, 0.022, 0.004, 0, 0.001, -0.085, dove ? dark : 0x2c2e33)));
     for (const side of ['L', 'R'] as const) {
       const l = this.leg[side];
       l.position.set((side === 'L' ? -1 : 1) * 0.024, -0.05, 0.012);
       this.body.add(l);
-      const legC = crow ? 0x1a1a1c : dove ? 0xe88a6a : 0xc86a6a;
+      const legC = chick ? 0xf08a1c : crow ? 0x1a1a1c : dove ? 0xe88a6a : 0xc86a6a;
       const lb = new Builder().geo(new THREE.CylinderGeometry(0.0045, 0.0045, 0.06, 5), legC, 0, -0.03, 0);
       for (const a of [-0.45, 0, 0.45]) lb.rbox(0.006, 0.004, 0.028, 0.002, Math.sin(a) * 0.012, -0.06, Math.cos(a) * 0.012, legC, 0, a);
       l.add(mesh(lb));
@@ -179,7 +188,7 @@ export class Rat {
   private static count = 0; // varies the rabbits' coats in creation order (deterministic per floor)
 
   constructor() {
-    if (currentHoliday() === 'xmas') { this.buildRabbit(Rat.count++); return; }
+    if (currentHoliday() === 'xmas' || currentHoliday() === 'easter') { this.buildRabbit(Rat.count++, currentHoliday() === 'easter'); return; }
     const hal = currentHoliday() === 'halloween'; // Halloween: black fur, glowing red eyes, long front teeth
     const fur = hal ? 0x141414 : 0x4d423a, fur2 = hal ? 0x0b0b0b : 0x3a312b, pink = 0xc99a90;
     this.root.add(this.body);
@@ -235,12 +244,15 @@ export class Rat {
    * Christmas: a cute grey rabbit on the same joints (round body, big hind legs, long upright ears with pink insides,
    * big dark eyes, pink twitchy nose, white cotton tail); scaled up inside root since the street and sandbox set
    * root.scale themselves. legs[2..3] are the hind legs, tail[0..1] the two ears (so update() can twitch them).
+   * Easter: a smaller baby bunny, white or light brown, both ears up and a pastel ribbon bow round the neck.
    */
-  private buildRabbit(variant: number) {
+  private buildRabbit(variant: number, easter = false) {
     this.rabbit = true;
-    const [fur, light] = ([[0x8e9096, 0xd4d4d6], [0x9c9a98, 0xdcd8d4], [0x7c7f86, 0xc8cacc], [0xa6a8ac, 0xe2e2e4]] as const)[variant % 4];
+    const [fur, light] = (easter
+      ? [[0xf4f2ee, 0xffffff], [0xc8a27a, 0xf0e2cc], [0xece6dc, 0xfffaf2], [0xb88e66, 0xeedcc4]] as const
+      : [[0x8e9096, 0xd4d4d6], [0x9c9a98, 0xdcd8d4], [0x7c7f86, 0xc8cacc], [0xa6a8ac, 0xe2e2e4]] as const)[variant % 4];
     const pink = 0xe8a8b0, white = 0xf6f6f4, size = new THREE.Group();
-    size.scale.setScalar(1.45);
+    size.scale.setScalar(easter ? 1.25 : 1.45);
     this.root.add(size);
     size.add(this.body);
     this.body.position.y = 0.06;
@@ -252,6 +264,11 @@ export class Rat {
     this.body.add(mesh(bb));
     this.head.position.set(0, 0.05, 0.065);
     this.body.add(this.head);
+    if (easter) { // pastel ribbon round the neck, bow at the front
+      const rc = [0xf4b6c8, 0xa8d4f0, 0xa8e6c8, 0xc8b4ec][variant % 4];
+      this.body.add(mesh(new Builder().geo(new THREE.TorusGeometry(0.03, 0.009, 5, 14), rc, 0, 0.035, 0.05, Math.PI / 2 - 0.5)
+        .geo(ell(0.016), rc, -0.017, 0.024, 0.08, 0, 0, 0.5, 'solid', 1.4, 0.8, 0.5).geo(ell(0.016), rc, 0.017, 0.024, 0.08, 0, 0, -0.5, 'solid', 1.4, 0.8, 0.5)));
+    }
     const hb = new Builder()
       .geo(ell(0.038), fur, 0, 0, 0, 0, 0, 0, 'solid', 1, 0.95, 1.05)
       .geo(ell(0.022), light, 0, -0.016, 0.026, 0, 0, 0, 'solid', 1.15, 0.8, 0.9); // pale muzzle and chin
@@ -267,7 +284,7 @@ export class Rat {
     for (const sx of [-1, 1]) {
       const e = new THREE.Group();
       e.position.set(sx * 0.016, 0.03, -0.01);
-      e.rotation.set(-0.15, 0, -sx * (sx > 0 ? 0.7 : 0.18));
+      e.rotation.set(-0.15, 0, -sx * (sx > 0 && !easter ? 0.7 : 0.18));
       e.userData.rz = e.rotation.z;
       e.add(mesh(new Builder().geo(ell(0.016), fur, 0, 0.045, 0, 0, 0, 0, 'solid', 0.75, 3, 0.4).geo(ell(0.012), pink, 0, 0.045, 0.004, 0, 0, 0, 'solid', 0.7, 3, 0.25)));
       this.head.add(e);

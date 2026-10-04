@@ -143,6 +143,7 @@ export class FloorView {
     const L = this.L;
     const bySurf = new Map<Surface, { pos: number[]; uv: number[]; col: number[] }>();
     const street = this.L.floor === 0, snow = street && currentHoliday() === 'xmas'; // Christmas: the street is snowed over (one big texture)
+    const choc = street && currentHoliday() === 'easter', whole = snow || choc; // Easter: molten chocolate and chocolate slabs (one big texture)
     for (let y = 0; y < FH; y++)
       for (let x = 0; x < FW; x++) {
         const t = L.tiles[idx(x, y)];
@@ -155,11 +156,11 @@ export class FloorView {
         const q = [[x, y], [x, y + 1], [x + 1, y + 1], [x, y], [x + 1, y + 1], [x + 1, y]];
         const shade = 0.82 + ((room?.id ?? 0) % 5) * 0.045;
         const uvs = L.floor === 0 ? (room?.type === 'plaza' ? 0.25 : 0.125) : 0.5; // street textures cover 4 m / 8 m
-        for (const [qx, qy] of q) { s.pos.push(qx, 0, qy); if (snow) s.uv.push(qx / FW, 1 - qy / FH); else s.uv.push(qx * uvs, qy * uvs); s.col.push(L.floor === 0 ? 1 : shade, L.floor === 0 ? 1 : shade, L.floor === 0 ? 1 : shade); }
+        for (const [qx, qy] of q) { s.pos.push(qx, 0, qy); if (whole) s.uv.push(qx / FW, 1 - qy / FH); else s.uv.push(qx * uvs, qy * uvs); s.col.push(L.floor === 0 ? 1 : shade, L.floor === 0 ? 1 : shade, L.floor === 0 ? 1 : shade); }
       }
-    const maps: Record<Surface, THREE.Texture> = { carpet: tex.carpet(), tile: tex.tile(), concrete: snow ? streetTex.snowStreet() : street ? streetTex.pavers() : tex.concrete(), metal: tex.metal(), asphalt: snow ? streetTex.snowStreet() : street ? streetTex.asphalt() : tex.asphalt() };
-    // the snow map spans the whole street (world uv), so the fine bump grain gets its own 2 m repeat
-    const snowBump = snow ? this.track(Object.assign(streetTex.asphaltBump().clone(), { repeat: new THREE.Vector2(FW / 2, FH / 2), needsUpdate: true })) : null;
+    const maps: Record<Surface, THREE.Texture> = { carpet: tex.carpet(), tile: tex.tile(), concrete: snow ? streetTex.snowStreet() : choc ? streetTex.chocStreet() : street ? streetTex.pavers() : tex.concrete(), metal: tex.metal(), asphalt: snow ? streetTex.snowStreet() : choc ? streetTex.chocStreet() : street ? streetTex.asphalt() : tex.asphalt() };
+    // the snow / chocolate map spans the whole street (world uv), so the fine bump grain gets its own 2 m repeat
+    const snowBump = whole ? this.track(Object.assign(streetTex.asphaltBump().clone(), { repeat: new THREE.Vector2(FW / 2, FH / 2), needsUpdate: true })) : null;
     for (const [surf, s] of bySurf) {
       const g = this.track(new THREE.BufferGeometry());
       g.setAttribute('position', new THREE.Float32BufferAttribute(s.pos, 3));
@@ -170,14 +171,14 @@ export class FloorView {
       const n = g.attributes.normal as THREE.BufferAttribute;
       for (let i = 0; i < n.count; i++) n.setY(i, 1);
       const m = this.track(new THREE.MeshStandardMaterial({ map: maps[surf], vertexColors: true, roughness: surf === 'metal' ? 0.5 : surf === 'tile' ? 0.35 : 0.9, metalness: surf === "metal" ? 0.5 : 0.05 }));
-      if (street) { m.bumpMap = snowBump ?? streetTex.asphaltBump(); m.bumpScale = snow ? 0.4 : surf === 'asphalt' ? 1.4 : 0.6; m.roughness = surf === 'asphalt' ? 0.88 : 0.8; }
+      if (street) { m.bumpMap = snowBump ?? streetTex.asphaltBump(); m.bumpScale = snow ? 0.4 : choc ? 0.2 : surf === 'asphalt' ? 1.4 : 0.6; m.roughness = choc ? (surf === 'asphalt' ? 0.38 : 0.5) : surf === 'asphalt' ? 0.88 : 0.8; }
       const mesh = new THREE.Mesh(g, m);
       mesh.receiveShadow = true;
       this.group.add(mesh);
     }
     // exterior void under the building
     const underMat = this.L.floor === 0
-      ? this.track(new THREE.MeshStandardMaterial({ map: (() => { const t = (snow ? streetTex.snow() : streetTex.asphalt()).clone(); t.repeat.set(25, 25); t.needsUpdate = true; return t; })(), roughness: 0.9 }))
+      ? this.track(new THREE.MeshStandardMaterial({ map: (() => { const t = (snow ? streetTex.snow() : choc ? streetTex.chocolate() : streetTex.asphalt()).clone(); t.repeat.set(25, 25); t.needsUpdate = true; return t; })(), roughness: choc ? 0.45 : 0.9 }))
       : this.track(new THREE.MeshBasicMaterial({ color: 0x020203 }));
     const under = new THREE.Mesh(this.track(new THREE.PlaneGeometry(200, 200)), underMat);
     under.rotation.x = -Math.PI / 2;
@@ -206,8 +207,9 @@ export class FloorView {
       }
     const wallTex = tex.wall();
     const snow = L.floor === 0 && currentHoliday() === 'xmas'; // Christmas: the street's border walls are snowed over
-    const side = this.track(applyCutaway(new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.9, color: snow ? 0xb8c0ca : L.floor === 0 ? 0x6a6a70 : 0xffffff })));
-    const top = this.track(applyCutaway(new THREE.MeshStandardMaterial({ color: snow ? 0xe8eef4 : 0x151517, roughness: 1 })));
+    const choc = L.floor === 0 && currentHoliday() === 'easter'; // Easter: chocolate-coated
+    const side = this.track(applyCutaway(new THREE.MeshStandardMaterial({ map: wallTex, roughness: choc ? 0.5 : 0.9, color: snow ? 0xb8c0ca : choc ? 0x8a5a3a : L.floor === 0 ? 0x6a6a70 : 0xffffff })));
+    const top = this.track(applyCutaway(new THREE.MeshStandardMaterial({ color: snow ? 0xe8eef4 : choc ? 0x4a2a16 : 0x151517, roughness: choc ? 0.4 : 1 })));
     const h = L.floor === 0 ? 1.3 : WALL_H;
     const geo = this.track(new THREE.BoxGeometry(1, h, 1));
     geo.translate(0, h / 2, 0);

@@ -45,7 +45,7 @@ function tree(b: Builder, x: number, y: number, z: number, h: number, deco = tru
   });
 }
 /** Ribbon bow standing upright, facing +z (about s across). */
-function bow(b: Builder, x: number, y: number, z: number, s: number, color: number, ry = 0) {
+export function bow(b: Builder, x: number, y: number, z: number, s: number, color: number, ry = 0) {
   at(b, x, y, z, ry, s, () => {
     for (const sx of [-1, 1]) b.geo(new THREE.TorusGeometry(0.25, 0.1, 4, 10), color, sx * 0.25, 0.22, 0, 0, 0, sx * 0.5);
     b.sphere(0.12, 0, 0.1, 0, color);
@@ -123,7 +123,7 @@ function cane(b: Builder, x: number, y: number, z: number, s: number, ry = 0, ly
   }, lying ? -Math.PI / 2 : 0, lying ? -Math.PI / 2 : 0);
 }
 /** Mug of cocoa with marshmallows. */
-function mug(b: Builder, x: number, y: number, z: number, color = X.red) {
+export function mug(b: Builder, x: number, y: number, z: number, color = X.red) {
   b.cyl(0.04, 0.036, 0.09, x, y + 0.045, z, color, 'solid', 12).cyl(0.035, 0.035, 0.004, x, y + 0.083, z, X.cocoa, 'solid', 12);
   b.geo(new THREE.TorusGeometry(0.022, 0.007, 4, 8), color, x + 0.042, y + 0.045, z);
   for (let k = 0; k < 3; k++) b.box(0.014, 0.012, 0.014, x - 0.012 + k * 0.012, y + 0.088, z + (k % 2) * 0.01, X.white, 'solid', k);

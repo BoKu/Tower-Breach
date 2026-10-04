@@ -62,6 +62,23 @@ const XMAS_MELODY: [number, number, number][][] = [
   ...JB_A, [[0, 67, 1], [1, 67, 1], [2, 65, 1], [3, 62, 1]], [[0, 60, 4]],
 ];
 
+// ---- Easter elevator tune: an original springy marimba ditty in F major (8 bars), woodblock hops and birdsong
+const EGG_BEAT = 60 / 126;
+const EGG_CHORDS: { root: number; v: number[] }[] = [
+  { root: 41, v: [65, 69, 72] }, { root: 41, v: [65, 69, 72] }, { root: 46, v: [65, 70, 74] }, { root: 48, v: [64, 67, 70, 72] },
+  { root: 41, v: [65, 69, 72] }, { root: 50, v: [62, 65, 69] }, { root: 48, v: [64, 67, 70, 72] }, { root: 41, v: [65, 69, 72] },
+];
+const EGG_MELODY: [number, number, number][][] = [
+  [[0, 72, 0.5], [0.5, 69, 0.5], [1, 72, 0.5], [1.5, 69, 0.5], [2, 77, 1], [3, 76, 1]],
+  [[0, 74, 0.5], [0.5, 72, 0.5], [1, 70, 0.5], [1.5, 69, 0.5], [2, 72, 2]],
+  [[0, 74, 0.5], [0.5, 70, 0.5], [1, 74, 0.5], [1.5, 70, 0.5], [2, 77, 1], [3, 74, 1]],
+  [[0, 72, 1], [1, 70, 0.5], [1.5, 69, 0.5], [2, 67, 1], [3, 64, 1]],
+  [[0, 65, 0.5], [0.5, 69, 0.5], [1, 72, 0.5], [1.5, 77, 0.5], [2, 76, 0.5], [2.5, 77, 0.5], [3, 79, 1]],
+  [[0, 77, 1], [1, 74, 0.5], [1.5, 72, 0.5], [2, 69, 1], [3, 74, 1]],
+  [[0, 72, 0.5], [0.5, 74, 0.5], [1, 70, 1], [2, 72, 0.5], [2.5, 70, 0.5], [3, 67, 1]],
+  [[0, 65, 1.5], [1.5, 64, 0.5], [2, 65, 2]],
+];
+
 /**
  * Procedural soundscapes, all synthesised, driven by random event timers so nothing audibly loops:
  * - street: traffic swells, crowd murmur, car pass-bys, horns, aeroplanes, trains, sirens, radios, birds
@@ -396,8 +413,22 @@ export class Soundscape {
     }
     if (!this.muzak || (!this.muzakOn && s.now > this.muzakOffAt)) return;
     const hol = currentHoliday();
-    const [play, bars, beat] = hol === 'halloween' ? [this.spookBar, 8, SPOOK_BEAT] : hol === 'xmas' ? [this.xmasBar, 16, XMAS_BEAT] : [this.bar, 8, BEAT];
+    const [play, bars, beat] = hol === 'halloween' ? [this.spookBar, 8, SPOOK_BEAT] : hol === 'xmas' ? [this.xmasBar, 16, XMAS_BEAT] : hol === 'easter' ? [this.eggBar, 8, EGG_BEAT] : [this.bar, 8, BEAT];
     while (this.muzakNext < s.now + 0.6) { play.call(this, this.muzakBar % bars, this.muzakNext); this.muzakBar++; this.muzakNext += 4 * beat; }
+  }
+
+  /** Easter muzak bar: marimba melody, plucked bass and chords, woodblock hops on the off-beats, birdsong at the turnaround. */
+  private eggBar(i: number, t: number) {
+    const s = this.s, d = this.muzak!, c = EGG_CHORDS[i], B = EGG_BEAT;
+    for (const [b, m, len] of EGG_MELODY[i]) { // marimba: a quick-decaying fundamental plus its woody 4th partial
+      const f = hz(m);
+      s.tone(d, t + b * B, Math.min(len * B, 0.45) + 0.15, { type: 'sine', freq: f, peak: 0.08, attack: 0.002, rel: 0.25 });
+      s.tone(d, t + b * B, 0.12, { type: 'sine', freq: f * 4, peak: 0.014, attack: 0.001 });
+    }
+    for (const b of [1, 3]) for (const m of c.v) s.tone(d, t + b * B, 0.18, { type: 'triangle', freq: hz(m), peak: 0.016, filter: 2400 }); // plucked chords
+    for (const [b, m] of [[0, c.root], [1, c.root + 7], [2, c.root + 12], [3, c.root + 7]] as const) s.tone(d, t + b * B, 0.32, { type: 'triangle', freq: hz(m + 12), peak: 0.085, filter: 700 }); // pizzicato bass
+    for (const b of [0.5, 1.5, 2.5, 3.5]) s.noise(d, t + b * B, 0.035, { type: 'bandpass', freq: 1300, q: 9, peak: 0.07 }); // woodblock hop
+    if (i === 7) for (let k = 0; k < 3; k++) s.tone(d, t + (2.5 + k * 0.18) * B, 0.09, { type: 'sine', freq: 2600 + k * 250, to: 3300 + k * 200, peak: 0.02 }); // birdsong
   }
 
   /** Christmas muzak bar: glockenspiel melody, piano on 2 and 4, oom-pah bass, sleigh bells on every eighth. */

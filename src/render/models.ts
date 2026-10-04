@@ -5,6 +5,7 @@ import { screenQuad } from './screens';
 import { currentHoliday } from '../config/holiday';
 import { halloweenProp, halloweenDecor } from './halloween';
 import { christmasProp, christmasDecor } from './christmas';
+import { easterProp, easterDecor } from './easter';
 
 /** Stylised-realistic original models built from primitives. Vertex-coloured so props merge into few draw calls. */
 export type Bucket = 'solid' | 'emit' | 'glass' | 'screen' | 'mirror';
@@ -150,6 +151,7 @@ export function buildProp(kind: string, w: number, h: number): Parts {
   const hol = currentHoliday();
   if (hol === 'halloween' && halloweenProp(b, kind, W, D, w, h)) return b.p;
   if (hol === 'xmas' && christmasProp(b, kind, W, D, w, h)) return b.p;
+  if (hol === 'easter' && easterProp(b, kind, W, D, w, h)) return b.p;
   if (kind.startsWith('pipes.')) { const [svc, seed] = kind.slice(6).split('#'); pipeRun(b, svc, Number(seed) || 0, Math.max(w, h, 1)); if (h > w) rotY(b, Math.PI / 2); return b.p; }
   switch (kind) {
     case 'desk': {
@@ -473,6 +475,7 @@ export function buildProp(kind: string, w: number, h: number): Parts {
   }
   if (hol === 'halloween') halloweenDecor(b, kind, W, D, w, h);
   if (hol === 'xmas') christmasDecor(b, kind, W, D, w, h);
+  if (hol === 'easter') easterDecor(b, kind, W, D, w, h);
   return b.p;
 }
 

@@ -8,6 +8,8 @@ import { Builder, merge, type Parts } from './models';
 import { currentHoliday } from '../config/holiday';
 import { halloweenProp, halloweenDecor } from './halloween';
 import { christmasProp, christmasDecor, snowman } from './christmas';
+import { easterProp, easterDecor, easterTreat, egg as easterEgg, bunting as easterBunting } from './easter';
+import { at } from './halloween';
 
 /**
  * Realistic street dressing for the police cordon (floor 0): procedurally modelled patrol cars, an armoured
@@ -40,6 +42,18 @@ function speckle(g: CanvasRenderingContext2D, rng: Rng, w: number, h: number, n:
  * drifts shading from blue-grey hollows to bright crests, fine grain and a few sparkles. No lines, no grid.
  */
 function snowBase(g: CanvasRenderingContext2D, rng: Rng, w: number, h: number, cells: number) {
+  const field = valueNoise(rng, w, h, cells);
+  const img = g.createImageData(w, h);
+  for (let i = 0; i < w * h; i++) {
+    const v = Math.min(1, Math.max(0, (field[i] - 0.25) * 2)), n = (rng.next() - 0.5) * 6; // hollow (0) .. crest (1)
+    img.data[i * 4] = 200 + v * 46 + n; img.data[i * 4 + 1] = 210 + v * 39 + n; img.data[i * 4 + 2] = 226 + v * 27 + n; img.data[i * 4 + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  speckle(g, rng, w, h, (w * h) / 300, 'rgba(255,255,255,0.7)', 'rgba(150,165,190,0.12)', 1.4);
+}
+
+/** Three octaves of smooth value noise, w x h px with `cells` cells across (wraps at the edges so it tiles), about 0..1. */
+function valueNoise(rng: Rng, w: number, h: number, cells: number): Float32Array {
   const field = new Float32Array(w * h);
   for (const [n, amp] of [[cells, 0.55], [cells * 3, 0.28], [cells * 9, 0.17]]) {
     const nx = n, ny = Math.max(1, Math.round((n * h) / w)), lat = Array.from({ length: nx * ny }, () => rng.next());
@@ -52,13 +66,7 @@ function snowBase(g: CanvasRenderingContext2D, rng: Rng, w: number, h: number, c
       }
     }
   }
-  const img = g.createImageData(w, h);
-  for (let i = 0; i < w * h; i++) {
-    const v = Math.min(1, Math.max(0, (field[i] - 0.25) * 2)), n = (rng.next() - 0.5) * 6; // hollow (0) .. crest (1)
-    img.data[i * 4] = 200 + v * 46 + n; img.data[i * 4 + 1] = 210 + v * 39 + n; img.data[i * 4 + 2] = 226 + v * 27 + n; img.data[i * 4 + 3] = 255;
-  }
-  g.putImageData(img, 0, 0);
-  speckle(g, rng, w, h, (w * h) / 300, 'rgba(255,255,255,0.7)', 'rgba(150,165,190,0.12)', 1.4);
+  return field;
 }
 
 /** A meandering trail of alternating boot prints (P px/m) from x, y heading a, wandering by `wander` per step. */
@@ -72,6 +80,92 @@ function bootTrail(g: CanvasRenderingContext2D, rng: Rng, P: number, x: number, 
     g.fillStyle = 'rgba(176,190,210,0.5)'; // packed floor of the print
     g.beginPath(); g.ellipse(px, py, 0.13 * P, 0.05 * P, r, 0, 6.28); g.fill();
   }
+}
+
+/**
+ * Easter: molten milk chocolate, w x h px: shade from a noise field (milk .. caramel) with glossy ripples along its
+ * contours, so the flow curls about with no lines or grid. `cells` as valueNoise (tiles when it wraps).
+ */
+function chocBase(g: CanvasRenderingContext2D, rng: Rng, w: number, h: number, cells: number) {
+  const body = valueNoise(rng, w, h, cells); // one field: a second for the ripples doubled the build time
+  const img = g.createImageData(w, h);
+  for (let i = 0; i < w * h; i++) {
+    const v = Math.min(1, Math.max(0, (body[i] - 0.25) * 2)), r = Math.sin(body[i] * 30), n = (rng.next() - 0.5) * 5;
+    const gloss = Math.max(0, r) ** 12 * 0.28, sh = 1 - 0.1 * Math.max(0, -r) ** 2, m = 0.3 + 0.55 * v; // ripple crest / trough, dark .. milk
+    img.data[i * 4] = (104 + 70 * m) * sh + gloss * 120 + n; img.data[i * 4 + 1] = (62 + 44 * m) * sh + gloss * 96 + n; img.data[i * 4 + 2] = (34 + 26 * m) * sh + gloss * 74 + n; img.data[i * 4 + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+}
+
+const SPRINKLE = ['#f6a8c4', '#fff0a0', '#a8d4f4', '#c4eca4', '#ffffff', '#ffb070', '#d4b4f0', '#f05a7a'];
+/** A scatter of sugar sprinkles (P px/m) round world x, y within r metres. */
+function sprinkles(g: CanvasRenderingContext2D, rng: Rng, P: number, x: number, y: number, r: number, n: number) {
+  for (let i = 0; i < n; i++) {
+    const a = rng.next() * 6.283, d = r * Math.sqrt(rng.next());
+    g.save(); g.translate((x + Math.cos(a) * d) * P, (y + Math.sin(a) * d) * P); g.rotate(rng.next() * 6.283);
+    g.fillStyle = SPRINKLE[rng.int(0, SPRINKLE.length - 1)]; g.fillRect(-0.065 * P, -0.02 * P, 0.13 * P, 0.04 * P);
+    g.restore();
+  }
+}
+
+/**
+ * A meandering trail of bunny hops (P px/m) from x, y heading a, wandering by `wander` per hop: each hop leaves the two
+ * small front prints one behind the other and the long hind prints side by side ahead of them, pressed into the
+ * chocolate (dark floor, glossy rim on the far side).
+ */
+function bunnyTrail(g: CanvasRenderingContext2D, rng: Rng, P: number, x: number, y: number, a: number, hops: number, wander: number) {
+  const print = (px: number, py: number, rx: number, ry: number, r: number) => {
+    g.fillStyle = 'rgba(226,170,120,0.3)'; g.beginPath(); g.ellipse((px - 0.015) * P, (py - 0.015) * P, rx * P * 1.12, ry * P * 1.2, r, 0, 6.28); g.fill();
+    g.fillStyle = 'rgba(24,10,4,0.62)'; g.beginPath(); g.ellipse(px * P, py * P, rx * P, ry * P, r, 0, 6.28); g.fill();
+  };
+  for (let k = 0; k < hops; k++) {
+    a += rng.range(-wander, wander);
+    const d = rng.range(0.7, 1.1); x += Math.cos(a) * d; y += Math.sin(a) * d;
+    const ca = Math.cos(a), sa = Math.sin(a), pt = (f: number, l: number): [number, number] => [x + ca * f - sa * l, y + sa * f + ca * l];
+    for (const [f, l] of [[-0.3, 0.025], [-0.17, -0.03]]) { const [px, py] = pt(f, l); print(px, py, 0.04, 0.035, a); }
+    for (const s of [-1, 1]) { const [px, py] = pt(0.07, s * 0.08); print(px, py, 0.11, 0.045, a + s * 0.08); }
+  }
+}
+
+/**
+ * Easter: the sidewalk (world y y0..y1, P px/m) laid with chocolate-bar slabs in staggered rows of uneven length and
+ * depth, each scored into 1-3 x 1-2 bevelled segments; mostly plain, some dark, a few white; a few melted corners.
+ */
+function chocSlabs(g: CanvasRenderingContext2D, rng: Rng, P: number, y0: number, y1: number, w: number) {
+  const tones: [number, number, number][] = [[80, 46, 26], [54, 30, 16], [228, 208, 176]]; // darker than the road so the two read apart
+  const rgb = (c: [number, number, number], k: number, a = 1) => `rgba(${c[0] * k | 0},${c[1] * k | 0},${c[2] * k | 0},${a})`;
+  for (let y = y0; y < y1 - 0.05;) {
+    const rh = Math.min(y1 - y, rng.range(0.9, 1.5));
+    for (let x = -rng.range(0, 1.6); x < w;) {
+      const bw = rng.range(1.1, 2.4), nx = Math.max(1, Math.round(bw / rng.range(0.55, 0.8))), ny = rh > 1.1 ? 2 : 1;
+      const t = tones[rng.chance(0.2) ? 1 : rng.chance(0.07) ? 2 : 0], j = rng.range(0.9, 1.08), c: [number, number, number] = [t[0] * j, t[1] * j, t[2] * j];
+      g.fillStyle = rgb(c, 0.42); g.fillRect(x * P, y * P, bw * P, rh * P); // the groove between bars
+      for (let i = 0; i < nx; i++) for (let k = 0; k < ny; k++) {
+        const sx = x + (i * bw) / nx + 0.035, sy = y + (k * rh) / ny + 0.035, sw = bw / nx - 0.07, sh = rh / ny - 0.07;
+        g.fillStyle = rgb(c, 1.3); g.fillRect(sx * P, sy * P, sw * P, sh * P); // lit bevel (top / left)
+        g.fillStyle = rgb(c, 0.72); g.fillRect((sx + 0.05) * P, (sy + 0.05) * P, (sw - 0.05) * P, (sh - 0.05) * P); // shaded bevel
+        const gr = g.createLinearGradient(sx * P, sy * P, (sx + sw) * P, (sy + sh) * P);
+        gr.addColorStop(0, rgb(c, 1.12)); gr.addColorStop(1, rgb(c, 0.94));
+        g.fillStyle = gr; g.fillRect((sx + 0.09) * P, (sy + 0.09) * P, (sw - 0.18) * P, (sh - 0.18) * P); // flat top, a little glossy
+      }
+      if (rng.chance(0.14)) { // a corner gone soft and run
+        const cx = x + (rng.chance(0.5) ? 0.1 : bw - 0.1), cy = y + (rng.chance(0.5) ? 0.1 : rh - 0.1), r = rng.range(0.25, 0.5);
+        const gr = g.createRadialGradient(cx * P, cy * P, 0, cx * P, cy * P, r * P);
+        gr.addColorStop(0, rgb(c, 1.05)); gr.addColorStop(0.7, rgb(c, 0.95, 0.9)); gr.addColorStop(1, rgb(c, 0.9, 0));
+        g.fillStyle = gr; g.beginPath(); g.ellipse(cx * P, cy * P, r * P, r * 0.8 * P, rng.next() * 3, 0, 6.28); g.fill();
+      }
+      x += bw;
+    }
+    y += rh;
+  }
+}
+
+/** Easter: a soft-edged glossy puddle of colour `c` at world x, y (P px/m), radius r. */
+function chocPuddle(g: CanvasRenderingContext2D, rng: Rng, P: number, x: number, y: number, r: number, c: string) {
+  g.fillStyle = c; g.beginPath();
+  for (let k = 0; k <= 12; k++) { const a = (k / 12) * 6.283, q = r * rng.range(0.7, 1.15); if (k) g.lineTo((x + Math.cos(a) * q) * P, (y + Math.sin(a) * q * 0.7) * P); else g.moveTo((x + q) * P, y * P); }
+  g.fill();
+  g.fillStyle = 'rgba(255,250,240,0.35)'; g.beginPath(); g.ellipse((x - r * 0.25) * P, (y - r * 0.15) * P, r * 0.35 * P, r * 0.1 * P, -0.3, 0, 6.28); g.fill(); // highlight
 }
 
 export const streetTex = {
@@ -143,6 +237,41 @@ export const streetTex = {
       // boot-print trails: up and down the lane, then wandering all over, some looping back across others
       for (let k = 0; k < 10; k++) bootTrail(g, rng, P, 32 + rng.range(-2, 2), k % 2 ? 13 : FH - 4, k % 2 ? Math.PI / 2 : -Math.PI / 2, 70, 0.06);
       for (let k = 0; k < 34; k++) bootTrail(g, rng, P, rng.range(3, FW - 3), rng.range(13, FH - 3), rng.next() * Math.PI * 2, rng.int(12, 50), 0.2);
+    });
+    t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+    return t;
+  },
+  /** Easter: 8 m of molten chocolate (tiles seamlessly): the ground beyond the street. */
+  chocolate: () => canvasTex('st-choc', 512, 512, (g, rng) => chocBase(g, rng, 512, 512, 2)),
+  /**
+   * Easter: the whole 64 x 48 m street in one 32 px/m texture (no tiling; uv = world x/FW, y/FH): the road is molten
+   * chocolate with glossy ripples, drips running off the kerb and white-chocolate swirls and puddles; the sidewalk is
+   * laid with chocolate-bar slabs; sprinkles here and there and meandering trails of bunny prints over everything.
+   */
+  chocStreet: () => {
+    const P = 32, t = canvasTex('st-choc-street', FW * P, FH * P, (g, rng) => {
+      chocBase(g, rng, FW * P, FH * P, 9);
+      chocSlabs(g, rng, P, 11.5, 20.2, FW);
+      for (let x = 1 + rng.range(0, 1); x < FW - 1; x += rng.range(0.4, 1.6)) { // drips off the kerb onto the road
+        const len = rng.range(0.15, 0.9), wd = rng.range(0.1, 0.28);
+        g.fillStyle = 'rgb(64,36,20)'; g.beginPath(); g.moveTo((x - wd / 2) * P, 20.45 * P); g.lineTo((x - wd / 2) * P, (20.5 + len) * P);
+        g.arc(x * P, (20.5 + len) * P, (wd / 2) * P, Math.PI, 0, true); g.lineTo((x + wd / 2) * P, 20.45 * P); g.fill();
+        g.fillStyle = 'rgba(230,180,130,0.4)'; g.fillRect((x - wd * 0.2) * P, 20.55 * P, wd * 0.12 * P, len * 0.8 * P);
+      }
+      g.fillStyle = 'rgb(64,36,20)'; g.fillRect(0, 20.4 * P, FW * P, 0.12 * P);
+      for (let k = 0; k < 7; k++) chocPuddle(g, rng, P, rng.range(4, FW - 4), rng.range(23, FH - 4), rng.range(0.5, 1.2), 'rgb(236,222,196)'); // white chocolate
+      for (let k = 0; k < 9; k++) { // white-chocolate swirls piped over the road
+        const cx = rng.range(4, FW - 4), cy = rng.range(22.5, FH - 4), R = rng.range(0.5, 1.3), a0 = rng.next() * 6.28;
+        for (const [st, wdt, off] of [['rgba(30,14,6,0.35)', 0.12, 0.03], ['rgb(238,226,204)', 0.09, 0]] as const) {
+          g.strokeStyle = st; g.lineWidth = wdt * P; g.lineCap = 'round'; g.beginPath();
+          for (let i = 0; i <= 60; i++) { const u = i / 60, a = a0 + u * Math.PI * 5, r = R * u; const px = (cx + off + Math.cos(a) * r) * P, py = (cy + off + Math.sin(a) * r * 0.8) * P; if (i) g.lineTo(px, py); else g.moveTo(px, py); }
+          g.stroke();
+        }
+      }
+      for (let k = 0; k < 4; k++) chocPuddle(g, rng, P, rng.range(3, FW - 3), rng.range(13, 19), rng.range(0.4, 0.8), 'rgb(150,96,56)'); // melted onto the slabs
+      for (let k = 0; k < 40; k++) sprinkles(g, rng, P, rng.range(2, FW - 2), rng.range(12.5, FH - 2), rng.range(0.3, 0.9), rng.int(8, 24));
+      sprinkles(g, rng, P, FW / 2, (12 + FH) / 2, 40, 500);
+      for (let k = 0; k < 30; k++) bunnyTrail(g, rng, P, rng.range(3, FW - 3), rng.range(13, FH - 3), rng.next() * Math.PI * 2, rng.int(8, 30), 0.35);
     });
     t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
     return t;
@@ -513,8 +642,9 @@ export function buildFloodlight(): THREE.Group {
 export function buildRoad(L: FloorLayout): THREE.Group {
   const g = new THREE.Group();
   const paint = (color: number) => new THREE.MeshStandardMaterial({ color, map: streetTex.paint(), transparent: true, roughness: 0.55, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 });
-  const white = paint(0xf0f0ea), yellow = paint(0xf2c318);
   const snow = currentHoliday() === 'xmas'; // Christmas: markings buried under the snow, kerb snowed over, puddles frozen, snowmen
+  const choc = currentHoliday() === 'easter'; // Easter: markings piped in icing, a chocolate kerb, white-chocolate puddles, eggs and chicks about
+  const white = paint(choc ? 0xfff4e6 : 0xf0f0ea), yellow = paint(choc ? 0xf6a8c4 : 0xf2c318);
   const strip = (x: number, y: number, w: number, d: number, m: THREE.Material) => { if (snow) return; const s = add(g, new THREE.PlaneGeometry(w, d), m, x, 0.012, y, -Math.PI / 2); s.renderOrder = 1; };
   const x0 = 1, x1 = FW - 1;
   // road runs east-west between the kerb (y=20) and the fence
@@ -526,9 +656,9 @@ export function buildRoad(L: FloorLayout): THREE.Group {
   for (let x = 28.4; x < 35.8; x += 0.9) strip(x, 23, 0.5, 3.4, white); // zebra crossing on the approach lane
   strip(26.8, 23, 0.3, 3.4, white); strip(37.2, 23, 0.3, 3.4, white); // stop lines
   // kerb and gutter along the sidewalk edge
-  const kerb = new THREE.MeshStandardMaterial({ color: 0x9d9a92, roughness: 0.9 });
+  const kerb = choc ? new THREE.MeshStandardMaterial({ color: 0x3e2414, roughness: 0.4 }) : new THREE.MeshStandardMaterial({ color: 0x9d9a92, roughness: 0.9 });
   add(g, new THREE.BoxGeometry(x1 - x0, 0.14, 0.3), kerb, (x0 + x1) / 2, 0.07, 20.05);
-  add(g, new THREE.PlaneGeometry(x1 - x0, 0.35), new THREE.MeshStandardMaterial({ color: snow ? 0x8a9098 : 0x3a3b3d, roughness: 0.8 }), (x0 + x1) / 2, 0.006, 20.4, -Math.PI / 2);
+  add(g, new THREE.PlaneGeometry(x1 - x0, 0.35), new THREE.MeshStandardMaterial({ color: snow ? 0x8a9098 : choc ? 0x46281a : 0x3a3b3d, roughness: choc ? 0.35 : 0.8 }), (x0 + x1) / 2, 0.006, 20.4, -Math.PI / 2);
   if (snow) { // snow banked along the kerb top and ploughed against it
     const drift = new THREE.MeshStandardMaterial({ color: 0xe8eef4, roughness: 0.95 });
     add(g, rbox(x1 - x0, 0.06, 0.34, 0.03), drift, (x0 + x1) / 2, 0.15, 20.05);
@@ -536,13 +666,16 @@ export function buildRoad(L: FloorLayout): THREE.Group {
     add(g, bank, drift, (x0 + x1) / 2, 0, 20.22);
   }
   if (snow) g.add(streetSnowmen(L));
+  if (choc) g.add(streetEaster(L));
   const rng = new Rng(L.seed);
   const grate = new THREE.MeshStandardMaterial({ map: streetTex.grate(), roughness: 0.6, metalness: 0.6 });
   for (let x = 6; x < x1 - 4; x += 14) add(g, new THREE.PlaneGeometry(0.9, 0.35), grate, x, 0.009, 20.4, -Math.PI / 2);
   const mh = new THREE.MeshStandardMaterial({ map: streetTex.manhole(), transparent: true, roughness: 0.5, metalness: 0.7 });
   for (const [x, y] of [[14, 30], [45, 36], [52, 27]]) add(g, new THREE.CircleGeometry(0.45, 24), mh, x, 0.01, y, -Math.PI / 2);
   // puddles: glossy, reflect the sky and the strobes
-  const puddle = snow
+  const puddle = choc
+    ? new THREE.MeshStandardMaterial({ color: 0xece0c8, roughness: 0.2, metalness: 0.05, transparent: true, opacity: 0.92, depthWrite: false }) // white chocolate
+    : snow
     ? new THREE.MeshStandardMaterial({ color: 0xa8bccc, roughness: 0.08, metalness: 0.4, transparent: true, opacity: 0.7, depthWrite: false }) // ice
     : new THREE.MeshStandardMaterial({ color: 0x1b2026, roughness: 0.04, metalness: 0.65, transparent: true, opacity: 0.75, depthWrite: false });
   for (let i = 0; i < 6; i++) {
@@ -560,6 +693,27 @@ export function buildRoad(L: FloorLayout): THREE.Group {
  * and clear of props, the approach lane, the start point, and every street officer, squad-mate and critter's spot or path.
  */
 function streetSnowmen(L: FloorLayout): THREE.Group {
+  const clear = openGround(L), b = new Builder();
+  const spots = ([[4, 16.2], [60, 16.2], [58.5, 41.5], [5.5, 30], [14, 42], [59, 30], [23, 15.4], [45, 31]] as const).filter(([x, y]) => clear(x, y)).slice(0, 2);
+  spots.forEach(([x, y], i) => snowman(b, x, 0, y, 2, i ? -0.5 : 0.6)); // turned a little toward the street centre
+  return partsGroup(b.p);
+}
+
+/**
+ * Easter: cosmetic clutches of painted eggs, carrots, chicks and grass tufts (no collision) on open street, wherever
+ * openGround allows (off the kerb), one merged mesh.
+ */
+function streetEaster(L: FloorLayout): THREE.Group {
+  const clear = openGround(L), rng = new Rng(L.seed ^ 0xea57e5), b = new Builder();
+  for (let n = 0, tries = 0; n < 30 && tries < 600; tries++) {
+    const x = rng.range(2.5, FW - 2.5), y = rng.range(12.8, FH - 2.8);
+    if (Math.abs(y - 20.1) > 0.6 && clear(x, y)) easterTreat(b, x, y, n, n++ * 7 + 3);
+  }
+  return partsGroup(b.p);
+}
+
+/** Open street at x, y: walkable and clear of props, the approach lane, the start point, and every street officer, squad-mate and critter's spot or path. */
+function openGround(L: FloorLayout) {
   const segDist = (x: number, y: number, ax: number, ay: number, bx: number, by: number) => {
     const dx = bx - ax, dy = by - ay, k = dx || dy ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy))) : 0;
     return Math.hypot(x - ax - dx * k, y - ay - dy * k);
@@ -568,10 +722,7 @@ function streetSnowmen(L: FloorLayout): THREE.Group {
     && L.tiles[Math.floor(y) * FW + Math.floor(x)] === T_FLOOR
     && L.props.every((p) => Math.abs(x - p.x) > p.w / 2 + 1.2 || Math.abs(y - p.y) > p.h / 2 + 1.2)
     && L.ambient.every((a) => ('x2' in a ? segDist(x, y, a.x, a.y, a.x2, a.y2) : Math.hypot(x - a.x, y - a.y)) > 2);
-  const b = new Builder();
-  const spots = ([[4, 16.2], [60, 16.2], [58.5, 41.5], [5.5, 30], [14, 42], [59, 30], [23, 15.4], [45, 31]] as const).filter(([x, y]) => clear(x, y)).slice(0, 2);
-  spots.forEach(([x, y], i) => snowman(b, x, 0, y, 2, i ? -0.5 : 0.6)); // turned a little toward the street centre
-  return partsGroup(b.p);
+  return clear;
 }
 
 /** Street props that get the detailed models (placed at the prop centre, oriented by footprint). */
@@ -580,21 +731,37 @@ export const STREET_KINDS = new Set(['policecar', 'swatvan', 'cone', 'sawhorse',
 /** Holiday dressing built with the prop Builder (vertex colours), as one group in the street model's local frame. */
 const holSolid = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, side: THREE.DoubleSide });
 const holEmit = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false });
-function partsGroup(parts: Parts): THREE.Group {
+function partsGroup(parts: Parts, shared = false): THREE.Group {
   const g = new THREE.Group(), s = merge(parts.solid), e = merge(parts.emit);
-  if (s) g.add(new THREE.Mesh(s, holSolid));
-  if (e) g.add(new THREE.Mesh(e, holEmit));
+  if (s) { s.userData.shared = shared; g.add(new THREE.Mesh(s, holSolid)); }
+  if (e) { e.userData.shared = shared; g.add(new THREE.Mesh(e, holEmit)); }
   return shadowed(g);
+}
+
+/** Holiday builds of street kinds, by holiday, kind and footprint: built once, then copies sharing the geometry (`shared`, so FloorView never disposes it). */
+const HOLIDAY_STREET = { halloween: [halloweenProp, halloweenDecor], xmas: [christmasProp, christmasDecor], easter: [easterProp, easterDecor] } as const;
+const holBuilt = new Map<string, { replaced: boolean; g: THREE.Group }>();
+function holidayStreet(p: Prop) {
+  const hol = currentHoliday();
+  if (!hol) return null;
+  const key = `${hol}|${p.kind}|${p.w}|${p.h}`;
+  let c = holBuilt.get(key);
+  if (!c) {
+    const b = new Builder(), [prop, decor] = HOLIDAY_STREET[hol];
+    const replaced = prop(b, p.kind, p.w - 0.1, p.h - 0.1, p.w, p.h);
+    if (!replaced) decor(b, p.kind, p.w - 0.1, p.h - 0.1, p.w, p.h);
+    holBuilt.set(key, (c = { replaced, g: partsGroup(b.p, true) }));
+  }
+  return { replaced: c.replaced, g: c.g.clone() };
 }
 
 export function buildStreetProp(p: Prop): THREE.Object3D | null {
   const vert = p.h > p.w;
   let o: THREE.Object3D;
-  // holidays replace (Halloween: cone; Christmas: cone and the vehicles, as sleighs) or dress the model
-  const hol = currentHoliday(), xmas = hol === 'xmas';
-  const hb = hol === 'halloween' || xmas ? new Builder() : null;
-  const replaced = !!hb && (xmas ? christmasProp : halloweenProp)(hb, p.kind, p.w - 0.1, p.h - 0.1, p.w, p.h);
-  if (replaced) { o = partsGroup(hb!.p); if (p.id % 2 && (p.kind === 'policecar' || p.kind === 'swatvan')) o.rotation.y = Math.PI; } // sleighs face either way
+  // holidays replace (Halloween: cone; Christmas: cone and the vehicles, as sleighs; Easter: cone and the vehicles,
+  // as baskets) or dress the model
+  const hol = holidayStreet(p), replaced = !!hol?.replaced;
+  if (replaced) { o = hol!.g; if (p.id % 2 && (p.kind === 'policecar' || p.kind === 'swatvan')) o.rotation.y = Math.PI; } // sleighs face either way
   else switch (p.kind) {
     case 'policecar': o = buildPoliceCar(); if (vert) o.rotation.y = -Math.PI / 2; if (p.id % 2) o.rotation.y += Math.PI; break;
     case 'swatvan': o = buildSwatTruck(); if (vert) o.rotation.y = -Math.PI / 2; if (p.id % 2) o.rotation.y += Math.PI; break;
@@ -606,7 +773,7 @@ export function buildStreetProp(p: Prop): THREE.Object3D | null {
     case 'floodlight': o = buildFloodlight(); o.rotation.y = (p.id % 4) * (Math.PI / 2); break;
     default: return null;
   }
-  if (hb && !replaced) { (xmas ? christmasDecor : halloweenDecor)(hb, p.kind, p.w - 0.1, p.h - 0.1, p.w, p.h); o.add(partsGroup(hb.p)); }
+  if (hol && !replaced) o.add(hol.g);
   o.position.set(p.x, 0, p.y);
   return o;
 }
@@ -799,6 +966,22 @@ export function buildFacade(applyCut: <T extends THREE.Material>(m: T, keep?: nu
     for (const x of [8, 20, 44, 56]) add(g, rbox(2.16, 0.07, 0.86, 0.03), snow, x, PODIUM + 1.22, SZ + 0.6);
     add(g, rbox(6.36, 0.07, 2.76, 0.03), snow, 32, 4.46, FRONT + 1.4);
     for (let x = 0; x < 64; x += 6) { const bay0 = x + 0.55, bay1 = x + 5.45; if (!(bay1 > 28.5 && bay0 < 35.5)) add(g, rbox(bay1 - bay0 + 0.18, 0.05, 0.28, 0.02), snow, (bay0 + bay1) / 2, 0.57, FRONT - 0.05); }
+  }
+  if (currentHoliday() === 'easter') {
+    // chocolate poured over the cornice and running down its face, pastel bunting along the bays, eggs on the canopy
+    const b = new Builder(), rng = new Rng(7);
+    b.rbox(64.3, 0.07, 0.96, 0.03, 32, PODIUM + 0.14, FRONT + 0.1, 0x5a3420);
+    for (let x = 0.3; x < 64; x += rng.range(0.35, 1.3)) {
+      const len = x > 28.5 && x < 35.5 ? rng.range(0.08, 0.18) : rng.range(0.15, 0.6); // short over the sign
+      b.geo(new THREE.CapsuleGeometry(0.05, len, 3, 6), 0x5a3420, x, PODIUM + 0.05 - len / 2, FRONT + 0.57, 0, 0, 0, 'solid', 1, 1, 0.6);
+    }
+    for (let x = 0; x < 64; x += 6) {
+      const bay0 = x + 0.55, bay1 = x + 5.45;
+      if (!(bay1 > 28.5 && bay0 < 35.5)) at(b, (bay0 + bay1) / 2, 6.0, FRONT + 0.02, 0, 2, () => easterBunting(b, (bay1 - bay0) / 2 - 0.1, 0.12));
+    }
+    for (const [x, k] of [[30.2, 0], [32, 4], [33.8, 1]] as const) easterEgg(b, x, 4.43, FRONT + 1.4, 0.32, k, x);
+    const choc = applyCut(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.4, side: THREE.DoubleSide }), 1.2);
+    g.add(new THREE.Mesh(merge(b.p.solid)!, choc));
   }
   return shadowed(g);
 }

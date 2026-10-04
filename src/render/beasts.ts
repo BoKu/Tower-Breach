@@ -7,6 +7,8 @@ import { currentHoliday } from '../config/holiday';
  * quadcopter patrol drones (spinning rotors, banking flight, independent gun turret, crash on death).
  * Halloween dresses drones as giant bats and the warden as a club-wielding ogre (both melee only).
  * Christmas turns dogs into hopping snowmen and gives drones antlers and a red nose, the warden a Santa hat and tinsel.
+ * Easter turns dogs into hopping chocolate bunnies (cyber: a gold-foil-wrapped one with a glowing eye) and gives
+ * drones and the warden pastel bunny ears (the warden a big bow too).
  */
 const furMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88, metalness: 0.02 });
 const metalMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.32, metalness: 0.8 });
@@ -23,6 +25,15 @@ function part(b: Builder, mat: THREE.Material): THREE.Group {
   return g;
 }
 const ell = (r: number) => new THREE.SphereGeometry(r, 14, 10);
+const chocMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.38, metalness: 0.05 }); // glossy chocolate
+
+/** Easter: two upright pastel bunny ears (pink insides) on a part's top, `s` = size. */
+function bunnyEars(b: Builder, color: number, x: number, y: number, z: number, s: number) {
+  for (const sx of [-1, 1]) {
+    b.geo(ell(0.05 * s), color, x + sx * 0.07 * s, y + 0.14 * s, z, -0.15, 0, -sx * 0.2, 'solid', 0.8, 3, 0.4)
+      .geo(ell(0.034 * s), 0xf0a0b4, x + sx * 0.07 * s, y + 0.13 * s, z + 0.012 * s, -0.15, 0, -sx * 0.2, 'solid', 0.8, 3, 0.3);
+  }
+}
 
 export interface BeastInput { dt: number; t: number; x: number; y: number; facing: number; state: string; ground: number; alert: boolean; targetX?: number; targetY?: number; vel?: { vx: number; vy: number } }
 
@@ -39,11 +50,12 @@ export class DogRig {
   private eye!: THREE.Object3D;
   private phase = 0; private lastX = NaN; private lastY = NaN; private speed = 0;
   private biteT = 0; private deadK = 0; private sleepK = 0;
-  private snowman = false;
+  private snowman = false; // an upright hopper (Christmas snowman, Easter bunny): updateSnowman drives it
 
   constructor(private cyber: boolean) {
     if (currentHoliday() === 'halloween') { this.buildSkeleton(); return; }
     if (currentHoliday() === 'xmas') { this.buildSnowman(); return; }
+    if (currentHoliday() === 'easter') { this.buildBunny(); return; }
     const back = cyber ? 0x2a2826 : 0x1f1813, tan = cyber ? 0x4a4642 : 0x8a5a30, metal = 0x7d858c, dark = 0x1a1a1c;
     this.root.add(this.body);
     this.body.position.y = 0.58;
@@ -274,6 +286,82 @@ export class DogRig {
     this.root.scale.setScalar(cyber ? 1.15 : 1.05);
   }
 
+  /**
+   * Easter: a big chocolate bunny sitting up on the snowman's joints (haunches and belly on the body, head on the neck,
+   * front hips = paws, tail = the ears so they flop back on each hop; hind legs empty). A pastel ribbon bow at the neck,
+   * icing eyes, buck teeth on the jaw (a nibbling headbutt). Cyber: wrapped in gold foil, one ear bitten off, a red eye.
+   */
+  private buildBunny() {
+    const cyber = this.cyber, choc = cyber ? 0xd8a838 : 0x6a3e20, choc2 = cyber ? 0xb88a28 : 0x54301a, cream = 0xf2e6cc, metal = 0x7d858c;
+    const ribbon = cyber ? 0xc41e4a : 0xf4b6c8, mat = cyber ? metalMat : chocMat;
+    this.snowman = true;
+    this.root.add(this.body);
+    this.body.position.y = 0.58;
+    // haunches on the ground, a round belly (white-chocolate tummy), big flat hind feet poking out in front
+    const tb = new Builder()
+      .geo(ell(0.24), choc, 0, -0.33, -0.03, 0, 0, 0, 'solid', 1, 0.95, 1.05)
+      .geo(ell(0.18), choc, 0, -0.02, 0.0, 0, 0, 0, 'solid', 0.95, 1.05, 0.95)
+      .geo(ell(0.12), cyber ? 0xf0f0f4 : cream, 0, -0.06, 0.08, 0, 0, 0, 'solid', 1, 1.3, 0.7);
+    for (const sx of [-1, 1]) tb.geo(ell(0.07), choc2, sx * 0.12, -0.53, 0.15, 0, 0, 0, 'solid', 0.8, 0.45, 1.6);
+    tb.geo(ell(0.06), cyber ? 0xf0f0f4 : cream, 0, -0.3, -0.27); // cotton tail
+    if (cyber) for (const y of [-0.42, -0.2]) tb.geo(new THREE.TorusGeometry(0.2, 0.012, 4, 20), 0xc41e4a, 0, y, -0.02, Math.PI / 2); // foil stripes
+    this.body.add(part(tb, mat));
+    if (cyber) this.body.add(part(new Builder().rbox(0.05, 0.05, 0.015, 0.01, 0.07, 0.04, 0.165, 0xff2020, 0, 0, 0, 'emit'), furMat)); // core through a foil tear
+    this.body.add(this.haunch); // unused, kept so update() can drive it
+    // neck = the ribbon with a bow in front
+    this.neck.position.set(0, 0.16, 0);
+    this.body.add(this.neck);
+    this.neck.add(part(new Builder().geo(new THREE.TorusGeometry(0.1, 0.022, 6, 16), ribbon, 0, 0, 0, Math.PI / 2)
+      .geo(ell(0.04), ribbon, -0.045, 0.0, 0.11, 0, 0, 0.5, 'solid', 1.3, 0.8, 0.5).geo(ell(0.04), ribbon, 0.045, 0.0, 0.11, 0, 0, -0.5, 'solid', 1.3, 0.8, 0.5)
+      .geo(ell(0.02), ribbon, 0, 0, 0.12), furMat));
+    this.head.position.set(0, 0.12, 0.01);
+    this.neck.add(this.head);
+    const hb = new Builder()
+      .geo(ell(0.13), choc, 0, 0, 0, 0, 0, 0, 'solid', 1, 0.95, 1)
+      .geo(ell(0.045), cyber ? 0xf0f0f4 : cream, -0.035, -0.04, 0.1).geo(ell(0.045), cyber ? 0xf0f0f4 : cream, 0.035, -0.04, 0.1); // cheek puffs
+    this.head.add(part(hb, mat));
+    this.head.add(part(new Builder().geo(ell(0.022), 0xf08aa0, 0, -0.01, 0.13, 0, 0, 0, 'solid', 1.2, 0.8, 0.8), furMat)); // pink nose
+    // ears: tall with pink icing inside; the cyber bunny's left one is a bitten-off stub
+    for (const sx of [-1, 1]) {
+      const e = new THREE.Group();
+      e.position.set(sx * 0.06, 0.09, -0.02);
+      const splay = new THREE.Group(); // update() swings the ear group itself; the outward splay rides inside it
+      splay.rotation.z = -sx * 0.18;
+      e.add(splay);
+      const stub = cyber && sx < 0, L = stub ? 0.06 : 0.17;
+      const eb = new Builder().geo(ell(0.05), choc, 0, L, 0, 0, 0, 0, 'solid', 0.8, L / 0.05, 0.45);
+      if (!stub) eb.geo(ell(0.032), cyber ? 0xc41e4a : 0xf4a6b8, 0, L, 0.017, 0, 0, 0, 'solid', 0.8, L / 0.04, 0.3);
+      else eb.geo(ell(0.04), 0x5a3218, 0, L * 1.9, 0, 0, 0, 0, 'solid', 1, 0.3, 0.9); // the bite shows the chocolate under the foil
+      splay.add(part(eb, mat));
+      this.head.add(e);
+      this.tail.push(e);
+    }
+    const eb = new Builder();
+    if (cyber) eb.geo(ell(0.024), 0xff1a1a, -0.045, 0.03, 0.105, 0, 0, 0, 'emit').rbox(0.07, 0.06, 0.03, 0.012, -0.045, 0.03, 0.095, metal);
+    else eb.geo(ell(0.026), 0xfaf6ee, -0.045, 0.03, 0.105).geo(ell(0.012), 0x1a0e08, -0.045, 0.034, 0.128);
+    eb.geo(ell(0.026), 0xfaf6ee, 0.045, 0.03, 0.105).geo(ell(0.012), 0x1a0e08, 0.045, 0.034, 0.128); // white icing eyes, dark pupils
+    this.eye = part(eb, furMat);
+    this.head.add(this.eye);
+    // jaw: chin with two buck teeth (drops open on the nibble)
+    this.jaw.position.set(0, -0.06, 0.08);
+    this.head.add(this.jaw);
+    this.jaw.add(part(new Builder().geo(ell(0.04), cyber ? 0xf0f0f4 : cream, 0, -0.012, 0.02, 0, 0, 0, 'solid', 1.1, 0.7, 0.9).rbox(0.022, 0.03, 0.01, 0.004, -0.012, 0.01, 0.055, 0xfaf8f2).rbox(0.022, 0.03, 0.01, 0.004, 0.012, 0.01, 0.055, 0xfaf8f2), furMat));
+    // front paws on the front "hips"; the hind legs are empty joints
+    const legDefs: [number, number, boolean][] = [[-0.11, 0.12, true], [0.11, 0.12, true], [-0.09, -0.26, false], [0.09, -0.26, false]];
+    legDefs.forEach(([x, z, front], i) => {
+      const hip = new THREE.Group(), knee = new THREE.Group(), paw = new THREE.Group();
+      hip.position.set(x, front ? 0.06 : -0.05, z);
+      this.body.add(hip);
+      hip.add(knee); knee.add(paw);
+      if (front) {
+        const metalArm = cyber && i === 1;
+        hip.add(part(new Builder().limb(0.04, 0.16, 0, 0, 0.02, metalArm ? metal : choc, -0.6).geo(ell(0.045), metalArm ? metal : choc2, 0, -0.13, 0.11), metalArm ? metalMat : mat));
+      }
+      this.legs.push({ hip, knee, paw, front, side: x < 0 ? -1 : 1 });
+    });
+    this.root.scale.setScalar(cyber ? 1.15 : 1.05);
+  }
+
   onBite() { this.biteT = 0.28; }
 
   update(r: BeastInput) {
@@ -432,6 +520,13 @@ export class DroneRig {
       }
       ab.geo(ell(0.04), 0xff2020, 0, 0.0, 0.26, 0, 0, 0, 'emit');
       this.frame.add(part(ab, furMat));
+    }
+    if (currentHoliday() === 'easter') {
+      // Easter: pastel bunny ears on the top shell and a fluffy white tail on the battery pack
+      const eb = new Builder();
+      bunnyEars(eb, 0xc8b4ec, 0, 0.1, 0.02, 1);
+      eb.geo(ell(0.05), 0xf6f4f0, 0, 0.06, -0.27);
+      this.frame.add(part(eb, furMat));
     }
     this.root.scale.setScalar(1.35);
   }
@@ -666,6 +761,15 @@ export class WardenRig {
         tb.geo(new THREE.SphereGeometry(0.03, 6, 4), [0xe0b040, 0x1e8a3a, 0xc41e24, 0xd8dce4][i % 4], x, y, 0.45 + Math.sin(u * Math.PI) * 0.02);
       }
       this.torso.add(part(tb, metalMat));
+    }
+    if (currentHoliday() === 'easter') {
+      // Easter: huge pastel bunny ears on the sensor head and a big pink bow on the chest plate
+      const eb = new Builder();
+      bunnyEars(eb, 0xa8d4f0, 0, 0.22, -0.02, 2.4);
+      this.head.add(part(eb, furMat));
+      const bow = 0xf4b6c8;
+      this.torso.add(part(new Builder().geo(ell(0.1), bow, -0.12, 0.74, 0.47, 0, 0, 0.5, 'solid', 1.4, 0.8, 0.4).geo(ell(0.1), bow, 0.12, 0.74, 0.47, 0, 0, -0.5, 'solid', 1.4, 0.8, 0.4)
+        .geo(ell(0.05), bow, 0, 0.74, 0.5).rbox(0.06, 0.2, 0.02, 0.01, -0.06, 0.6, 0.47, bow, 0, 0, -0.3).rbox(0.06, 0.2, 0.02, 0.01, 0.06, 0.6, 0.47, bow, 0, 0, 0.3), furMat));
     }
   }
 

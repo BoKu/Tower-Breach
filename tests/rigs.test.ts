@@ -2,6 +2,7 @@ import { test, expect } from 'vitest';
 import * as THREE from 'three';
 import { OperatorRig } from '../src/render/operator';
 import { Pigeon } from '../src/render/critters';
+import { setHolidayOverride } from '../src/config/holiday';
 
 // Rigs are built once per look and copied (cloneRig): a copy must own its bones and share its geometry.
 test('rig copies own their bones and share geometry', () => {
@@ -20,4 +21,19 @@ test('rig copies own their bones and share geometry', () => {
   expect(a.root.position.x).toBe(0);
   expect((a as any).gunHolder.children.length).toBe(0);
   expect(Pigeon.make(1).root).not.toBe(Pigeon.make(5).root);
+});
+
+// Holiday looks are part of the template key: an Easter dentist must not leak into normal play (or back).
+test('Easter rigs are cached apart from the everyday look', () => {
+  const geoCount = (r: { root: THREE.Object3D }) => { let n = 0; r.root.traverse((x) => { if ((x as THREE.Mesh).geometry) n++; }); return n; };
+  const firstGeo = (r: OperatorRig) => { let g: THREE.BufferGeometry | undefined; (r as any).head.traverse((x: any) => { if (!g && x.geometry) g = x.geometry; }); return g; };
+  const prev = setHolidayOverride(null);
+  const plain = OperatorRig.make(0xff2020, { outfit: 'cyborg', skin: 0x8a5a3c });
+  setHolidayOverride('easter');
+  const easter = OperatorRig.make(0xff2020, { outfit: 'cyborg', skin: 0x8a5a3c });
+  expect(firstGeo(easter)).not.toBe(firstGeo(plain));
+  expect(geoCount(Pigeon.make(2))).toBeGreaterThan(0);
+  setHolidayOverride(null);
+  expect(firstGeo(OperatorRig.make(0xff2020, { outfit: 'cyborg', skin: 0x8a5a3c }))).toBe(firstGeo(plain));
+  setHolidayOverride(prev);
 });

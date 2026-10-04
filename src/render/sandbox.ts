@@ -85,14 +85,14 @@ const POLICE_POSES: Pose[] = [
 ];
 const ENEMY_POSES = FULL_POSES.filter((p) => ['idle', 'walk', 'run', 'sprint', 'strafe L', 'backpedal', 'crouch', 'aim', 'fire', 'reload', 'hurt', 'dead', 'turntable'].includes(p.name));
 
-// xmas: the row title on Christmas, when the same outfits render as Santa-suit police and armed elves
-const OUTFITS: { outfit: Outfit; name: string; xmas?: string; color: number; gun: GunKind | null; poses: Pose[] }[] = [
+// xmas / easter: the row title on Christmas (Santa-suit police, armed elves) and Easter (bunny-eared police, armed dentists)
+const OUTFITS: { outfit: Outfit; name: string; xmas?: string; easter?: string; color: number; gun: GunKind | null; poses: Pose[] }[] = [
   { outfit: 'operator', name: 'Operator', color: 0x39d0ff, gun: 'rifle', poses: [...FULL_POSES, ...KNIFE_POSES] },
-  { outfit: 'police', name: 'Police', xmas: 'Police (Santa)', color: 0x3d8bff, gun: null, poses: POLICE_POSES },
-  { outfit: 'loyalist', name: 'Loyalist', xmas: 'Elf loyalist', color: 0xff4040, gun: 'smg', poses: ENEMY_POSES },
-  { outfit: 'loyalistElite', name: 'Loyalist elite', xmas: 'Elf loyalist elite', color: 0xff4040, gun: 'shotgun', poses: ENEMY_POSES },
-  { outfit: 'cyborg', name: 'Cyborg', xmas: 'Elf cyborg', color: 0xff4040, gun: 'rifle', poses: ENEMY_POSES },
-  { outfit: 'cyborgElite', name: 'Cyborg elite', xmas: 'Elf cyborg elite', color: 0xff4040, gun: 'lmg', poses: ENEMY_POSES },
+  { outfit: 'police', name: 'Police', xmas: 'Police (Santa)', easter: 'Police (Easter)', color: 0x3d8bff, gun: null, poses: POLICE_POSES },
+  { outfit: 'loyalist', name: 'Loyalist', xmas: 'Elf loyalist', easter: 'Dentist', color: 0xff4040, gun: 'smg', poses: ENEMY_POSES },
+  { outfit: 'loyalistElite', name: 'Loyalist elite', xmas: 'Elf loyalist elite', easter: 'Senior dentist', color: 0xff4040, gun: 'shotgun', poses: ENEMY_POSES },
+  { outfit: 'cyborg', name: 'Cyborg', xmas: 'Elf cyborg', easter: 'Cyborg dentist', color: 0xff4040, gun: 'rifle', poses: ENEMY_POSES },
+  { outfit: 'cyborgElite', name: 'Cyborg elite', xmas: 'Elf cyborg elite', easter: 'Senior cyborg dentist', color: 0xff4040, gun: 'lmg', poses: ENEMY_POSES },
 ];
 // Halloween undead: unarmed, arms-out shamble and claw swipes
 const ZOMBIE_POSES: Pose[] = [
@@ -124,12 +124,12 @@ export class Showcase {
     const wrap = (step: number, rowH = 2.1) => { if (x > X1) { x = X0 + 2.8; y += rowH; } const at = x; x += step; return at; };
     const row = (title: string, gap = 2.1) => { y += gap; x = X0 + 2.8; this.heading(title, X0 - 0.2, y + 0.3); };
     y -= 2.1;
-    const xmas = currentHoliday() === 'xmas';
+    const xmas = currentHoliday() === 'xmas', easter = currentHoliday() === 'easter';
     for (const o of OUTFITS) {
-      row(xmas ? o.xmas ?? o.name : o.name);
+      row(xmas ? o.xmas ?? o.name : easter ? o.easter ?? o.name : o.name);
       for (const pose of o.poses) this.character(o.outfit, o.color, o.gun, pose, wrap(DX), y);
-      // Christmas: a few street-cast looks too (the whiskered ones wear the white Santa beard)
-      if (xmas && o.outfit === 'police') for (const [name, npc] of [['chief', -1], ['beard', 0], ['no beard', 3], ['glasses', 4]] as [string, number][]) this.character('police', o.color, null, { name, set: (r) => { r.pose = 'fold'; } }, wrap(DX), y, false, lookFor(npc));
+      // Christmas / Easter: a few street-cast looks too (Santa beards on the whiskered ones; the Chief's big bunny ears)
+      if ((xmas || easter) && o.outfit === 'police') for (const [name, npc] of [['chief', -1], ['beard', 0], ['no beard', 3], ['glasses', 4]] as [string, number][]) this.character('police', o.color, null, { name, set: (r) => { r.pose = 'fold'; } }, wrap(DX), y, false, lookFor(npc));
     }
     if (currentHoliday() === 'halloween') for (const z of ZOMBIES) {
       row(z.name);
@@ -145,7 +145,7 @@ export class Showcase {
       this.character('operator', 0x39d0ff, 'rifle', { name: 'torch on', set: (r, _t, _dt, rig) => { rig.torchOn = true; r.aiming = true; } }, wrap(DX), y);
     }
     // ---- dogs
-    row(xmas ? 'Snowmen' : 'Dogs', 2.3);
+    row(xmas ? 'Snowmen' : easter ? 'Chocolate bunnies' : 'Dogs', 2.3);
     const DOG: [string, Partial<BeastInput> & { bite?: boolean; speed?: number; spin?: boolean }][] = [
       ['idle', {}], ['walk', { speed: 1.2 }], ['trot', { speed: 2.8 }], ['gallop', { speed: 5 }], ['alert', { alert: true, state: 'alert' }],
       ['bite', { alert: true, state: 'alert', bite: true }], ['sleep', { state: 'sleep' }], ['dead', { state: 'dead' }], ['turntable', { spin: true, speed: 1.2 }],
@@ -201,7 +201,7 @@ export class Showcase {
       ['pigeon landing', (p, t) => p.air(t, 0.8, -0.6, 1)],
     ];
     BIRD.forEach(([name0, fn], i) => {
-      const name = xmas ? name0.replace('pigeon', 'dove') : name0;
+      const name = xmas ? name0.replace('pigeon', 'dove') : easter ? name0.replace('pigeon', 'chick') : name0;
       const bx = wrap(1.3), by = y;
       const p = new Pigeon(i);
       this.add(p.root);
@@ -216,7 +216,7 @@ export class Showcase {
       this.add(r.root);
       r.root.position.set(bx, 0, by);
       r.root.scale.setScalar(2);
-      this.tag(xmas ? name.replace('rat', 'rabbit').replace('run', 'hop').replace('rear', 'sit up') : name, bx, by + 0.6, 1.2);
+      this.tag(xmas || easter ? name.replace('rat', xmas ? 'rabbit' : 'bunny').replace('run', 'hop').replace('rear', 'sit up') : name, bx, by + 0.6, 1.2);
       this.exhibits.push((t, dt) => r.update(t, dt, spd, sniff, rear));
     }
     // ---- weapon and gear models, on slowly turning pedestals

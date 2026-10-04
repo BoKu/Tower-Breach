@@ -30,6 +30,7 @@ import { weapon } from '../config/weapons';
 import type { ViewSource } from './view';
 import { currentHoliday } from '../config/holiday';
 import { Snowfall } from './christmas';
+import { Petals } from './easter';
 import { perfBegin, perfTime, perfWatchGL, perfIdle } from '../core/perf';
 import type { SimEvent, PlayerState } from '../sim/state';
 
@@ -68,6 +69,8 @@ export class GameRenderer {
   private camTarget = new THREE.Vector3(32, 0, 40);
   /** Christmas street snowfall (built on first use) */
   private snowfall: Snowfall | null = null;
+  /** Easter street petals (built on first use) */
+  private petals: Petals | null = null;
   zoom = 1;
   /** virtual ceiling-lamp height; strength is scaled to keep floor illuminance equal to a 2.3 m lamp (decay 1.6) */
   lampY = 3.4;
@@ -293,7 +296,24 @@ export class GameRenderer {
       this.snowfall.points.visible = snowy;
       if (snowy) this.snowfall.update(dt, this.camTarget, this.renderer.domElement.height / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2)));
     }
-    if (snowy) {
+    const spring = fs.floor === 0 && currentHoliday() === 'easter';
+    if (spring && !this.petals) { this.petals = new Petals(); this.scene.add(this.petals.points); }
+    if (this.petals) {
+      this.petals.points.visible = spring;
+      if (spring) this.petals.update(dt, this.camTarget, this.renderer.domElement.height / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2)));
+    }
+    if (spring) {
+      // Easter street: bright, warm spring sunshine under a clear pale sky
+      this.hemi.color.setHex(0xe4eefc); this.hemi.groundColor.setHex(0x6a5038);
+      this.hemi.intensity = 1.8;
+      this.moon.color.setHex(0xfff0d6);
+      this.moon.intensity = 2.4;
+      this.moon.position.set(focus.x + 18, 40, focus.y + 26); this.moon.target.position.set(focus.x, 0, focus.y);
+      this.moon.castShadow = QUALITY[this.quality].shadows;
+      this.renderer.setClearColor(0xb8d6ee);
+      fog.color.setHex(0xb8d6ee); fog.density = 0.005;
+      if (this.bloom) this.bloom.threshold = 0.97;
+    } else if (snowy) {
       // Christmas street: soft, cold overcast winter daylight over the snow
       this.hemi.color.setHex(0xd8e2ee); this.hemi.groundColor.setHex(0x8a929e);
       this.hemi.intensity = 1.5;
