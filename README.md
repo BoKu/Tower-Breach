@@ -68,7 +68,7 @@ You get one life. Each run is a new tower. You can go in alone or with up to fou
     <td width="50%"><img src="docs/screenshots/dark-floor.jpg" alt="Dark floor"><br><sub><b>Floor 160.</b> A cyborg in the torch beam. Darkness here is 39%.</sub></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/hacking.jpg" alt="Hacking"><br><sub><b>Uplink.</b> Work out the password from the leaked memory dump before the trace reaches 100%.</sub></td>
+    <td><img src="docs/screenshots/hacking.jpg" alt="Hacking"><br><sub><b>Uplink.</b> Beat two puzzles before the trace reaches 100%. Here: route power to the bulb on a lighting terminal.</sub></td>
     <td><img src="docs/screenshots/armory.jpg" alt="Armory"><br><sub><b>The armory.</b> Your budget depends on the difficulty.</sub></td>
   </tr>
   <tr>
