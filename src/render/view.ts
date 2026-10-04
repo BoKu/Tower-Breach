@@ -1,5 +1,5 @@
 import type { PlayerState, FloorState } from '../sim/state';
-import type { StairCondition } from '../gen/building';
+import type { StairCondition, BuildingPlan } from '../gen/building';
 
 /** What the presentation layer needs. Implemented by Sim (local/host) and by the network client mirror. */
 export interface ViewSource {
@@ -7,7 +7,7 @@ export interface ViewSource {
   players: PlayerState[];
   floorState(f: number): FloorState;
   flightCondition(f: number, i: number): StairCondition;
-  plan: { elevator(f: number, j: number): { working: boolean; destinations: number[] } };
+  plan: BuildingPlan;
   objective: { uploadStarted: boolean; uploadT: number; done: boolean };
   cfg: { mode: 'single' | 'coop'; difficulty: string; seed: number };
 }

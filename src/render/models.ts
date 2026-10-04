@@ -97,6 +97,31 @@ export function merge(list: THREE.BufferGeometry[]): THREE.BufferGeometry | null
   return mergeGeometries(list, false);
 }
 
+/**
+ * A copy of a built rig (OperatorRig, DogRig, ...) that shares its geometry and materials: the scene graph is cloned
+ * and every field pointing into it (bones, groups, meshes; also inside plain objects and arrays) is re-pointed at the
+ * copy; vectors are copied. Building a rig from primitives takes 5-15 ms, a copy well under one. The caller clones
+ * any material it changes per instance.
+ */
+export function cloneRig<T extends { root: THREE.Object3D }>(proto: T): T {
+  const root = proto.root.clone();
+  const map = new Map<THREE.Object3D, THREE.Object3D>();
+  const a: THREE.Object3D[] = [];
+  proto.root.traverse((o) => a.push(o));
+  let i = 0;
+  root.traverse((o) => map.set(a[i++], o));
+  const remap = (v: any): any => {
+    if (v instanceof THREE.Object3D) return map.get(v) ?? v;
+    if (v instanceof THREE.Vector3 || v instanceof THREE.Vector2 || v instanceof THREE.Euler || v instanceof THREE.Quaternion) return v.clone();
+    if (Array.isArray(v)) return v.map(remap);
+    if (v && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype) return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, remap(x)]));
+    return v;
+  };
+  const r = Object.create(Object.getPrototypeOf(proto));
+  for (const [k, v] of Object.entries(proto)) r[k] = remap(v);
+  return r;
+}
+
 /** Rotate a Parts set about Y and translate into world space. */
 export function place(parts: Parts, x: number, z: number, ry: number, into: Parts) {
   tmpE.set(0, ry, 0);

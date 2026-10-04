@@ -154,6 +154,9 @@ describe('multiplayer (host-authoritative over relay)', () => {
     const sim = host.sim!;
     const oldId = clients[0].id;
     sim.player(oldId)!.items.medkit = 3;
+    sim.travel(sim.player(1)!, 1, 'start', 'test'); // the host enters the tower: the squad locks
+    await pump(host, clients, 0.1);
+    expect(host.locked).toBe(true);
     clients[0].close();
     await until(() => sim.players.find((p) => p.name === 'C0')!.connected === false);
     const again = new ClientSession();
@@ -173,6 +176,66 @@ describe('multiplayer (host-authoritative over relay)', () => {
     await until(() => aborted !== '');
     expect(aborted).toMatch(/host|lost/i);
     again.close();
+  });
+
+  it('join window (relay host): late joiner deploys on the street, early leaver dropped, locked once in the tower', async () => {
+    const host = new HostSession();
+    const code = await host.open(URL, 'Alpha');
+    host.goShop();
+    host.setHostLoadout(emptyLoadout());
+    expect(host.stage).toBe('game');
+    const sim = host.sim!;
+    const late = new ClientSession();
+    await late.join(URL, code, 'Late');
+    await until(() => late.lobby?.late === true && late.lobby.stage === 'shop');
+    late.ready({ ...emptyLoadout(), primary: 'sr4' });
+    await until(() => !!late.view && sim.players.length === 2);
+    await pump(host, [late], 0.2);
+    expect(late.view!.players.map((p) => p.name).sort()).toEqual(['Alpha', 'Late']);
+    expect(sim.player(late.id)!.weapons.primary?.id).toBe('sr4');
+    late.close();
+    await until(() => sim.players.length === 1);
+    sim.travel(sim.player(1)!, 1, 'start', 'test');
+    await pump(host, [], 0.1);
+    expect(host.locked).toBe(true);
+    // the relay admits first and the host kicks: the reason arrives as a disconnect
+    const stranger = new ClientSession();
+    let why = '';
+    stranger.onDisconnect = (r) => (why = r);
+    await stranger.join(URL, code, 'Late');
+    await until(() => why !== '');
+    expect(why).toMatch(/entered the tower/i);
+    stranger.close(); host.close();
+  });
+
+  it('proximity voice through the relay: the host filters by floor and distance', async () => {
+    const { host, clients } = await squad(2);
+    host.goShop();
+    await until(() => clients.every((c) => c.lobby?.stage === 'shop'));
+    host.setHostLoadout(emptyLoadout());
+    for (const c of clients) c.ready(emptyLoadout());
+    await until(() => clients.every((c) => !!c.view));
+    const [c0, c1] = clients;
+    const heard = { host: [] as number[], c0: [] as number[], c1: [] as number[] };
+    host.onVoice = (from) => heard.host.push(from);
+    c0.onVoice = (from) => heard.c0.push(from);
+    c1.onVoice = (from) => heard.c1.push(from);
+    host.voiceListeners.add(1);
+    c0.setVoice(true); c1.setVoice(true);
+    await until(() => host.voiceListeners.size === 3);
+    const sim = host.sim!;
+    const [h, p0, p1] = [sim.player(1)!, sim.player(c0.id)!, sim.player(c1.id)!];
+    h.x = 30; h.y = 30; p0.x = 32; p0.y = 30; p1.x = 45; p1.y = 30;
+    c0.sendVoice(new Uint8Array([7, 7]));
+    host.voiceFrom(1, new Uint8Array([1]));
+    await until(() => heard.host.length === 1 && heard.c0.length === 1);
+    await wait(100);
+    expect(heard).toEqual({ host: [c0.id], c0: [1], c1: [] });
+    p1.x = 31; // walks over: hears both
+    c0.sendVoice(new Uint8Array([7]));
+    await until(() => heard.c1.length === 1);
+    expect(heard.c1).toEqual([c0.id]);
+    host.close(); clients.forEach((c) => c.close());
   });
 
   it('snapshot bandwidth stays reasonable', async () => {

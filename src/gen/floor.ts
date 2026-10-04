@@ -978,6 +978,7 @@ function genStreet(B: Builder) {
   L.portals.push({ x: 32, y: 11.6, target: 1, label: 'Breach the tower', arriveTag: 'entrance' });
   L.anchors.street = { x: 32, y: 13.5 };
   L.anchors.start = { x: 32, y: FH - 4 };
+  L.anchors.entrance = { x: 32, y: 13.4 }; // walking out of the tower lands you just outside its doors
   B.reserveAround(32, FH - 4, 2);
   // keep a clear approach lane from the start to the entrance
   for (let y = 12; y < FH - 2; y++) for (let x = 29; x <= 34; x++) B.reserved[idx(x, y)] = 1;
@@ -1194,7 +1195,7 @@ const cache = new Map<string, FloorLayout>();
 export function generateFloor(plan: BuildingPlan, floor: number): FloorLayout {
   const key = `${plan.seed}:${plan.difficulty}:${floor}`;
   const hit = cache.get(key);
-  if (hit) return hit;
+  if (hit) { cache.delete(key); cache.set(key, hit); return hit; } // most recently used last
   const seed = hash(plan.seed, floor, 0xf100);
   const rng = new Rng(seed);
   const L = makeLayout(floor, seed, darknessOf(floor));
@@ -1224,7 +1225,7 @@ export function generateFloor(plan: BuildingPlan, floor: number): FloorLayout {
       setFlightBlocked(L, s, -1, floor <= 1 || !pass(plan.down(floor, s.index)));
     }
   }
-  if (cache.size > 12) cache.delete(cache.keys().next().value!);
+  if (cache.size > 24) cache.delete(cache.keys().next().value!); // the renderer generates the floors within reach ahead of time
   cache.set(key, L);
   return L;
 }

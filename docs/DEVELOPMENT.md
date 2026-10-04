@@ -34,11 +34,21 @@ npm run relay            # WebSocket relay on :8787 (the dev server proxies /ws 
 npm run build
 npm start                # http://localhost:8080  (PORT=xxxx to change)
 
+# Dedicated co-op server from source (serves ./dist, so build first); flags after --
+npm run server -- --port 8787 --password test --difficulty hard
+npm run dist:server      # standalone binaries for every OS into release/server/ (needs Bun)
+
 npm test                 # headless tests: generation, simulation, AI, combat, networking
 npm run typecheck        # tsc --noEmit
 ```
 
 ## Playing co-op online
+
+**Dedicated server (cross-play).** Run `npm run server` (or a binary from `npm run dist:server`) on a reachable
+machine. Desktop apps join with Co-op → address → **Join server**. Browsers open `http://host:8787`. The player
+guide for hosting, with port forwarding, firewalls, bandwidth and systemd, is [HOSTING.md](HOSTING.md).
+
+**Browser-hosted squads (relay):**
 
 **Easiest: `npm run online`.** This builds the game, starts the server and opens a free Cloudflare quick tunnel. The
 first time, it offers to install `cloudflared` with Homebrew. It prints a public `https://….trycloudflare.com` link
@@ -46,8 +56,9 @@ and copies it to the clipboard. Share the link, everyone opens it, and one playe
 get a new link each run. Use `npm run online -- 8090` for another port.
 
 Alternatively, run `npm start` on a machine your friends can reach, or behind a reverse proxy with WebSocket support.
-Everyone opens that URL. One player hosts and shares the 5-letter code. The **Server** field on the co-op screen can
-point to any relay (`wss://your-host/ws`).
+Everyone opens that URL. One player hosts and shares the 5-letter code. The **Relay** field on the co-op screen can
+point to any relay (`wss://your-host/ws`). The dev relay (`npm run relay`) and the dedicated server both default to port
+8787: run one at a time, or pass `--port` to the server.
 
 ## Developer test URLs
 
@@ -69,14 +80,41 @@ Append these to the game URL. They work in single player only.
 
 Example: `http://localhost:5173/?dev=1&floor=150&god=1&ammo=1&torch=1`
 
+### Stutter diagnostics: `?perf=1`
+
+Add `?perf=1` to any game URL (also with `?dev=1`) to time floor changes. The desktop app takes `--perf` instead
+(`"Tower Breach.exe" --perf`, `npx electron . --perf`): it adds the flag and opens a detached DevTools console.
+Each floor switch, and the first floor of a run, prints one `[perf]` console line and a table:
+
+- the main-thread ms of the first 10 frames after the switch (the first is the one that used to hitch);
+- shader programs linked, with the new programs' names, and MB of buffers and textures uploaded;
+- where the time went: `generateFloor`, `view` (and `view: floor/walls/props/stairs/...` when the view had to be
+  built), `ambient + roaches`, `entities (1st)`, `render (1st, shaders)`, and per-frame `frames: sim/audio/hud`;
+- `idleTaskBefore`: the slowest idle-time prefetch task since the previous switch. Prefetch tasks over 30 ms are
+  logged as they run (`[perf] slow idle task ...`).
+
+Records also collect in `window.__perf`. On a stair or lift change, expect a first frame of roughly 10–25 ms.
+A view built on the spot (`view: props` in the table) means a debug jump or a floor nothing prefetched.
+
 Live games use a holiday theme automatically on the holiday and the 3 days before it, going by the device's date
 (`src/config/holiday.ts`). Halloween (`src/render/halloween.ts`) and Christmas (`src/render/christmas.ts`) are built.
 Easter is on the calendar, but has no models yet.
 
 ## Desktop builds
 
-The desktop app is an Electron shell (`desktop/main.cjs`) around the production build. It is single player: Co-op is
-hidden because there is no relay server, and saves live in the app's own storage.
+The desktop app is an Electron shell (`desktop/main.cjs`) around the production build. Saves live in the app's own
+storage. Co-op joins dedicated servers by address: the relay's "Host a squad" is hidden, because the desktop app
+isn't served by a relay.
+
+- **Mixed content:** the page runs on the privileged, secure `app://game` origin, which Chromium would normally block
+  from opening plain `ws://` sockets. The window sets `allowRunningInsecureContent: true`. That is safe because the
+  window can only ever show the bundled game: `will-navigate` to anything outside `app://game/` is cancelled and
+  `window.open` is denied. `wss://` servers work either way.
+- **Microphone (voice chat):** `setPermissionRequestHandler` / `setPermissionCheckHandler` grant only `media`
+  with audio only, and only to `app://game`. Every other permission request is refused. `app://` is a secure
+  origin, so getUserMedia works there. macOS shows the `NSMicrophoneUsageDescription` from `build.mac.extendInfo`
+  in package.json. No entitlement is needed because hardened runtime is off. To test capture without a real mic:
+  `npx electron . --use-fake-device-for-media-stream` (a test tone).
 
 | Command | Output (in `release/`) |
 |---|---|
@@ -99,8 +137,9 @@ Input (kb/mouse/gamepad) ─► PlayerInput ─► Sim.tick (60 Hz, pure TS, aut
                                              ▼
                                         SimEvents + state ─► Renderer (Three.js) · HUD/minimap (DOM) · Audio (WebAudio)
 
-Co-op: host browser runs the Sim ─► 15 Hz floor-scoped snapshots + events ─► relay ─► clients (ClientView)
-       clients ─► inputs + predicted own position (30 Hz) ─► relay ─► host validates and applies
+Co-op: SquadAuthority runs the Sim ─► 15 Hz floor-scoped snapshots + events ─► clients (ClientView)
+       clients ─► inputs + predicted own position (30 Hz) ─► SquadAuthority validates and applies
+       SquadAuthority = HostSession (a player's browser, over the relay)  or  the dedicated server (Node/Bun, no player)
 ```
 
 - **`src/gen`: deterministic generation.**
@@ -115,13 +154,78 @@ Co-op: host browser runs the Sim ─► 15 Hz floor-scoped snapshots + events �
 - **`src/sim`:** the whole game, with no DOM or Three.js. It is fully unit-tested.
 - **`src/render`:**
   - the floor mesh builder and the wall cutaway shader
+  - floor changes are a lookup, not a build (`floorView.ts`, `renderer.ts`):
+    - props, windows and door frames are **kits**: each kind (kind, footprint, holiday dressing) is built from
+      primitives once, merged per material and drawn as one `InstancedMesh` per floor. Kit geometry is flagged
+      `shared` and never disposed with a floor; a vertex-budget LRU (`KIT_VERT_BUDGET`) drops unused ones.
+    - character rigs (`OperatorRig.make`, beasts, pigeons) and guns are built once per look and copied
+      (`cloneRig`, shared geometry).
+    - `GameRenderer` keeps the last few floor views (the street's for the whole run) and the street's life.
+    - `Ahead` does one small task per frame in idle time: it generates the floors above and below (or a riding
+      lift's destination), builds their new kits and enemy looks, builds their views, compiles their shaders
+      (`compileAsync`) and draws them once off-screen in chunks so geometry and shadow-pass programs are on the
+      GPU before they are entered. In the menus it warms the post-processing, every enemy look, the next new run's
+      street and floor 1 (`App.nextSeed`) and the saved run's floor.
+    - a retired view is disposed only after the new floor has rendered, so shared shader programs are never
+      released and relinked.
   - procedural character rigs
   - particle, tracer and decal effects
   - a pool of real lights, assigned to the brightest nearby lamps
   - torch spotlights
 - **`src/audio`:** a synthesiser for gunshots, formant "voices", footsteps per surface, ambience and stingers, plus
   HRTF panning and reverb.
-- **`src/net` + `server/server.mjs`:** WebSocket relay rooms, the host session, and the client mirror and prediction.
+  - `voice.ts` (`VoiceChat`): co-op voice in the page. It runs getUserMedia (echo cancellation, noise suppression,
+    AGC) → an inline AudioWorklet (20 ms batches) → a WebCodecs `AudioEncoder` (Opus, 24 kbit/s mono, 48 kHz,
+    `voip`). Open mic uses an RMS gate with a 350 ms hold. Playback runs one `AudioDecoder` per speaker →
+    `AudioBufferSourceNode`s scheduled on a playout clock (80 ms jitter buffer after a gap, drops beyond 400 ms
+    lag) → gain → low-pass (wall muffling) → stereo panner → voice volume. `App.updateVoice` sets each speaker's
+    mix every frame from snapshot positions and `lineOfSight`. Without WebCodecs, voice is off with a note. On an
+    insecure http page it is listen-only.
+- **`src/ui/nametags.ts`:** co-op name tags, a DOM overlay (in `#ui`, no pointer events) placed with
+  `renderer.worldToScreen` and sized from the projected metre. `taggedPlayers` is the visibility rule.
+- **`src/net`:**
+  - `authority.ts`: `SquadAuthority`, the shared authoritative squad: lobby, armory readiness, deploy, the Sim,
+    reconnect by callsign, validation of every client message, and snapshot/event fan-out. It has no transport and
+    no DOM. Subclasses supply only `sendTo`, `kick` and `sendVoice`.
+    - **Join window:** `locked` turns true in `update()` once any operator is on floor ≥ 1 (`onLock`; the dedicated
+      server logs "Run started"). Before that, `peerJoined` admits new callsigns mid-run: they get a personal lobby
+      with `stage: 'shop', late: true`, and their `ready` calls `deployLate`, which runs `sim.addPlayer` (lowest free
+      slot, by the street start) and sends them `start`. `peerLeft` removes a pre-lock leaver from `sim.players`
+      entirely. After the lock a leaver stays as an offline operator for reconnect by callsign
+      (`rejoinTarget`), and strangers are refused.
+    - **Voice routing:** `voiceFrom(id, opus)` drops frames over `VOICE.maxFrameBytes` or past `VOICE.framesPerSec`
+      per speaker. It forwards only to `voiceTargets` (connected, not KIA, same floor, ≤ `VOICE.range`, opted in
+      with `{k:'vc', on}`, never the speaker).
+  - `voice.ts`: the voice constants, `voiceTargets`, the receiver gain curve `voiceGain` (1 to 3 m, smoothstep to
+    0 at 10 m, ×0.4 through a wall) and the binary frame formats. Client → server is `[0x56][opus]`; server → client
+    is `[0x56][speaker u32 LE][opus]`. On the relay, the browser host gets clients' frames tagged the same way and
+    answers `[0x57][speaker][n][n × listener u32][opus]`, which `server/server.mjs` fans out. No WebRTC: it all rides
+    the game WebSocket, so it works wherever the game connects.
+  - `host.ts`: `HostSession`, a `SquadAuthority` in the host player's browser (operator id 1) over the relay.
+  - `client.ts`: the client mirror (`ClientView`) and prediction (`ClientSession`). It works against the relay or a
+    dedicated server, which use the same envelope (`join`, then `to_host` → `data`).
+  - `protocol.ts`: snapshot encoding, `NET_VERSION` (sent on join; servers refuse a mismatch with a readable
+    message), callsign cleaning and `sanitizeInputPacket`.
+  - `transport.ts`: the WebSocket wrapper and `normalizeServerAddress` (`1.2.3.4` → `ws://1.2.3.4:8787/ws`).
+- **`server/server.mjs`:** the relay rooms for browser-hosted squads, plus static hosting of `dist/` (`npm start`).
+- **`src/server/dedicated.ts`:** the dedicated server, a `DedicatedSquad` (a `SquadAuthority` with `hostId = null`)
+  over its own `ws` server.
+  - **Game loop:** a fixed 60 Hz tick, snapshots at 15 Hz, a ready countdown, and a return to the armory 12 s after a
+    run ends (at once if everyone left).
+  - **Web:** static hosting of the web build and `GET /server-info`. The co-op screen uses it to detect "this page
+    came from a dedicated server".
+  - **Config:** flags, `TB_*` environment variables, or `towerbreach-server.json` (`parseConfig`).
+  - **Hardening:** 16 KB `maxPayload`, 90 msgs/s per connection, 32 connections (8 per IP), a 10 s join timeout,
+    5 wrong passwords a minute per IP, unknown messages dropped, and timing-safe password compare. Voice has its own
+    limits (`LIMITS.maxVoiceBytes` 401 B, `voiceMsgsPerSec` 120 before a kick, 60 forwarded per speaker), binary
+    is only accepted after join and only as `0x56` frames, and voice to a socket with over 256 KB buffered is
+    skipped.
+  - **Entry points:** `src/server/main.ts` (`npm run server`, built by `vite build --ssr` into `dist-server/`).
+    `scripts/build-server.mjs` generates an entry that imports every `dist/` file with `with { type: 'file' }`, so
+    `bun build --compile` embeds the web build in each binary (`--web-root` serves a folder instead).
+  - **Tests:** `tests/dedicated.test.ts` starts it in-process with scripted clients.
+- **`src/sim/loadout.ts`:** loadout rules (`emptyLoadout`, `validLoadout`, `sanitizeLoadout`). They are shared by
+  the armory UI and both authorities, so no server code imports UI modules.
 
 ## Asset pipeline
 

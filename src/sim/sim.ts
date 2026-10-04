@@ -3,6 +3,7 @@ import { dist, clamp, segPointDist, angleTo } from '../core/math';
 import { Difficulty, pressure, PressureProfile, bracketInfo, bracketOf, FINAL_FLOOR, REVIVE_WINDOW, SHUTDOWN_SECONDS } from '../config/difficulty';
 import { weapon } from '../config/weapons';
 import { BuildingPlan, StairCondition } from '../gen/building';
+import { perfTime } from '../core/perf';
 import { generateFloor, pointsNear, isWalkableTile, setFlightBlocked } from '../gen/floor';
 import { CONTAINER_LABEL } from '../gen/loot';
 import { AI } from './ai';
@@ -58,7 +59,8 @@ export class Sim {
   }
 
   addPlayer(id: number, name: string, lo: Loadout): PlayerState {
-    const slot = this.players.length;
+    let slot = 0; // lowest free slot: a co-op squad can lose a member before the tower and gain a late joiner
+    while (this.players.some((q) => q.slot === slot)) slot++;
     const p = createPlayer(id, slot, name, lo);
     p.loadout = JSON.parse(JSON.stringify(lo));
     p.checkedIn = this.cfg.mode !== 'single'; // co-op squads check in through the lobby + armory
@@ -81,7 +83,7 @@ export class Sim {
   floorState(f: number): FloorState {
     let fs = this.floors.get(f);
     if (fs) return fs;
-    const L = generateFloor(this.plan, f);
+    const L = perfTime('generateFloor', () => generateFloor(this.plan, f));
     const enemies = L.spawns.map((s, i) => {
       const e = makeEnemy(f * 10000 + i, this.zombify(s), f, enemyStatsFor);
       e.mag = weapon(e.weapon).mag;
@@ -194,7 +196,7 @@ export class Sim {
       c.alarmT -= dt;
       let seen: PlayerState | null = null;
       for (const p of this.players) {
-        if (p.floor !== fs.floor || p.life !== 'alive') continue;
+        if (p.floor !== fs.floor || p.life !== 'alive' || !p.connected) continue;
         const d = dist(c.x, c.y, p.x, p.y);
         if (d > c.range) continue;
         const a = Math.abs(Math.atan2(Math.sin(angleTo(c.x, c.y, p.x, p.y) - c.angle), Math.cos(angleTo(c.x, c.y, p.x, p.y) - c.angle)));
@@ -229,7 +231,7 @@ export class Sim {
       }
       const cx = t.kind === 'tripwire' ? (t.x + t.x2) / 2 : t.x, cy = t.kind === 'tripwire' ? (t.y + t.y2) / 2 : t.y;
       for (const p of this.players) {
-        if (p.floor !== fs.floor || p.life !== 'alive') continue;
+        if (p.floor !== fs.floor || p.life !== 'alive' || !p.connected) continue;
         const d = dist(cx, cy, p.x, p.y);
         if (!t.revealed) {
           const torchSees = p.torchOn && d < (p.mods.torchmod ? 15 : 11) && Math.cos(angleTo(p.x, p.y, cx, cy) - p.facing) > 0.87 && canSee(fs, p.x, p.y, cx, cy);
@@ -321,7 +323,7 @@ export class Sim {
     const e = fs.L.elevators[elev];
     this.emit({ e: 'elev', f: p.floor, k: 'ding', x: e.cx, y: e.cy });
     for (const o of this.players) {
-      if (o.life !== 'alive' || o.floor !== p.floor || o.ride) continue;
+      if (o.life !== 'alive' || !o.connected || o.floor !== p.floor || o.ride) continue;
       if (o !== p && dist(o.x, o.y, e.cx, e.cy) > 1.9) continue;
       o.ride = { t: 2.4, to, elev };
       (o as any).panel = null;
@@ -449,7 +451,7 @@ export class Sim {
 
   private spawnWaveGroup(fs: FloorState) {
     const m = fs.L.mainframe!;
-    const alivePlayers = this.players.filter((p) => p.life === 'alive' && p.floor === fs.floor);
+    const alivePlayers = this.players.filter((p) => p.life === 'alive' && p.connected && p.floor === fs.floor);
     const pts = m.spawnPoints.filter((s) => alivePlayers.every((p) => dist(p.x, p.y, s.x, s.y) > 7));
     const sp = this.rng.pick(pts.length ? pts : m.spawnPoints);
     const n = this.rng.int(1, this.cfg.difficulty === 'insane' ? 3 : 2) + (fs.wave!.spawned > 8 ? 1 : 0);
@@ -475,7 +477,7 @@ export class Sim {
     if (fs.scareT > 0) return;
     const pr = this.pressure(fs.floor);
     fs.scareT = this.rng.range(45, 120) / (1 + pr.bracket * 0.04);
-    const here = this.players.filter((p) => p.floor === fs.floor && p.life === 'alive');
+    const here = this.players.filter((p) => p.floor === fs.floor && p.life === 'alive' && p.connected);
     if (!here.length) return;
     const p = this.rng.pick(here);
     const kind = this.rng.weighted<'lightburst' | 'slam' | 'scream' | 'shadow' | 'whisper' | 'metal' | 'dog'>([

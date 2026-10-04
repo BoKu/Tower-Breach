@@ -60,3 +60,31 @@ describe('shooting out ceiling lights', () => {
     expect(fs.lights[0].broken).toBe(true);
   });
 });
+
+describe('disconnected co-op players', () => {
+  it('leave the world: enemies cannot see or hurt them', async () => {
+    const { setup, addEnemy, run } = await import('./helpers');
+    const { damagePlayer } = await import('../src/sim/combat');
+    const { sim, fs, p } = setup();
+    const e = addEnemy(sim, fs, 'loyalist', p.x + 4, p.y, Math.PI);
+    p.connected = false;
+    run(sim, 2);
+    expect(e.state).not.toBe('alert');
+    const hp = p.hp;
+    damagePlayer(sim, p, 50, 0, 'bullet');
+    expect(p.hp).toBe(hp);
+  });
+});
+
+describe('leaving the tower', () => {
+  it('lands you outside the tower doors, not back at the start', async () => {
+    const { Sim } = await import('../src/sim/sim');
+    const sim = new Sim({ seed: 5, difficulty: 'normal', mode: 'single' });
+    const p = sim.addPlayer(1, 'P1', JSON.parse(JSON.stringify(LOADOUT)));
+    sim.travel(p, 1, 'entrance', 'test');
+    sim.travel(p, 0, 'entrance', 'test');
+    const L = sim.floorState(0).L;
+    expect(Math.hypot(p.x - L.anchors.entrance.x, p.y - L.anchors.entrance.y)).toBeLessThan(2);
+    expect(Math.hypot(p.x - L.anchors.start.x, p.y - L.anchors.start.y)).toBeGreaterThan(10);
+  });
+});

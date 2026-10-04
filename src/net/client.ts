@@ -1,7 +1,8 @@
 import { fixFloorLights } from '../sim/hack';
 import { makePanels } from '../sim/lights';
 import { Transport, RelayMsg } from './transport';
-import { decodePlayer, encodeInput } from './protocol';
+import { decodePlayer, encodeInput, NET_VERSION } from './protocol';
+import { unpackVoice, VOICE_UP } from './voice';
 import { BuildingPlan, StairCondition } from '../gen/building';
 import { generateFloor, setFlightBlocked } from '../gen/floor';
 import { CONTAINER_LABEL } from '../gen/loot';
@@ -10,7 +11,8 @@ import { weapon } from '../config/weapons';
 import type { FloorState, PlayerState, SimEvent, Loadout, Enemy } from '../sim/state';
 import type { ViewSource } from '../render/view';
 import type { Difficulty } from '../config/difficulty';
-import { emptyLoadout } from '../ui/shop';
+import { emptyLoadout } from '../sim/loadout';
+import { setHolidayOverride, type Holiday } from '../config/holiday';
 
 /** Client-side mirror of the host's world, built from deterministic generation + snapshots. */
 export class ClientView implements ViewSource {
@@ -27,6 +29,8 @@ export class ClientView implements ViewSource {
   private targets = new Map<number, { x: number; y: number; f: number }>();
   private remoteTargets = new Map<number, { x: number; y: number; fa: number }>();
   events: SimEvent[] = [];
+  /** the first snapshot has placed the local player (until then it has no real position to predict from) */
+  placed = false;
 
   constructor(seed: number, difficulty: Difficulty, roster: { id: number; name: string; slot: number }[]) {
     this.cfg = { mode: 'coop', difficulty, seed };
@@ -80,7 +84,10 @@ export class ClientView implements ViewSource {
       const local = o.id === localId;
       const tpChanged = local && o.tp !== ((p as any).tp ?? 0);
       decodePlayer(p, o, local);
-      if (local && (tpChanged || p.life !== 'alive' || p.ride)) { p.x = o.x; p.y = o.y; p.z = o.z; (p as any).tp = o.tp; p.vx = p.vy = 0; }
+      // first snapshot: take the spawn point (prediction starts from createPlayer's default otherwise)
+      const first = local && !this.placed;
+      if (local) this.placed = true;
+      if (local && (first || tpChanged || p.life !== 'alive' || p.ride)) { p.x = o.x; p.y = o.y; p.z = o.z; (p as any).tp = o.tp; p.vx = p.vy = 0; }
       if (!local) this.remoteTargets.set(p.id, { x: o.x, y: o.y, fa: o.fa });
     }
     this.players = this.players.filter((p) => s.pl.some((o: any) => o.id === p.id));
@@ -147,43 +154,75 @@ export class ClientSession {
   t = new Transport();
   id = 0;
   code = '';
+  /** set when connected to a dedicated server (no host player): its name and message of the day */
+  server: { name: string; motd: string } | null = null;
   view: ClientView | null = null;
-  lobby: { players: { id: number; name: string; ready: boolean; host: boolean }[]; difficulty: Difficulty; ff?: boolean; stage: string; seed: number } | null = null;
+  lobby: { players: { id: number; name: string; ready: boolean; host: boolean }[]; difficulty: Difficulty; ff?: boolean; stage: string; seed: number; deployIn?: number | null; late?: boolean } | null = null;
+  /** the holiday theme before the host/server's took over (restored on close) */
+  private prevHoliday: Holiday | null | undefined | false = false;
   private sendT = 0;
   onLobby: () => void = () => {};
   onStart: (v: ClientView) => void = () => {};
   onDisconnect: (reason: string) => void = () => {};
+  /** a proximity voice frame from a squadmate (only sent while voice is on, see setVoice) */
+  onVoice: (speaker: number, opus: Uint8Array) => void = () => {};
+  private voiceOn = false;
 
-  async join(url: string, code: string, name: string): Promise<void> {
+  /** code: the relay squad code ('' on a dedicated server); password: dedicated servers only. */
+  async join(url: string, code: string, name: string, password = ''): Promise<void> {
     await this.t.connect(url);
-    this.t.onClose = (r) => this.onDisconnect(r);
     await new Promise<void>((resolve, reject) => {
       this.t.onMsg = (m) => {
-        if (m.t === 'joined') { this.id = m.id; this.code = m.code; this.t.onMsg = (mm) => this.handle(mm); this.t.send({ t: 'to_host', d: { k: 'hello', name } }); resolve(); }
-        else if (m.t === 'error') reject(new Error(m.msg));
+        if (m.t === 'joined') {
+          this.id = m.id; this.code = m.code; this.server = m.srv ?? null;
+          this.t.onMsg = (mm) => this.handle(mm);
+          this.t.onClose = (r) => this.onDisconnect(r);
+          this.t.onBinary = (b) => { const v = unpackVoice(b); if (v) this.onVoice(v.speaker, v.opus); };
+          this.t.send({ t: 'to_host', d: { k: 'hello', name, v: NET_VERSION } });
+          resolve();
+        } else if (m.t === 'error') reject(new Error(m.msg));
       };
-      this.t.send({ t: 'join', code: code.trim().toUpperCase(), name });
+      this.t.onClose = (r) => reject(new Error(r)); // refused without a message (e.g. connection limit)
+      this.t.send({ t: 'join', code: code.trim().toUpperCase(), name, v: NET_VERSION, pw: password });
     });
   }
 
-  close() { this.t.close(); }
+  close() {
+    this.t.close();
+    if (this.prevHoliday !== false) { setHolidayOverride(this.prevHoliday); this.prevHoliday = false; }
+  }
 
   ready(lo: Loadout) { this.t.send({ t: 'to_host', d: { k: 'ready', loadout: lo } }); }
 
+  /** Opt in/out of receiving squad voice (the server sends nothing to players with voice off). */
+  setVoice(on: boolean) { this.voiceOn = on; this.t.send({ t: 'to_host', d: { k: 'vc', on } }); }
+  /** One encoded Opus frame from our microphone. */
+  sendVoice(opus: Uint8Array) {
+    const b = new Uint8Array(opus.length + 1);
+    b[0] = VOICE_UP; b.set(opus, 1);
+    this.t.sendBinary(b);
+  }
+
   private handle(m: RelayMsg) {
-    if (m.t === 'host_left') { this.onDisconnect('The host left — mission aborted.'); return; }
-    if (m.t === 'error') { this.onDisconnect(m.msg); return; }
+    // the socket closes right after: report this reason, not a generic "Connection lost"
+    if (m.t === 'host_left' || m.t === 'error') { this.t.onClose = () => {}; this.onDisconnect(m.t === 'error' ? m.msg : 'The host left — mission aborted.'); return; }
     if (m.t !== 'data') return;
     const d = m.d;
     if (d.k === 'lobby') { this.lobby = d; this.onLobby(); }
-    else if (d.k === 'start') { this.view = new ClientView(d.seed, d.difficulty, d.players); this.onStart(this.view); }
+    else if (d.k === 'start') {
+      // dress the tower in the authority's holiday theme (Halloween also changes the enemies)
+      if (d.hol !== undefined) { const prev = setHolidayOverride(d.hol); if (this.prevHoliday === false) this.prevHoliday = prev; }
+      this.view = new ClientView(d.seed, d.difficulty, d.players);
+      if (this.voiceOn) this.setVoice(true); // a rejoin is a new id on the server: opt in again
+      this.onStart(this.view);
+    }
     else if (d.k === 'snap' && this.view) this.view.apply(d, this.id);
   }
 
   /** Local prediction of own movement + input upload. */
   update(dt: number) {
     const v = this.view;
-    if (!v) return;
+    if (!v || !v.placed) return; // don't report createPlayer's default position as ours
     const me = v.player(this.id);
     if (me && me.life === 'alive' && !me.ride) {
       const inp = me.input;

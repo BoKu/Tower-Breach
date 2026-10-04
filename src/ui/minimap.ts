@@ -102,7 +102,7 @@ export class Minimap {
     }
     // teammates: same floor = solid, other floors = hollow with floor delta
     for (const p of view.players) {
-      if (p.life === 'out') continue;
+      if (p.life === 'out' || !p.connected) continue;
       const self = p.id === localId;
       const ci = teamColorIndex(view.players, localId, p.id);
       const col = self ? '#f0f0f0' : TEAM_CSS[Math.max(0, ci) % 4];

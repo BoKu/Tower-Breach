@@ -6,6 +6,9 @@ import type { Loadout } from '../sim/state';
 import { GRENADE_CAP } from '../sim/inventory';
 import { armoryArt } from '../render/armoryArt';
 import { createPlayer } from '../sim/player';
+import { emptyLoadout, loadoutCost, validLoadout } from '../sim/loadout';
+
+export { emptyLoadout, loadoutCost, validLoadout }; // re-exported for older imports
 
 const art = (id: string, weaponItem: boolean) => { const u = armoryArt(id, weaponItem); return u ? h('img', { class: 'art', src: u, alt: '', draggable: 'false' }) : null; };
 
@@ -15,33 +18,6 @@ const CATS: [Cat, string][] = [
   ['pistol', 'Pistols'], ['smg', 'SMGs'], ['shotgun', 'Shotguns'], ['rifle', 'Rifles'], ['sniper', 'Sniper / Marksman'],
   ['machine_gun', 'Machine Guns'], ['armor', 'Armour'], ['grenade', 'Grenades'], ['gear', 'Mission Gear'],
 ];
-
-export function emptyLoadout(): Loadout {
-  return { primary: null, secondary: 'p9', armor: 'none', grenades: {}, items: {}, mods: { bypass: false, torchmod: false, pouch: false } };
-}
-
-export function loadoutCost(lo: Loadout): number {
-  let c = 0;
-  if (lo.primary) c += WEAPONS.find((w) => w.id === lo.primary)!.price;
-  if (lo.secondary !== 'p9') c += WEAPONS.find((w) => w.id === lo.secondary)!.price;
-  if (lo.armor !== 'none') c += GEAR_BY_ID[lo.armor].price;
-  for (const [g, n] of Object.entries(lo.grenades)) c += GEAR_BY_ID[g].price * (n ?? 0);
-  for (const [i, n] of Object.entries(lo.items)) c += GEAR_BY_ID[i].price * (n ?? 0);
-  for (const [m, on] of Object.entries(lo.mods)) if (on) c += GEAR_BY_ID[m].price;
-  return c;
-}
-
-/** Validates a loadout against the budget and carry limits (also used by the multiplayer host). */
-export function validLoadout(lo: Loadout, diff: Difficulty): boolean {
-  if (loadoutCost(lo) > DIFF_BASE[diff].cash) return false;
-  const tot = Object.values(lo.grenades).reduce((a, b) => a + (b ?? 0), 0);
-  if (tot > GRENADE_MAX_TOTAL) return false;
-  for (const [g, n] of Object.entries(lo.grenades)) if ((n ?? 0) > GRENADE_CAP[g as GrenadeType]) return false;
-  for (const [i, n] of Object.entries(lo.items)) if ((n ?? 0) > GEAR_BY_ID[i].max) return false;
-  if (lo.primary && WEAPONS.find((w) => w.id === lo.primary)?.slot !== 'primary') return false;
-  if (WEAPONS.find((w) => w.id === lo.secondary)?.slot !== 'secondary') return false;
-  return true;
-}
 
 export class Shop {
   root: HTMLElement;

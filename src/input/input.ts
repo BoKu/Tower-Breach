@@ -107,6 +107,9 @@ export class Input {
     } else this.held.delete(e.code);
   }
 
+  /** A held binding (push-to-talk), whatever has focus in the game. */
+  isHeld(a: Action) { return this.down(a); }
+
   private down(a: Action): boolean {
     const c = this.settings.bindings[a];
     if (c === 'Mouse0') return this.mouseL;

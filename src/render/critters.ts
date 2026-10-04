@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Builder, merge } from './models';
+import { Builder, merge, cloneRig } from './models';
 import { currentHoliday } from '../config/holiday';
 
 /**
@@ -31,6 +31,15 @@ export class Pigeon {
   private step = 0;
   private folded = new THREE.Group();
   private flight = new THREE.Group();
+
+  private static protos = new Map<string, Pigeon>();
+  /** Built once per plumage (and holiday), copied after that. */
+  static make(variant: number): Pigeon {
+    const key = `${variant % 4}:${currentHoliday()}`;
+    let p = Pigeon.protos.get(key);
+    if (!p) Pigeon.protos.set(key, (p = new Pigeon(variant)));
+    return cloneRig(p);
+  }
 
   constructor(variant: number) {
     // Halloween: same bird, dressed as a crow (glossy black, heavier black beak, glowing red eyes, a size up)

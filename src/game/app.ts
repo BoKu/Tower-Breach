@@ -14,7 +14,7 @@ import { Input } from '../input/input';
 import { Sim } from '../sim/sim';
 import { HostSession } from '../net/host';
 import { ClientSession, ClientView } from '../net/client';
-import { defaultServerUrl } from '../net/transport';
+import { defaultServerUrl, normalizeServerAddress } from '../net/transport';
 import { loadSettings, saveSettings, Settings, ACTION_LABEL, DEFAULT_BINDINGS, keyLabel, Action, loadRecords, addRecord } from '../save/settings';
 import { load, save, remove, storageAvailable } from '../save/storage';
 import { randomSeed } from '../core/rng';
@@ -25,6 +25,11 @@ import { canSee } from '../sim/combat';
 import type { Loadout, PlayerState } from '../sim/state';
 import type { ViewSource } from '../render/view';
 import { currentHoliday } from '../config/holiday';
+import { NameTags } from '../ui/nametags';
+import { VoiceChat, voiceUnsupported } from '../audio/voice';
+import { voiceGain } from '../net/voice';
+import { lineOfSight } from '../sim/nav';
+import { perfOn, perfFrame, perfFrameStage } from '../core/perf';
 
 /**
  * Gamepad focus step on screen: the nearest item in the pushed direction (so 2-D grids like the hacking console's
@@ -49,6 +54,7 @@ function spatialStep(items: HTMLElement[], cur: number, dx: number, dy: number):
 
 /** Running inside the Electron desktop app (desktop/main.cjs) rather than a browser. */
 const DESKTOP = navigator.userAgent.includes('Electron');
+import { APP_VERSION } from '../config/version';
 import { TEAM_CSS } from '../render/view';
 
 type Session =
@@ -58,7 +64,7 @@ type Session =
 
 const KANJI: [string, string][] = [
   ['continue', '続行'], ['single player', '単独作戦'], ['co-op (up to 5)', '協力作戦'], ['settings', '設定'], ['controls', '操作'], ['resume', '再開'],
-  ['back', '戻る'], ['done', '完了'], ['leave squad', '分隊離脱'], ['leave', '離脱'], ['host a squad', '分隊結成'], ['join squad', '合流'], ['proceed to armory', '武器庫へ'],
+  ['back', '戻る'], ['done', '完了'], ['leave squad', '分隊離脱'], ['leave', '離脱'], ['host a squad', '分隊結成'], ['join squad', '合流'], ['join server', '接続'], ['back to server lobby', '待機室へ'], ['proceed to armory', '武器庫へ'],
   ['deploy', '出撃'], ['force deploy', '強制出撃'], ['main menu', '主画面'], ['new run', '新作戦'], ['cancel', '取消'], ['save & quit', '保存終了'], ['quit to menu without saving', '破棄終了'], ['quit without saving', '破棄終了'],
   ['reset to defaults', '初期化'], ['select difficulty', '難易度'], ['co-op', '協力作戦'], ['squad lobby', '待機室'], ['paused', '一時停止'], ['menu (game continues)', '作戦中'],
   ['armory', '武器庫'], ['squad armory', '武器庫'], ['lift', '昇降機'], ['normal', '標準'], ['hard', '困難'], ['insane', '狂気'],
@@ -88,17 +94,27 @@ export class App {
   private overlay = { vignette: h('div', { class: 'vignette' }), hurt: h('div', { class: 'hurtflash' }), white: h('div', { class: 'whiteflash' }), low: h('div', { class: 'lowhp' }), grain: h('div', { class: 'grain' }), scan: h('div', { class: 'scan' }) };
   private crosshair = h('div', { class: 'crosshair' }, h('div', { class: 'ring' }), h('div', { class: 'dot' }));
   private cursor = h('div', { class: 'cursor' });
+  private tags = new NameTags();
+  /** co-op proximity voice for the current session (null: single player, voice off or unsupported) */
+  private voice: VoiceChat | null = null;
+  private micTried = '';
+  private voiceInd = h('div', { class: 'voice-ind' }, h('i', { class: 'mic' }), 'TRANSMITTING');
   private elevPanel: HTMLElement | null = null;
   private hackUI: HackUI | null = null;
   private talkUI: DialogueUI | null = null;
   private checkinUI = false;
   /** callsign for this session: kept between rounds while the game is open, never saved to storage */
   private callsign = '';
+  /** dedicated-server password: memory only, like the callsign */
+  private serverPw = '';
   private armory: Shop | null = null;
   private armoryClose: () => void = () => {};
   private endShown = false;
   private menuFocus = 0;
   private lastHp = 100;
+
+  /** the next single-player run's tower, picked early so the menus can build its street ahead (renderer.warmup) */
+  private nextSeed = randomSeed();
 
   constructor() {
     this.input = new Input(this.canvas, this.settings);
@@ -108,16 +124,20 @@ export class App {
       this.renderer = new GameRenderer(this.canvas, this.settings.quality);
       this.renderer.setReflections(this.settings.reflections);
       this.renderer.mouseAssistPx = this.settings.mouseAimAssist ? 40 : 0;
+      // build models and compile shaders while the menus are up: for the saved run's floor and the next new run
+      const saved = load<any>('run', null);
+      this.renderer.warmup([{ seed: this.nextSeed, difficulty: 'normal' as Difficulty, floors: [0, 1] }, ...(saved?.seed ? [{ seed: saved.seed, difficulty: saved.difficulty, floors: [saved.floor] }] : [])]);
     } catch (e) {
       this.fatal('WebGL is not available in this browser. Enable hardware acceleration or try a current Chrome / Firefox / Edge / Safari.');
       throw e;
     }
     this.audio.setVolumes(this.settings.masterVol, this.settings.sfxVol, this.settings.musicVol);
     this.overlay.grain.style.backgroundImage = `url(${this.grainUrl()})`;
-    this.ui.append(this.overlay.vignette, this.overlay.scan, this.overlay.grain, this.overlay.low, this.overlay.hurt, this.overlay.white, this.crosshair, this.cursor);
+    this.ui.append(this.tags.root, this.overlay.vignette, this.overlay.scan, this.overlay.grain, this.overlay.low, this.overlay.hurt, this.overlay.white, this.crosshair, this.cursor);
     this.input.onAction = (a) => this.onAction(a);
-    window.addEventListener('pointerdown', () => this.audio.unlock(), { capture: true });
-    window.addEventListener('keydown', () => this.audio.unlock(), { capture: true });
+    window.addEventListener('pointerdown', () => { this.audio.unlock(); this.voice?.resume(); }, { capture: true });
+    window.addEventListener('keydown', () => { this.audio.unlock(); this.voice?.resume(); }, { capture: true });
+    this.hud.root.append(this.voiceInd);
     // Keys go to the browser chrome when the page isn't focused: say so instead of silently ignoring input.
     const focusHint = h('div', { class: 'focushint' }, 'Game not focused — click here to take control');
     focusHint.addEventListener('click', () => { window.focus(); focusHint.style.display = 'none'; });
@@ -194,13 +214,14 @@ export class App {
       h('div', { class: 'menu' },
         saveData ? this.btn(`Continue — Floor ${saveData.floor} (${saveData.difficulty})`, () => this.continueRun(saveData), 'primary') : null,
         this.btn('Single Player', () => this.difficultyScreen((d) => this.spStart(d))),
-        DESKTOP ? null : this.btn('Co-op (up to 5)', () => this.coopScreen()), // the desktop build is single-player (no relay server)
+        this.btn('Co-op (up to 5)', () => this.coopScreen()),
         this.btn('Hall of Records', () => this.recordsScreen(() => this.mainMenu())),
         this.btn('Settings', () => this.settingsScreen(() => this.mainMenu())),
         this.btn('Controls', () => this.controlsScreen(() => this.mainMenu())),
         DESKTOP ? this.btn('Quit to desktop', () => window.close(), 'small') : null),
       h('div', { class: 'hint', style: { marginTop: '28px', textAlign: 'center', maxWidth: '560px' } },
         'A maleficent AI runs the country from the top of this tower. Carry the virus to floor 200, upload it, and survive the shutdown. ',
+        h('div', { style: { opacity: 0.55, marginTop: '10px', letterSpacing: '0.1em' } }, `v${APP_VERSION}`),
         !storageAvailable() ? h('div', { style: { color: '#ff8080', marginTop: '8px' } }, 'Browser storage is unavailable: settings and saves will not persist.') : null));
     this.show(el);
   }
@@ -272,7 +293,8 @@ export class App {
   }
 
   private startLocal(diff: Difficulty, lo: Loadout) {
-    const sim = new Sim({ seed: randomSeed(), difficulty: diff, mode: 'single', holiday: currentHoliday() });
+    const sim = new Sim({ seed: this.nextSeed, difficulty: diff, mode: 'single', holiday: currentHoliday() });
+    this.nextSeed = randomSeed();
     const p = sim.addPlayer(1, 'Operator', lo); // callsign is registered fresh at the Chief's check-in
     void p;
     this.beginSession({ kind: 'local', sim });
@@ -291,6 +313,8 @@ export class App {
   // ------------------------------------------------------------------ co-op
   private coopScreen(err = '') {
     const name = h('input', { class: 'text', value: this.callsign, maxlength: 16, placeholder: 'Enter your callsign' }) as HTMLInputElement;
+    const addr = h('input', { class: 'text', value: load('dedAddr', ''), maxlength: 200, placeholder: 'Server address, e.g. 203.0.113.7:8787' }) as HTMLInputElement;
+    const pw = h('input', { class: 'text', type: 'password', value: this.serverPw, maxlength: 100, placeholder: 'Password (if the server has one)' }) as HTMLInputElement;
     const code = h('input', { class: 'text', maxlength: 5, placeholder: 'CODE', style: { width: '130px', textTransform: 'uppercase' } }) as HTMLInputElement;
     const server = h('input', { class: 'text', value: load('server', defaultServerUrl()), style: { width: '100%', fontSize: '12px' } }) as HTMLInputElement;
     const errEl = h('div', { class: 'err' }, err);
@@ -300,27 +324,56 @@ export class App {
       if (!n) { name.classList.add('bad'); name.focus(); return false; }
       this.callsign = n; save('server', server.value); return true;
     };
+    const joinServer = async () => {
+      if (!saveName()) return;
+      let url: string;
+      try { url = normalizeServerAddress(addr.value); if (!addr.value.trim()) throw 0; }
+      catch { addr.classList.add('bad'); addr.focus(); errEl.textContent = 'Enter the server address, e.g. 203.0.113.7:8787'; return; }
+      save('dedAddr', addr.value.trim()); this.serverPw = pw.value;
+      errEl.textContent = 'Connecting…';
+      const cl = new ClientSession();
+      try { await cl.join(url, '', this.callsign, pw.value); this.clientLobby(cl); }
+      catch (e) { cl.close(); this.coopScreen((e as Error).message); }
+    };
+    // squads hosted in a player's browser, through the relay that served this page (browser only)
+    const relay = h('div', { style: { display: DESKTOP ? 'none' : 'flex', flexDirection: 'column', gap: '12px' } },
+      h('div', { class: 'hint', style: { marginTop: '8px' } }, 'OR HOST IN YOUR BROWSER (relay)'),
+      this.btn('Host a squad', async () => {
+        if (!saveName()) return;
+        const host = new HostSession();
+        try { await host.open(server.value, this.callsign); this.hostLobby(host); }
+        catch (e) { this.coopScreen((e as Error).message); }
+      }),
+      h('div', { class: 'row' }, code, this.btn('Join squad', async () => {
+        if (!saveName()) return;
+        const cl = new ClientSession();
+        try { await cl.join(server.value, code.value, this.callsign); this.clientLobby(cl); }
+        catch (e) { this.coopScreen((e as Error).message); }
+      })),
+      h('div', { class: 'hint' }, 'RELAY'), server);
+    const info = h('div', { class: 'hint' });
     const el = h('div', { class: 'screen' },
       h('div', { class: 'h2' }, 'Co-op'),
       h('div', { class: 'panel', style: { width: '460px', display: 'flex', flexDirection: 'column', gap: '12px' } },
         h('div', { class: 'hint' }, 'CALLSIGN'), name,
-        this.btn('Host a squad', async () => {
-          if (!saveName()) return;
-          const host = new HostSession();
-          try { await host.open(server.value, this.callsign); this.hostLobby(host); }
-          catch (e) { this.coopScreen((e as Error).message); }
-        }, 'primary'),
-        h('div', { class: 'row' }, code, this.btn('Join squad', async () => {
-          if (!saveName()) return;
-          const cl = new ClientSession();
-          try { await cl.join(server.value, code.value, this.callsign); this.clientLobby(cl); }
-          catch (e) { this.coopScreen((e as Error).message); }
-        })),
+        h('div', { class: 'hint' }, 'DEDICATED SERVER (Windows · macOS · Linux · browser)'), addr, pw, info,
+        this.btn('Join server', joinServer, 'primary'),
+        relay,
         errEl,
-        h('div', { class: 'hint' }, 'SERVER (relay)'), server,
-        h('div', { class: 'hint' }, 'One player hosts; the host runs the authoritative simulation. Friends join with the 5-letter code. Up to 5 operators. One life each: a downed teammate can be revived within 60 s with a Health Kit.')),
+        h('div', { class: 'hint' }, 'Up to 5 operators. One life each: a downed teammate can be revived within 60 s with a Health Kit. Running your own server: see docs/HOSTING.md.')),
       h('div', { style: { marginTop: '16px' } }, this.btn('Back', () => this.mainMenu(), 'small')));
+    addr.addEventListener('keydown', (e) => { if (e.key === 'Enter') void joinServer(); });
+    pw.addEventListener('keydown', (e) => { if (e.key === 'Enter') void joinServer(); });
     this.show(el);
+    // page served by a dedicated server: offer that server and hide the relay (it has none)
+    if (!DESKTOP) {
+      fetch('server-info').then((r) => r.json()).then((si) => {
+        if (!si?.dedicated || !el.isConnected) return;
+        relay.style.display = 'none';
+        if (!addr.value) addr.value = location.host;
+        info.textContent = `${si.name} · ${si.players}/${si.maxPlayers} online · ${String(si.difficulty).toUpperCase()}${si.password ? ' · password' : ''}`;
+      }).catch(() => { /* relay / dev server: no info endpoint */ });
+    }
   }
 
   private lobbyList(players: { id: number; name: string; ready: boolean; host: boolean }[], me: number) {
@@ -354,14 +407,16 @@ export class App {
   }
 
   private clientLobby(cl: ClientSession) {
+    this.mpShopEl = null; // a fresh visit: the armory opens as soon as the lobby says so
     const render = () => {
+      if (this.session) return; // in the field (or on its end screen): lobby updates wait
       const lb = cl.lobby;
       if (lb?.stage === 'shop') { if (!this.mpShopEl) this.mpShop(lb.difficulty, null, cl); else this.updateMpShopStatus(null, cl); return; }
       this.mpShopEl = null;
       const el = h('div', { class: 'screen' },
-        h('div', { class: 'h2' }, 'Squad lobby'), h('div', { class: 'code' }, cl.code),
+        h('div', { class: 'h2' }, 'Squad lobby'), h('div', { class: 'code' }, cl.server ? cl.server.name : cl.code),
         lb ? this.lobbyList(lb.players, cl.id) : h('div', { class: 'hint' }, 'Connecting…'),
-        h('div', { class: 'hint', style: { margin: '10px 0 16px' } }, lb ? `Difficulty: ${lb.difficulty.toUpperCase()} · Friendly fire in the tower: ${lb.ff ? 'ON' : 'OFF'} · waiting for the host to open the armory` : ''),
+        h('div', { class: 'hint', style: { margin: '10px 0 16px' } }, lb ? `Difficulty: ${lb.difficulty.toUpperCase()} · Friendly fire in the tower: ${lb.ff ? 'ON' : 'OFF'} · ${cl.server ? (lb.stage === 'game' ? 'a run is wrapping up: the armory opens in a moment' : 'waiting for the server') : 'waiting for the host to open the armory'}` : ''),
         this.btn('Leave', () => { cl.close(); this.mainMenu(); }, 'small'));
       this.show(el);
     };
@@ -374,8 +429,9 @@ export class App {
   private mpShopEl: HTMLElement | null = null;
   private mpStatus = h('div', { class: 'hint' });
   private mpShop(diff: Difficulty, host: HostSession | null, cl: ClientSession | null) {
-    const extra = h('div', {}, this.mpStatus, host ? this.btn('Force deploy (skip unready)', () => host.tryDeploy(true), 'small') : null);
-    const shop = new Shop(diff, `Squad armory — ${diff.toUpperCase()}`, extra);
+    const srv = cl?.server;
+    const extra = h('div', {}, srv?.motd ? h('div', { class: 'hint', style: { color: 'var(--cyan)' } }, srv.motd) : null, this.mpStatus, host ? this.btn('Force deploy (skip unready)', () => host.tryDeploy(true), 'small') : null);
+    const shop = new Shop(diff, `${srv ? srv.name : 'Squad armory'} — ${diff.toUpperCase()}`, extra);
     shop.sound = (k) => this.sfx(k);
     shop.onRendered = () => this.kanji(shop.root);
     shop.onBack = () => { if (host) { host.close(); } else cl?.close(); this.mainMenu(); };
@@ -391,13 +447,16 @@ export class App {
     let players: { name: string; ready: boolean }[] = [];
     if (host) players = [{ name: host.hostName, ready: !!host.hostLoadout }, ...[...host.peers.values()].filter((p) => p.connected)];
     else if (cl?.lobby) players = cl.lobby.players;
-    this.mpStatus.textContent = players.map((p) => `${p.name}: ${p.ready ? 'ready' : 'shopping'}`).join(' · ');
+    const t = cl?.lobby?.deployIn;
+    // joined while the squad waits on the street: confirming the loadout drops you in next to them
+    if (cl?.lobby?.late) { this.mpStatus.textContent = 'The squad is on the street, not yet in the tower. Confirm your loadout to deploy next to them.'; return; }
+    this.mpStatus.textContent = players.map((p) => `${p.name}: ${p.ready ? 'ready' : 'shopping'}`).join(' · ') + (t != null ? ` · deploying in ${t} s` : '');
   }
 
   // ------------------------------------------------------------------ settings
   settingsScreen(back: () => void, tab: 'graphics' | 'audio' | 'controls' | 'gameplay' = 'graphics') {
     const s = this.settings;
-    const apply = () => { saveSettings(s); this.input.setSettings(s); this.hud.setSettings(s); this.audio.setVolumes(s.masterVol, s.sfxVol, s.musicVol); };
+    const apply = () => { saveSettings(s); this.input.setSettings(s); this.hud.setSettings(s); this.audio.setVolumes(s.masterVol, s.sfxVol, s.musicVol); this.voice?.setVolume(s.voiceVol); this.syncVoice(); };
     const seg = <T extends string>(vals: T[], cur: T, set: (v: T) => void) => h('div', { class: 'seg' }, ...vals.map((v) => h('button', { class: v === cur ? 'on' : '', onclick: () => { set(v); apply(); this.sfx('click'); this.settingsScreen(back, tab); } }, v)));
     const slider = (label: string, v: number, set: (x: number) => void) => {
       const out = h('span', {}, `${Math.round(v * 100)}%`);
@@ -416,6 +475,7 @@ export class App {
         toggle('Screen shake', s.screenShake, (x) => (s.screenShake = x)));
     } else if (tab === 'audio') {
       body.append(slider('Master volume', s.masterVol, (x) => (s.masterVol = x)), slider('Effects volume', s.sfxVol, (x) => (s.sfxVol = x)), slider('Music & stingers', s.musicVol, (x) => (s.musicVol = x)));
+      body.append(...this.voiceSettings(s, apply, () => this.settingsScreen(back, 'audio')));
     } else if (tab === 'gameplay') {
       body.append(
         toggle('Crouch is a toggle', s.crouchToggle, (x) => (s.crouchToggle = x)),
@@ -444,6 +504,95 @@ export class App {
     this.show(el);
   }
 
+  /** Settings → Audio: co-op voice chat rows (on/off, mode, volume, microphone + level meter). */
+  private voiceSettings(s: Settings, apply: () => void, redraw: () => void): HTMLElement[] {
+    const seg = <T extends string>(vals: T[], cur: T, set: (v: T) => void) => h('div', { class: 'seg' }, ...vals.map((v) => h('button', { class: v === cur ? 'on' : '', onclick: () => { set(v); apply(); this.sfx('click'); redraw(); } }, v)));
+    const vol = h('input', { type: 'range', min: 0, max: 1.5, step: 0.05, value: s.voiceVol, oninput: (e: Event) => { s.voiceVol = Number((e.target as HTMLInputElement).value); volOut.textContent = `${Math.round(s.voiceVol * 100)}%`; apply(); } });
+    const volOut = h('span', {}, `${Math.round(s.voiceVol * 100)}%`);
+    const dev = h('select', { class: 'text', style: { maxWidth: '260px' }, onchange: () => { s.voiceDevice = dev.value; apply(); } }, h('option', { value: '' }, 'System default')) as HTMLSelectElement;
+    navigator.mediaDevices?.enumerateDevices?.().then((ds) => {
+      ds.filter((d) => d.kind === 'audioinput' && d.deviceId && d.deviceId !== 'default').forEach((d, i) => dev.append(h('option', { value: d.deviceId }, d.label || `Microphone ${i + 1}`)));
+      dev.value = s.voiceDevice;
+    }).catch(() => {});
+    // mic test: reuses the live voice mic in co-op, otherwise opens one just for the meter (closed when the screen goes)
+    const bar = h('i');
+    const meter = h('span', { class: 'mic-meter' }, bar);
+    const note = h('span', { class: 'hint' });
+    const test = this.btn('Test mic', async () => {
+      let v = this.voice?.micOn ? this.voice : null;
+      let own: VoiceChat | null = null;
+      if (!v) {
+        try { own = v = new VoiceChat(); await v.startMic(s.voiceDevice); note.textContent = 'Speak: the bar should move.'; }
+        catch (e) { own?.close(); note.textContent = `Microphone unavailable: ${(e as Error).message}`; return; }
+      }
+      const iv = setInterval(() => {
+        if (!meter.isConnected) { clearInterval(iv); own?.close(); return; }
+        bar.style.width = `${Math.min(100, v!.level * 100)}%`;
+      }, 60);
+    }, 'small');
+    const why = voiceUnsupported(true);
+    return [
+      h('div', { class: 'hint', style: { margin: '14px 0 6px' } }, 'CO-OP VOICE CHAT (proximity)'),
+      h('div', { class: 'srow' }, h('span', {}, 'Voice chat'), seg(['on', 'off'], s.voiceOn ? 'on' : 'off', (x) => (s.voiceOn = x === 'on')), h('span')),
+      h('div', { class: 'srow' }, h('span', {}, 'Transmit'), seg(['push-to-talk', 'open mic'], s.voiceMode === 'ptt' ? 'push-to-talk' : 'open mic', (x) => (s.voiceMode = x === 'open mic' ? 'open' : 'ptt')), h('span')),
+      h('div', { class: 'srow' }, h('span', {}, 'Voice volume'), vol, volOut),
+      h('div', { class: 'srow' }, h('span', {}, 'Microphone'), dev, h('span')),
+      h('div', { class: 'srow' }, h('span', {}, 'Mic level'), h('div', { style: { display: 'flex', gap: '10px', alignItems: 'center' } }, test, meter), note),
+      h('div', { class: 'hint', style: { margin: '6px 0 0', lineHeight: '1.6' } },
+        `Push-to-talk: hold ${keyLabel(s.bindings.voice)} (rebind under Controls; controllers have no free button, use open mic). You hear squadmates on your floor within about 10 m: full volume within 3 m, fading out with distance, muffled through walls. Voice goes through the game server, nothing to set up.`,
+        why ? h('div', { style: { color: '#ff8080', marginTop: '6px' } }, `Voice: ${why}.`) : null),
+    ];
+  }
+
+  /** Starts / stops co-op voice to match the settings and the session (single player: never). */
+  private syncVoice() {
+    const s = this.session;
+    const net = s?.kind === 'host' ? s.host : s?.kind === 'client' ? s.client : null;
+    if (!net || !this.settings.voiceOn || voiceUnsupported(false)) {
+      if (this.voice) { this.voice.close(); this.voice = null; }
+      if (s?.kind === 'client') s.client.setVoice(false);
+      if (s?.kind === 'host') s.host.voiceListeners.delete(1);
+      this.voiceInd.classList.remove('on');
+      return;
+    }
+    let v = this.voice;
+    if (!v) {
+      v = this.voice = new VoiceChat();
+      this.micTried = '\0';
+      const vc = v;
+      if (s!.kind === 'client') { const cl = s!.client; cl.onVoice = (id, b) => vc.receive(id, b); vc.send = (b) => cl.sendVoice(b); cl.setVoice(true); }
+      else if (s!.kind === 'host') { const host = s!.host; host.onVoice = (id, b) => vc.receive(id, b); vc.send = (b) => host.voiceFrom(host.id, b); host.voiceListeners.add(host.id); }
+    }
+    v.setVolume(this.settings.voiceVol);
+    // the microphone: once per device choice (a refusal is reported once, listening keeps working)
+    if (this.micTried !== this.settings.voiceDevice) {
+      this.micTried = this.settings.voiceDevice;
+      const vc = v;
+      vc.startMic(this.settings.voiceDevice).then(
+        () => { if (this.voice === vc) this.hud.message(this.settings.voiceMode === 'ptt' ? `Voice chat on: hold ${keyLabel(this.settings.bindings.voice)} to talk.` : 'Voice chat on: open mic.', 'info'); },
+        (e) => { if (this.voice === vc) this.hud.message(`Voice chat: listening only (${(e as Error).message || 'microphone blocked'}).`, 'warn'); });
+    }
+  }
+
+  /** Per frame: push-to-talk / open mic, and each speaker's distance volume, wall muffling and stereo side. */
+  private updateVoice(view: ViewSource, me: PlayerState) {
+    const v = this.voice;
+    if (!v) return;
+    v.openMic = this.settings.voiceMode === 'open';
+    v.wantTalk = me.connected && me.life !== 'out' && (v.openMic || this.input.isHeld('voice'));
+    this.voiceInd.classList.toggle('on', v.transmitting);
+    const L = view.floorState(me.floor).L;
+    const mine = this.renderer.worldToScreen(me.x, me.y, 1.5).x;
+    const w = this.canvas.clientWidth || window.innerWidth;
+    for (const id of v.speakerIds()) {
+      const p = view.players.find((q) => q.id === id);
+      if (!p || p.floor !== me.floor || !p.connected) { v.setSpatial(id, 0, 0, false); continue; }
+      const occluded = !lineOfSight(L, me.x, me.y, p.x, p.y);
+      const pan = (this.renderer.worldToScreen(p.x, p.y, 1.5).x - mine) / (w * 0.35);
+      v.setSpatial(id, voiceGain(dist(me.x, me.y, p.x, p.y), occluded), pan * 0.8, occluded);
+    }
+  }
+
   controlsScreen(back: () => void) {
     const b = this.settings.bindings;
     const K = (a: Action) => keyLabel(b[a]);
@@ -453,7 +602,7 @@ export class App {
       ['Knife', `${K('melee')} / R-stick click`], ['Interact · loot · revive', `${K('interact')} / RB`], ['Swap weapon', `${K('swap')} / Y`], ['Weapon slots', `${K('slot1')} ${K('slot2')} ${K('slot3')}`],
       ['Throw grenade', `${K('grenade')} / LB`], ['Cycle grenade', `${K('cycleGrenade')} / D-pad →`], ['Torch on/off', `${K('torch')} / D-pad ↑`], ['Use selected item', `${K('use')} / D-pad ↓`],
       ['Select belt item', `${K('item1')}–${K('item5')} or mouse wheel`], ['Cycle belt item', `${K('cycleItem')} / D-pad ←`], ['Ping / mark enemy', `${K('ping')} or MMB / View`],
-      ['Pause', `${K('pause')} / Start`], ['Zoom', `Ctrl + wheel or ${K('zoomOut')} / ${K('zoomIn')}`],
+      ['Pause', `${K('pause')} / Start`], ['Push-to-talk (co-op voice)', `hold ${K('voice')}`], ['Zoom', `Ctrl + wheel or ${K('zoomOut')} / ${K('zoomIn')}`],
     ];
     const el = h('div', { class: 'screen' }, h('div', { class: 'panel settings' },
       h('div', { class: 'h2' }, 'Controls'),
@@ -516,19 +665,23 @@ export class App {
     this.show(null);
     if (!this.hud.root.isConnected) this.ui.prepend(this.hud.root);
     this.hud.root.style.display = 'block';
+    this.tags.root.style.display = 'block';
     if (s.kind !== 'client') {
       s.sim.onTravel = (p) => { if (s.kind === 'local' && p.id === this.localId) this.saveRun(); };
       this.localId = s.kind === 'local' ? s.sim.players[0].id : 1;
     }
     this.audio.unlock();
+    this.syncVoice();
   }
 
   private endSession(closeNet = true) {
     const s = this.session;
     if (s && closeNet) { if (s.kind === 'host') s.host.close(); if (s.kind === 'client') s.client.close(); }
     this.session = null;
+    this.syncVoice();
     this.audio.stopWorld();
     this.hud.root.style.display = 'none';
+    this.tags.root.style.display = 'none';
     this.closeElevator(null);
   }
 
@@ -556,11 +709,17 @@ export class App {
 
   private frame(now: number, background = false) {
     if (!background) requestAnimationFrame((t) => this.frame(t));
+    const t0 = performance.now();
+    this.frameInner(now, background);
+    if (perfOn && !background) perfFrame(performance.now() - t0);
+  }
+
+  private frameInner(now: number, background: boolean) {
     const dt = Math.min(0.1, (now - this.last) / 1000);
     this.last = now;
     const s = this.session;
     this.menuNav();
-    if (!s) return;
+    if (!s) { this.renderer.idle(); return; }
     const view = this.view()!;
     const me = view.players.find((p) => p.id === this.localId);
     if (!me) return;
@@ -576,7 +735,7 @@ export class App {
         let steps = 0;
         while (this.acc >= 1 / 60 && steps < 6) {
           this.input.build(me.input, me, ground, this.assist(me));
-          s.sim.tick(1 / 60);
+          perfFrameStage('frames: sim', () => s.sim.tick(1 / 60));
           this.acc -= 1 / 60;
           steps++;
         }
@@ -589,12 +748,16 @@ export class App {
     if (this.input.zoomSteps) { this.renderer.setZoom(this.renderer.zoom + this.input.zoomSteps * 0.06); this.input.zoomSteps = 0; }
     if (!this.settings.screenShake) this.renderer.fx.shake = 0;
     this.renderer.update(view, this.localId, dt, events);
-    this.audio.onEvents(events, view, this.localId);
-    this.audio.update(view, this.localId, dt);
-    this.audio.ambientSounds(this.renderer.drainAmbientSounds());
-    this.hud.onEvents(events, this.localId, view);
+    perfFrameStage('frames: audio', () => {
+      this.audio.onEvents(events, view, this.localId);
+      this.audio.update(view, this.localId, dt);
+      this.audio.ambientSounds(this.renderer.drainAmbientSounds());
+    });
+    perfFrameStage('frames: hud', () => this.hud.onEvents(events, this.localId, view));
     const focus = this.renderer.focusPlayer(view, this.localId);
-    this.hud.update(view, this.localId, dt, focus?.id ?? this.localId);
+    this.updateVoice(view, me);
+    if (focus) this.tags.update(view, this.localId, focus.floor, (x, y, z) => this.renderer.worldToScreen(x, y, z), (id) => !!this.voice?.speaking(id));
+    perfFrameStage('frames: hud', () => this.hud.update(view, this.localId, dt, focus?.id ?? this.localId));
     this.updateOverlays(me, dt);
     this.updateElevator(me);
     this.checkEnd(view, me);
@@ -737,11 +900,21 @@ export class App {
           rank > 0 ? h('div', { style: { color: 'var(--cyan)' } }, `${me.name}: #${rank} in the ${view.cfg.difficulty} Hall of Records`) : null),
         h('div', { class: 'menu' },
           view.cfg.mode === 'single' ? this.btn('New run (new tower)', () => { const d = view.cfg.difficulty as Difficulty; this.endSession(); this.spStart(d); }, 'primary') : null,
+          this.session?.kind === 'client' && this.session.client.server ? this.btn('Back to server lobby', () => this.backToServerLobby(), 'primary') : null,
           this.btn('Hall of Records', () => this.recordsScreen(() => this.mainMenu())),
           this.btn('Main menu', () => this.mainMenu())));
       this.show(el);
       this.audio.stinger(won ? 'victory' : 'death');
     }, won ? 1500 : 2200);
+  }
+
+  /** Dedicated server: stay connected after a run and go back to its armory for the next one. */
+  private backToServerLobby() {
+    const s = this.session;
+    if (s?.kind !== 'client') return;
+    this.endSession(false);
+    this.audio.setMenuMusic(true);
+    this.clientLobby(s.client);
   }
 
   // ------------------------------------------------------------------ gamepad menu navigation

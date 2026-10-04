@@ -3,7 +3,7 @@ import type { Quality } from '../render/renderer';
 
 export type Action =
   | 'moveUp' | 'moveDown' | 'moveLeft' | 'moveRight' | 'sprint' | 'crouch' | 'jump' | 'reload' | 'melee' | 'interact'
-  | 'use' | 'cycleItem' | 'swap' | 'slot1' | 'slot2' | 'slot3' | 'grenade' | 'cycleGrenade' | 'torch' | 'ping' | 'item1' | 'item2' | 'item3' | 'item4' | 'item5' | 'zoomIn' | 'zoomOut' | 'pause';
+  | 'use' | 'cycleItem' | 'swap' | 'slot1' | 'slot2' | 'slot3' | 'grenade' | 'cycleGrenade' | 'torch' | 'ping' | 'item1' | 'item2' | 'item3' | 'item4' | 'item5' | 'zoomIn' | 'zoomOut' | 'pause' | 'voice';
 
 export const ACTION_LABEL: Record<Action, string> = {
   moveUp: 'Move up', moveDown: 'Move down', moveLeft: 'Move left', moveRight: 'Move right', sprint: 'Sprint (hold)', crouch: 'Crouch',
@@ -11,7 +11,7 @@ export const ACTION_LABEL: Record<Action, string> = {
   cycleItem: 'Cycle item', swap: 'Swap weapon', slot1: 'Primary weapon', slot2: 'Secondary weapon', slot3: 'Knife',
   grenade: 'Throw grenade', cycleGrenade: 'Cycle grenade', torch: 'Toggle torch', ping: 'Ping / mark enemy',
   item1: 'Select health kit (belt 1)', item2: 'Select battery (belt 2)', item3: 'Select armour plate (belt 3)', item4: 'Select energy drink (belt 4)', item5: 'Select snack (belt 5)',
-  zoomIn: 'Zoom in', zoomOut: 'Zoom out', pause: 'Pause / menu',
+  zoomIn: 'Zoom in', zoomOut: 'Zoom out', pause: 'Pause / menu', voice: 'Push-to-talk (co-op voice)',
 };
 
 export const DEFAULT_BINDINGS: Record<Action, string> = {
@@ -19,6 +19,7 @@ export const DEFAULT_BINDINGS: Record<Action, string> = {
   reload: 'KeyR', melee: 'KeyV', interact: 'KeyE', use: 'KeyF', cycleItem: 'KeyX', swap: 'KeyQ', slot1: 'F1', slot2: 'F2',
   slot3: 'F3', grenade: 'KeyG', cycleGrenade: 'KeyB', torch: 'KeyT', ping: 'KeyZ',
   item1: 'Digit1', item2: 'Digit2', item3: 'Digit3', item4: 'Digit4', item5: 'Digit5', zoomIn: 'Equal', zoomOut: 'Minus', pause: 'Escape',
+  voice: 'KeyH', // V (the usual push-to-talk key) is the knife here
 };
 
 export interface Settings {
@@ -34,11 +35,19 @@ export interface Settings {
   screenShake: boolean;
   /** off | mirrors (live planar mirrors) | raytraced (mirrors + screen-space ray-marched floor reflections) */
   reflections: 'off' | 'mirrors' | 'raytraced';
+  /** co-op proximity voice chat (src/audio/voice.ts) */
+  voiceOn: boolean;
+  /** ptt: hold the Push-to-talk key; open: transmit whenever you speak */
+  voiceMode: 'ptt' | 'open';
+  /** microphone deviceId ('' = system default) */
+  voiceDevice: string;
+  voiceVol: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   quality: 'medium', masterVol: 0.8, sfxVol: 0.9, musicVol: 0.7, crouchToggle: true, aimAssist: true, mouseAimAssist: true, showFps: false,
   bindings: { ...DEFAULT_BINDINGS }, deadzone: 0.18, screenShake: true, reflections: 'mirrors',
+  voiceOn: true, voiceMode: 'ptt', voiceDevice: '', voiceVol: 1,
 };
 
 /** v2: number keys moved to the item belt (1-5); weapon slots to F1-F3. Older saved bindings are reset. */

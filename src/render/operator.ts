@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Builder, merge } from './models';
+import { Builder, merge, cloneRig } from './models';
 import { currentHoliday } from '../config/holiday';
 
 /**
@@ -60,7 +60,16 @@ function meshes(b: Builder, mat: THREE.Material): THREE.Group {
 export interface GunModel { g: THREE.Group; grip: THREE.Vector3; fore: THREE.Vector3; muzzle: THREE.Vector3 }
 
 /** Detailed weapon, +z forward, origin at the rear of the receiver (stock extends to -z). */
+const guns = new Map<string, GunModel>();
+/** A gun model; each kind is built once and copied after that (shared geometry; the anchor points are read-only). */
 export function buildGun(kind: GunKind, torch: boolean): GunModel {
+  const key = kind + torch;
+  let p = guns.get(key);
+  if (!p) guns.set(key, (p = makeGun(kind, torch)));
+  return { ...p, g: p.g.clone() };
+}
+
+function makeGun(kind: GunKind, torch: boolean): GunModel {
   const b = new Builder();
   const C = COL;
   let fore = V(0, -0.04, 0.34), muzzle = V(0, 0.01, 0.62);
@@ -257,6 +266,17 @@ export class OperatorRig {
   readonly outfit: Outfit;
   /** Halloween undead loyalist/cyborg: rotting skin, torn clothes, no gun, arms-out shamble and claw swipes */
   readonly zombie: boolean;
+  private static protos = new Map<string, OperatorRig>();
+  /** A rig with this look: built from primitives once per look (and holiday), copied after that. */
+  static make(teamColor: number, opts: { outfit?: Outfit; skin?: number; look?: OfficerLook; zombie?: boolean } = {}): OperatorRig {
+    const key = JSON.stringify([teamColor, opts, currentHoliday()]);
+    let p = OperatorRig.protos.get(key);
+    if (!p) OperatorRig.protos.set(key, (p = new OperatorRig(teamColor, opts)));
+    const r = cloneRig(p);
+    r.strobe.material = (p.strobe.material as THREE.Material).clone(); // pulses per rig
+    return r;
+  }
+
   constructor(private teamColor: number, opts: { outfit?: Outfit; skin?: number; look?: OfficerLook; zombie?: boolean } = {}) {
     const outfit = (this.outfit = opts.outfit ?? 'operator');
     const cop = outfit === 'police';

@@ -9,6 +9,7 @@
 
 <p align="center">
   <a href="../../releases/latest"><img src="https://img.shields.io/badge/download-latest%20release-29d3ff?style=for-the-badge" alt="Download"></a>
+  <img src="https://img.shields.io/badge/status-BETA-ff9f1a?style=for-the-badge" alt="Status: beta">
   <img src="https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows">
   <img src="https://img.shields.io/badge/macOS-000000?style=for-the-badge&logo=apple&logoColor=white" alt="macOS">
   <img src="https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Linux">
@@ -21,6 +22,12 @@
 </p>
 
 ---
+
+> [!WARNING]
+> **Tower Breach is in BETA.** It's playable from the street to the crown, but expect bugs, balance changes and the
+> odd rough edge, especially in online co-op and voice chat, which are new. Saves and settings may not carry over
+> between beta versions, and co-op players and the server must all run the **same version**. Found a problem?
+> Please [open an issue](../../issues) with your OS, the version shown on the main menu, and what happened.
 
 Three years ago an AI called **SOVEREIGN** took the grid. It runs the country from the top of a 200-floor tower.
 You carry **LULLABY**, a kill-switch virus on a USB drive. Fight, sneak and hack your way up, floor by floor, then
@@ -77,9 +84,17 @@ Get the latest build from **[Releases](../../releases/latest)**:
 | **Windows** | `Tower Breach Setup <version>.exe` (installer) or `TowerBreach-<version>-portable.exe` (no install) | The build is unsigned. If SmartScreen appears, click **More info → Run anyway**. |
 | **macOS** | `TowerBreach-<version>-arm64.dmg` (Apple Silicon) or `-x64.dmg` (Intel) | Drag the app to Applications. The first time, **right-click the app → Open**. |
 | **Linux** (Debian/Ubuntu) | `tower-breach_<version>_amd64.deb` | `sudo apt install ./tower-breach_*.deb` |
+| **Co-op server** (optional) | `towerbreach-server-windows-x64.exe`, `-macos-arm64`, `-macos-x64` or `-linux-x64` | Only the person hosting needs it. See **[docs/HOSTING.md](docs/HOSTING.md)**. |
 
-The desktop builds are **single player**. For co-op, run the web build with its relay server. See
-[Build from source](#build-from-source) and the [co-op notes](docs/DEVELOPMENT.md#playing-co-op-online).
+**Co-op with cross-play.** Someone runs the **dedicated server**: a single download for Windows, macOS or Linux
+(`towerbreach-server-<os>`), or a small VPS. Friends join it from the **desktop app on any OS** (Co-op → server
+address → **Join server**), or from a **browser** by opening `http://<server>:8787`. Both kinds of player can be in
+the same squad. The server runs the game itself, so the run carries on when anyone leaves, and they can rejoin with
+the same callsign. Late friends can still join while the squad is on the street; once someone enters the tower the
+squad is locked. Squadmates on the same floor and close by can talk with **proximity voice chat** (push-to-talk,
+routed through the server, no extra setup). How to run one, including port forwarding and firewalls:
+**[docs/HOSTING.md](docs/HOSTING.md)**. Browser players can also still host a squad in their own browser through the
+relay (`npm start`, 5-letter codes). See the [co-op notes](docs/DEVELOPMENT.md#playing-co-op-online).
 
 📖 **New to the game? Read the [player manual](docs/MANUAL.md).**
 
@@ -126,11 +141,13 @@ npm install
 npm run dev          # play at http://localhost:5173
 npm run build        # production build into dist/
 npm start            # game + co-op relay at http://localhost:8080
+npm run server       # dedicated co-op server at http://localhost:8787 (after npm run build)
 npm test             # headless test suite
 
 npm run dist:win     # Windows installer + portable exe
 npm run dist:mac     # macOS dmg (x64 + arm64)
 npm run dist:linux   # Debian .deb
+npm run dist:server  # dedicated server binaries for Windows, macOS (x64, arm64), Linux (needs Bun)
 npx install-electron && npm run desktop   # run the desktop app locally
 ```
 
@@ -144,7 +161,8 @@ Design and development: BoKu.
 Third-party components:
 
 - [three.js](https://threejs.org) (MIT)
-- [ws](https://github.com/websockets/ws) (MIT), used by the relay server
+- [ws](https://github.com/websockets/ws) (MIT), used by the relay and the dedicated server
+- [Bun](https://bun.sh) (MIT) compiles the standalone dedicated-server binaries and is included in them
 - Chakra Petch UI font (SIL Open Font License 1.1), via `@fontsource/chakra-petch`
 - Street ambience: "citystreet3" by sagetyrtle (CC0 1.0). See [public/audio/CREDITS.txt](public/audio/CREDITS.txt).
 

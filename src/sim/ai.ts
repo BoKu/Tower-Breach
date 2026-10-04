@@ -109,7 +109,7 @@ export class AI {
 
   /** Detection rate (per second) of player p by enemy e, 0 if not perceivable. */
   detectRate(fs: FloorState, e: Enemy, p: PlayerState): number {
-    if (p.life !== 'alive' || p.floor !== fs.floor) return 0;
+    if (p.life !== 'alive' || !p.connected || p.floor !== fs.floor) return 0; // disconnected players have left the world
     const st = ENEMY_STATS[e.type];
     const d = dist(e.x, e.y, p.x, p.y);
     const inTorch = p.torchOn && d < 16 && Math.cos(angleTo(p.x, p.y, e.x, e.y) - p.facing) > 0.86;
@@ -165,7 +165,7 @@ export class AI {
       if (e.aware >= 1) {
         if (e.state !== 'alert' || e.target !== best.id) {
           const cur = this.sim.players.find((p) => p.id === e.target);
-          if (e.state !== 'alert' || !cur || cur.life !== 'alive' || cur.floor !== fs.floor || dist(e.x, e.y, best.x, best.y) < dist(e.x, e.y, cur.x, cur.y) - 3) this.becomeAlert(fs, e, best, true);
+          if (e.state !== 'alert' || !cur || cur.life !== 'alive' || !cur.connected || cur.floor !== fs.floor || dist(e.x, e.y, best.x, best.y) < dist(e.x, e.y, cur.x, cur.y) - 3) this.becomeAlert(fs, e, best, true);
         }
         e.lastKnownX = best.x; e.lastKnownY = best.y; e.lastSeenT = this.sim.t;
       } else if (e.aware > 0.35 && (e.state === 'patrol' || e.state === 'guard' || e.state === 'wander' || e.state === 'idle' || e.state === 'sleep')) {
@@ -196,9 +196,9 @@ export class AI {
         break;
       case 'alert': {
         const tp = sim.players.find((p) => p.id === e.target);
-        if (!tp || tp.life !== 'alive' || tp.floor !== fs.floor) {
+        if (!tp || tp.life !== 'alive' || !tp.connected || tp.floor !== fs.floor) {
           // find another target
-          const alt = sim.players.filter((p) => p.life === 'alive' && p.floor === fs.floor).sort((a, b) => dist(e.x, e.y, a.x, a.y) - dist(e.x, e.y, b.x, b.y))[0];
+          const alt = sim.players.filter((p) => p.life === 'alive' && p.connected && p.floor === fs.floor).sort((a, b) => dist(e.x, e.y, a.x, a.y) - dist(e.x, e.y, b.x, b.y))[0];
           if (alt && dist(e.x, e.y, alt.x, alt.y) < 20) { e.target = alt.id; e.lastKnownX = alt.x; e.lastKnownY = alt.y; }
           else { this.setState(e, 'search'); e.target = -1; }
         } else if (sim.t - e.lastSeenT > (fs.wave?.active ? 30 : 6)) {

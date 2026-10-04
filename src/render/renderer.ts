@@ -5,12 +5,19 @@ import { SSRPass } from './ssr';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { FloorView } from './floorView';
+import { FloorView, prefetchKit, type ViewCtx } from './floorView';
+import { BuildingPlan } from '../gen/building';
+import { buildGun, OperatorRig } from './operator';
+import { Pigeon, Rat } from './critters';
+import { armoryArt } from './armoryArt';
+import { generateFloor, FW, FH, type FloorLayout } from '../gen/floor';
+import { enemyRig } from './entities';
+import { FINAL_FLOOR, type Difficulty } from '../config/difficulty';
 import { Entities } from './entities';
 import { FX } from './fx';
 import { cutUniforms } from './cutaway';
 import { beamMaterial } from './beam';
-import { Ambient, AmbientSound } from './ambient';
+import { Ambient, AmbientSound, ambientWarmTasks } from './ambient';
 import { Roaches } from './roaches';
 import { Showcase } from './sandbox';
 import { screenAim, AimTarget, aimRay, BodyTarget } from './aim';
@@ -23,6 +30,7 @@ import { weapon } from '../config/weapons';
 import type { ViewSource } from './view';
 import { currentHoliday } from '../config/holiday';
 import { Snowfall } from './christmas';
+import { perfBegin, perfTime, perfWatchGL, perfIdle } from '../core/perf';
 import type { SimEvent, PlayerState } from '../sim/state';
 
 export type Quality = 'low' | 'medium' | 'high' | 'ultra';
@@ -76,6 +84,7 @@ export class GameRenderer {
     this.quality = quality;
     const q = QUALITY[quality];
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: q.aa, powerPreference: 'high-performance' });
+    perfWatchGL(this.renderer.getContext(), () => this.renderer.info.programs ?? []);
     this.renderer.setClearColor(0x030405);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
@@ -201,29 +210,42 @@ export class GameRenderer {
   update(view: ViewSource, localId: number, dt: number, events: SimEvent[]) {
     const focus = this.focusPlayer(view, localId);
     if (!focus) return;
-    const fs = view.floorState(focus.floor);
     const key = `${view.cfg.seed}:${focus.floor}`;
-    if (key !== this.floorKey) {
-      if (this.floorView) { this.scene.remove(this.floorView.group); this.floorView.dispose(); }
-      this.floorView = new FloorView(fs.L, { flight: (f, i) => view.flightCondition(f, i), elevatorWorking: (f, j) => view.plan.elevator(f, j).working });
+    const switched = key !== this.floorKey;
+    const retired: FloorView[] = [];
+    if (switched) perfBegin(this.floorKey ? `${this.floorKey.split(':')[1]} -> ${focus.floor}` : `load -> ${focus.floor} (page ${Math.round(performance.now())} ms)`);
+    const fs = switched ? perfTime('floorState', () => view.floorState(focus.floor)) : view.floorState(focus.floor);
+    if (switched) {
+      if (this.floorView) this.scene.remove(this.floorView.group);
+      this.floorView = perfTime('view', () => this.viewFor(ctxOf(view), key, fs.L, retired, true));
+      this.floorView.warmed = true; // drawn for real from now on
       this.scene.add(this.floorView.group);
-      if (this.ambient) { this.scene.remove(this.ambient.group); this.ambient.dispose(); this.ambient = null; }
-      if (fs.L.ambient.length) { this.ambient = new Ambient(fs.L, view.cfg.mode === 'single'); this.scene.add(this.ambient.group); }
-      if (this.roaches) this.scene.remove(this.roaches.group); // rigs share module-level geometry: nothing to dispose
-      this.roaches = new Roaches(fs.L);
-      this.scene.add(this.roaches.group);
+      perfTime('ambient + roaches', () => {
+        // street life is kept for the run (walking back out to the cordon rebuilds nothing)
+        if (this.ambient) { this.scene.remove(this.ambient.group); this.park(this.ambient, this.ambientKey); this.ambient = null; }
+        if (fs.L.ambient.length) {
+          const akey = `${key}:${view.cfg.mode === 'single'}`;
+          this.ambient = this.parkedKey === akey ? this.unpark() : new Ambient(fs.L, view.cfg.mode === 'single');
+          this.ambientKey = akey;
+          this.scene.add(this.ambient.group);
+        }
+        if (this.roaches) this.scene.remove(this.roaches.group); // rigs share module-level geometry: nothing to dispose
+        this.roaches = new Roaches(fs.L);
+        this.scene.add(this.roaches.group);
+      });
       if (this.showcase) { this.scene.remove(this.showcase.group); this.showcase.dispose(); this.showcase = null; }
       if (fs.L.theme === 'sandbox') { this.showcase = new Showcase(fs.L); this.scene.add(this.showcase.group); this.showcase.update(0); this.showcase.setPaused(!this.showcaseAnim); }
       this.floorKey = key;
       this.fx.clear();
       this.entities.reset();
       this.camTarget.set(focus.x, 0, focus.y);
+      this.ahead.reset(view, focus.floor);
     }
     for (const ev of events) this.fx.onEvent(ev, focus.floor, localId);
     this.floorView!.update(fs, view.t, dt);
-    this.entities.update(view, localId, fs, dt, events);
+    perfTime(switched ? 'entities (1st)' : '', () => this.entities.update(view, localId, fs, dt, events));
     {
-      const people = view.players.filter((p) => p.floor === fs.floor && p.life === 'alive').map((p) => ({ x: p.x, y: p.y }));
+      const people = view.players.filter((p) => p.floor === fs.floor && p.life === 'alive' && p.connected).map((p) => ({ x: p.x, y: p.y }));
       const bangs: { x: number; y: number }[] = [];
       for (const ev of events) if ((ev.e === 'shot' || ev.e === 'explode') && ev.f === fs.floor) bangs.push({ x: ev.x, y: ev.y });
       this.ambient?.update(view.t, dt, people, bangs, fs.npcHold, fs.npcTalk);
@@ -353,7 +375,7 @@ export class GameRenderer {
       l.intensity = f.intensity * (1 - f.t / f.dur);
     });
     // ---- torches (gun lights) for everyone on this floor
-    const lit = view.players.filter((p) => p.floor === focus.floor && p.life === 'alive' && p.torchOn);
+    const lit = view.players.filter((p) => p.floor === focus.floor && p.life === 'alive' && p.connected && p.torchOn);
     lit.sort((a, b) => (a.id === localId ? -1 : b.id === localId ? 1 : 0));
     this.torches.forEach((tch, i) => {
       const p = lit[i];
@@ -390,10 +412,223 @@ export class GameRenderer {
         this.laser.scale.set(1, 1, from.distanceTo(to));
       }
     }
-    if (this.composer) this.composer.render(); else this.renderer.render(this.scene, this.camera);
+    perfTime(switched ? 'render (1st, shaders)' : '', () => { if (this.composer) this.composer.render(); else this.renderer.render(this.scene, this.camera); });
+    // retired views are disposed only after the new floor has rendered: their materials keep the shader programs
+    // alive (three releases a program with its last material, and the new floor would have to relink it)
+    for (const v of retired) v.dispose();
+    this.ahead.step(view, focus);
+  }
+
+  /**
+   * Built floor views by `${seed}:${floor}`: the current floor, the last few visited (stairs back down are instant)
+   * and the ones built ahead of time (see Ahead). A view is reused only for the very same layout object and while its
+   * baked-in stair/lift dressing is current.
+   */
+  readonly views = new Map<string, FloorView>();
+  private static VIEWS = 5;
+  private ahead = new Ahead(this);
+  /** street Ambient parked while inside the tower (or built ahead in the menus), by `${seed}:${floor}:${solo}` */
+  private ambientKey = '';
+  private parkedAmbient: Ambient | null = null;
+  private parkedKey = '';
+  private park(a: Ambient, key: string) { if (this.parkedAmbient !== a) this.parkedAmbient?.dispose(); this.parkedAmbient = a; this.parkedKey = key; }
+  private unpark() { const a = this.parkedAmbient!; this.parkedAmbient = null; this.parkedKey = ''; return a; }
+  /** Menus: build a street's single-player life ahead and draw it once off-screen (its rigs go up to the GPU). */
+  prepareStreet(key: string, L: FloorLayout) {
+    const akey = `${key}:true`;
+    if (this.parkedKey !== akey) this.park(new Ambient(L, true), akey);
+    this.drawOffscreen(this.parkedAmbient!.group, true);
+  }
+
+  viewFor(ctx: ViewCtx, key: string, L: FloorLayout, retired: FloorView[], entering = false): FloorView {
+    let v = this.views.get(key);
+    this.views.delete(key);
+    if (v) v.ctx = ctx;
+    if (v && (v.L !== L || v.stale())) { retired.push(v); v = undefined; }
+    v ??= new FloorView(L, ctx);
+    this.views.set(key, v); // most recently used last
+    const seed = key.split(':')[0];
+    // evict the least recently used; the street view stays for the run (it is the most expensive to build). Views of
+    // other towers go once a game shows this one (menus warm several: a new run's and the saved run's)
+    for (const [k, o] of this.views) {
+      const other = entering && k.split(':')[0] !== seed;
+      if (o === v || o === this.floorView || (!other && (this.views.size <= GameRenderer.VIEWS || k.endsWith(':0')))) continue;
+      this.views.delete(k);
+      retired.push(o);
+    }
+    return v;
+  }
+  /** Menus: start the warm-up (see Ahead.warmup); idle() runs it a task per frame while no game is on. */
+  warmup(runs: { seed: number; difficulty: Difficulty; floors: number[] }[]) { this.ahead.warmup(runs); }
+  idle() { this.ahead.step(); }
+  /** Warm a floor view's shader programs off-screen, lit as it will be (only the street casts sun shadows). */
+  warmShaders(v: FloorView): Promise<unknown> { return this.compileFor(v.group, v.L.floor <= 0); }
+  /** Compile `o`'s programs off-screen, lit as on the street (sun shadows) or inside the tower. */
+  compileFor(o: THREE.Object3D, street: boolean): Promise<unknown> {
+    const sun = this.moon.castShadow;
+    this.moon.castShadow = street && QUALITY[this.quality].shadows;
+    // the scene renders into the composer's buffers (linear, no tone mapping), which changes the programs
+    this.renderer.setRenderTarget(this.composer?.writeBuffer ?? null);
+    const done = this.renderer.compileAsync(o, this.camera, this.scene).catch(() => { /* context lost: the frame compiles it */ });
+    this.renderer.setRenderTarget(null);
+    this.moon.castShadow = sun;
+    return done;
+  }
+  private warmCam = new THREE.OrthographicCamera(-FW / 2 - 2, FW / 2 + 2, FH / 2 + 2, -FH / 2 - 2, 1, 80);
+  private warmRT: THREE.WebGLRenderTarget | null = null;
+  /**
+   * Draw part of a built-ahead view (top-level children from `from`, a few per call) off-screen: its geometry goes up
+   * to the GPU and the programs compile() can't reach (shadow passes) get linked before the floor is entered.
+   * Returns where to continue, or -1 when done.
+   */
+  prerender(key: string, from: number): number {
+    const v = this.views.get(key);
+    if (!v || v === this.floorView) return -1;
+    const kids = v.group.children, to = Math.min(kids.length, from + (v.L.floor === 0 ? 3 : 8)); // street props are heavy
+    const vis = kids.map((c) => c.visible);
+    kids.forEach((c, i) => (c.visible = vis[i] && i >= from && i < to));
+    this.drawOffscreen(v.group, v.L.floor <= 0);
+    kids.forEach((c, i) => (c.visible = vis[i]));
+    if (to < kids.length) return to;
+    v.warmed = true;
+    return -1;
+  }
+  /** Menus only: run the composer once over an empty scene (the canvas just clears) to link the post-processing. */
+  warmPost() {
+    if (!this.composer) return;
+    const hidden = this.scene.children.filter((c) => c.visible);
+    for (const c of hidden) c.visible = false;
+    this.composer.render();
+    for (const c of hidden) c.visible = true;
+  }
+  /**
+   * Render `o` alone (scene lights kept, everything else hidden) into a tiny target, the whole floor from above, lit
+   * as on the street or inside. Only with the composer: without it the real frame renders straight to the canvas,
+   * with other programs, so there is nothing to warm this way.
+   */
+  drawOffscreen(o: THREE.Object3D, street: boolean) {
+    if (!this.composer) return;
+    this.warmRT ??= new THREE.WebGLRenderTarget(8, 8, { type: THREE.HalfFloatType });
+    this.warmCam.position.set(FW / 2, 40, FH / 2);
+    this.warmCam.lookAt(FW / 2, 0, FH / 2);
+    const hidden = this.scene.children.filter((c) => c.visible && !(c as THREE.Light).isLight);
+    for (const c of hidden) c.visible = false;
+    const sun = this.moon.castShadow, parent = o.parent, spot = this.torches[0].spot;
+    // aim the sun and the shadow-casting torch at the floor so the shadow passes draw (and link) it too
+    const keep = [this.moon.position, this.moon.target.position, spot.position, spot.target.position].map((p) => p.clone());
+    this.moon.position.set(FW / 2 + 18, 40, FH / 2 + 26); this.moon.target.position.set(FW / 2, 0, FH / 2);
+    spot.position.set(FW / 2, 3, FH / 2); spot.target.position.set(FW / 2 + 8, 0.3, FH / 2);
+    this.moon.castShadow = street && QUALITY[this.quality].shadows;
+    this.scene.add(o);
+    this.renderer.setRenderTarget(this.warmRT);
+    this.renderer.render(this.scene, this.warmCam);
+    this.renderer.setRenderTarget(null);
+    this.scene.remove(o);
+    parent?.add(o);
+    this.moon.castShadow = sun;
+    [this.moon.position, this.moon.target.position, spot.position, spot.target.position].forEach((p, i) => p.copy(keep[i]));
+    for (const c of hidden) c.visible = true;
   }
 
   drainAmbientSounds(): AmbientSound[] { return this.ambient ? this.ambient.drainSounds() : []; }
 
   setZoom(z: number) { this.zoom = clamp(z, 0.3, 1.4); } // 0.3 = closest (was 0.7)
 }
+
+/**
+ * Idle-time work ahead of a floor change, one small task per frame: generate the floors right above and below (or a
+ * riding lift's destination), build their new prop kits and enemy rig looks, then their whole views with shaders
+ * warmed. Entering one of those is then a lookup.
+ */
+class Ahead {
+  private tasks: (() => void)[] = [];
+  private wait = 0;
+  private ride = NaN;
+  constructor(private r: GameRenderer) {}
+
+  reset(view: ViewSource, floor: number) {
+    this.ride = NaN;
+    this.wait = 30; // let the new floor settle first
+    // stairs reach the floors either side; a lift ride (2.4 s) builds its destination while the doors are shut
+    this.tasks = floor < 0 ? [] : this.floors(view.plan, ctxOf(view), view.cfg.seed, [floor + 1, floor - 1], [floor + 1, floor - 1]);
+  }
+
+  /**
+   * Before any game (menus): build every enemy look, gun and street character, and the views of the floors a run
+   * would start on (`runs`: the next new run's street and first floor, the saved run's floor) with shaders compiled,
+   * so a run starts without building or compiling. Another difficulty or a co-op game builds its own views (the
+   * shader programs carry over); a view whose stair dressing went out of date is rebuilt on entry.
+   */
+  warmup(runs: { seed: number; difficulty: Difficulty; floors: number[] }[]) {
+    const hal = currentHoliday() === 'halloween';
+    this.tasks = [];
+    // most valuable first, in case the player starts quickly: post-processing (one composer pass over the hidden
+    // scene links its programs), the HUD's weapon art (its own little renderer, made on first use), the street's
+    // characters, then the runs' floors
+    this.tasks.push(task('warm post', () => this.r.warmPost()));
+    this.tasks.push(task('warm weapon art', () => armoryArt('p9', true)));
+    this.tasks.push(task('warm street', () => { for (const t of ambientWarmTasks(generateFloor(new BuildingPlan(runs[0].seed, 'normal'), 0)).reverse()) this.tasks.unshift(task('warm street look', t)); }));
+    for (const { seed, difficulty, floors } of runs) {
+      const plan = new BuildingPlan(seed, difficulty), ctx: ViewCtx = { flight: (f, i) => plan.up(f, i), elevatorWorking: (f, j) => plan.elevator(f, j).working };
+      this.tasks.push(...this.floors(plan, ctx, seed, floors, floors, true));
+    }
+    for (const type of ['loyalist', 'cyborg'] as const) for (const elite of [false, true]) for (let id = 0; id < 4; id++) this.tasks.push(task('warm enemy', () => enemyRig({ id, type, elite, weapon: hal ? 'bite' : 'p9' })));
+    for (const type of ['dog', 'dogcyborg', 'drone', 'warden'] as const) for (const weapon of ['bite', 'p9']) this.tasks.push(task('warm beast', () => enemyRig({ id: 0, type, elite: false, weapon })));
+    for (const k of ['rifle', 'pistol', 'shotgun', 'smg', 'lmg', 'sniper'] as const) this.tasks.push(task('warm gun', () => buildGun(k, true)));
+    // characters, gear and effects: every enemy look and one of everything else, compiled lit both ways, then drawn
+    // once off-screen so their geometry is on the GPU too (laid out on a grid inside the camera's view)
+    const cast = new THREE.Group();
+    this.tasks.push(task('warm cast', () => {
+      const add = (o: THREE.Object3D) => { const n = cast.children.length; o.position.set(4 + (n % 12) * 4, 0, 4 + Math.floor(n / 12) * 4); cast.add(o); };
+      for (const type of ['loyalist', 'cyborg'] as const) for (const elite of [false, true]) for (let id = 0; id < 4; id++) add(enemyRig({ id, type, elite, weapon: hal ? 'bite' : 'p9' }).op!.root);
+      for (const type of ['dog', 'dogcyborg', 'drone', 'warden'] as const) for (const weapon of ['bite', 'p9']) add(enemyRig({ id: 0, type, elite: false, weapon }).beast!.root);
+      for (const outfit of ['operator', 'police'] as const) { const r = OperatorRig.make(0xf0f0f0, { outfit }); r.setGun('rifle'); add(r.root); }
+      add(Pigeon.make(0).root); add(new Rat().root);
+      const mirror = new Reflector(new THREE.PlaneGeometry(1, 1), { textureWidth: 512, textureHeight: 512, clipBias: 0.003, color: 0xf4f7fa }); // live mirrors
+      add(mirror);
+      const tasks = this.tasks;
+      void Promise.all([true, false].flatMap((street) => [this.r.compileFor(cast, street), this.r.compileFor(this.r.scene, street)])).then(() => {
+        if (this.tasks !== tasks) return;
+        tasks.unshift(task('warm cast draw', () => this.r.drawOffscreen(cast, true)), task('warm cast draw', () => { this.r.drawOffscreen(cast, false); mirror.dispose(); }));
+      });
+    }));
+  }
+
+  /** `menus`: also build the street's life ahead (single player) */
+  private floors(plan: BuildingPlan, ctx: ViewCtx, seed: number, floors: number[], full: number[], menus = false): (() => void)[] {
+    const tasks: (() => void)[] = [];
+    for (const f of floors) {
+      if (f < 0 || f > FINAL_FLOOR) continue;
+      let L: FloorLayout;
+      tasks.push(task(`generate ${f}`, () => { L = generateFloor(plan, f); }));
+      const kits = task(`kits ${f}`, () => { if (prefetchKit(L)) this.tasks.unshift(kits); });
+      tasks.push(kits);
+      // one enemy per task (a new look is a 5-15 ms build); ids and weapons as Sim.floorState makes them
+      tasks.push(task(`enemy looks ${f}`, () => this.tasks.unshift(...L.spawns.map((s, i) => task(`enemy look ${f}`, () => enemyRig({ id: f * 10000 + i, type: s.type, elite: s.elite, weapon: currentHoliday() === 'halloween' && s.type !== 'dog' && s.type !== 'dogcyborg' ? 'bite' : s.weapon }))))));
+      if (f === 0 && menus) tasks.push(task(`street life ${seed}`, () => this.r.prepareStreet(`${seed}:0`, L)));
+      if (full.includes(f)) tasks.push(task(`view ${seed}:${f}`, () => {
+        const key = `${seed}:${f}`;
+        const pre = (from: number) => task(`prerender ${key} ${from}`, () => { const next = this.r.prerender(key, from); if (next >= 0) this.tasks.unshift(pre(next)); });
+        const built = this.r.views.get(key);
+        if (built) { if (!built.warmed) this.tasks.unshift(pre(0)); return; }
+        const out: FloorView[] = [];
+        const tasks = this.tasks;
+        void this.r.warmShaders(this.r.viewFor(ctx, key, L, out)).then(() => { if (this.tasks === tasks) tasks.unshift(pre(0)); });
+        for (const o of out) o.dispose(); // never the one on screen
+      }));
+    }
+    return tasks;
+  }
+
+  step(view?: ViewSource, focus?: PlayerState) {
+    // riding a lift: its destination jumps the queue
+    if (view && focus?.ride && focus.ride.to !== this.ride) { this.ride = focus.ride.to; this.wait = 0; this.tasks = this.floors(view.plan, ctxOf(view), view.cfg.seed, [focus.ride.to], [focus.ride.to]); }
+    if (this.wait > 0) { this.wait--; return; }
+    const t = this.tasks.shift();
+    if (t) perfIdle(t);
+  }
+}
+
+/** a labelled task (?perf=1 names slow ones) */
+const task = (label: string, fn: () => void) => Object.assign(fn, { label });
+const ctxOf = (view: ViewSource): ViewCtx => ({ flight: (f, i) => view.flightCondition(f, i), elevatorWorking: (f, j) => view.plan.elevator(f, j).working });

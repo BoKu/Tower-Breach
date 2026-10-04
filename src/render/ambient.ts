@@ -22,6 +22,13 @@ interface RatS { r: Rat; a: Pt; b: Pt; x: number; y: number; face: number; toB: 
 
 const SKINS = [0xc49a78, 0x8a5a3c, 0xe0b898, 0x6a4430, 0xb88a64, 0xd8a888];
 
+const squadRig = (s: Extract<AmbientSpec, { kind: 'squad' }>) => OperatorRig.make(TEAM_COLORS[s.slot % TEAM_COLORS.length], { skin: SKINS[(s.slot * 2 + 1) % SKINS.length] });
+const officerRig = (s: Extract<AmbientSpec, { kind: 'officer' }>) => OperatorRig.make(0x3d8bff, { outfit: 'police', look: lookFor(s.npc) });
+/** One task per character look on this street (rigs and pigeons are built once per look, then copied): warm-up work. */
+export function ambientWarmTasks(L: FloorLayout): (() => void)[] {
+  return L.ambient.map((s) => () => { if (s.kind === 'squad') squadRig(s); else if (s.kind === 'officer') officerRig(s); else if (s.kind === 'pigeons') for (let i = 0; i < 4; i++) Pigeon.make(i); });
+}
+
 /**
  * Cosmetic street life. Officers follow deterministic, time-based routines so every co-op client sees the
  * same thing. Pigeons and rats react locally to nearby players and gunfire. None of it touches the simulation.
@@ -40,13 +47,13 @@ export class Ambient {
     for (const s of L.ambient) {
       if (s.kind === 'squad') {
         if (!solo) continue;
-        const rig = new OperatorRig(TEAM_COLORS[s.slot % TEAM_COLORS.length], { skin: SKINS[(s.slot * 2 + 1) % SKINS.length] });
+        const rig = squadRig(s);
         const gun = s.slot % 2 === 0; // two keep their rifles up, two have them slung and talk with their hands
         rig.setGun(gun ? (s.slot === 2 ? 'smg' : 'rifle') : null);
         this.group.add(rig.root);
         this.squad.push({ rig, spec: s, gun });
       } else if (s.kind === 'officer') {
-        const rig = new OperatorRig(0x3d8bff, { outfit: 'police', look: lookFor(s.npc) });
+        const rig = officerRig(s);
         // door and cordon guards carry long guns; some patrols and the odd talker too
         const armed = s.mode === 'guard' || (s.mode === 'patrol' && s.seed < 0.65) || (s.mode === 'talk' && s.seed < 0.25);
         const gun: GunKind | null = armed ? (s.seed < 0.12 ? 'shotgun' : s.seed > 0.9 ? 'smg' : 'rifle') : null;
@@ -56,7 +63,7 @@ export class Ambient {
       } else if (s.kind === 'pigeons') {
         const r = new Rng(Math.floor(s.seed * 1e9));
         for (let i = 0; i < s.n; i++) {
-          const p = new Pigeon(i + Math.floor(s.seed * 10));
+          const p = Pigeon.make(i + Math.floor(s.seed * 10));
           p.root.scale.setScalar(1.7); // readable from the isometric camera
           const x = s.x + r.range(-0.9, 0.9), y = s.y + r.range(-0.9, 0.9);
           this.group.add(p.root);
@@ -219,6 +226,7 @@ export class Ambient {
   drainSounds(): AmbientSound[] { const s = this.sounds; this.sounds = []; return s; }
 
   dispose() {
-    this.group.traverse((o) => { const m = o as THREE.Mesh; if (m.geometry) m.geometry.dispose(); });
+    // officer, squad-mate and pigeon rigs share their looks' geometry (OperatorRig.make, Pigeon.make): rats only
+    for (const r of this.rats) r.r.root.traverse((o) => { const m = o as THREE.Mesh; if (m.geometry) m.geometry.dispose(); });
   }
 }

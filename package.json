@@ -1,6 +1,6 @@
 {
   "name": "tower-breach",
-  "version": "1.0.0",
+  "version": "1.2.1",
   "private": true,
   "type": "module",
   "description": "TOWER BREACH - isometric co-op tactical survival game (WebGL)",
@@ -9,13 +9,15 @@
     "relay": "node server/server.mjs --relay-only",
     "build": "tsc --noEmit && vite build",
     "start": "node server/server.mjs",
+    "server": "vite build --ssr src/server/main.ts --outDir dist-server --emptyOutDir --logLevel warn && node dist-server/main.js",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "online": "bash scripts/play-online.sh",
     "desktop": "npm run build && electron .",
     "dist:win": "npm run build && electron-builder --win --x64",
     "dist:linux": "npm run build && electron-builder --linux deb --x64",
-    "dist:mac": "npm run build && electron-builder --mac dmg --x64 --arm64"
+    "dist:mac": "npm run build && electron-builder --mac dmg --x64 --arm64",
+    "dist:server": "npm run build && node scripts/build-server.mjs"
   },
   "dependencies": {
     "@fontsource/chakra-petch": "^5.3.0",
@@ -79,7 +81,10 @@
       "target": [
         "dmg"
       ],
-      "identity": null
+      "identity": null,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Tower Breach uses the microphone for co-op proximity voice chat with your squad."
+      }
     },
     "dmg": {
       "artifactName": "TowerBreach-${version}-${arch}.dmg"

@@ -1,6 +1,6 @@
-import { makeScreenMaterial, screenUniforms } from './screens';
+import { makeScreenMaterial, screenUniforms, reseedScreen } from './screens';
 import * as THREE from 'three';
-import { FloorLayout, FW, FH, idx, T_WALL, T_WINDOW, T_DOOR, T_FLOOR, Surface, doorRunsNS } from '../gen/floor';
+import { FloorLayout, CameraSpec, TrapSpec, VendingSpec, FW, FH, idx, T_WALL, T_WINDOW, T_DOOR, T_FLOOR, Surface, doorRunsNS } from '../gen/floor';
 import type { StairCondition } from '../gen/building';
 import { tex } from './textures';
 import { applyCutaway } from './cutaway';
@@ -12,6 +12,7 @@ import { currentHoliday } from '../config/holiday';
 import { raycastWalls } from '../sim/nav';
 import type { FloorState } from '../sim/state';
 import { lightLevel, lightOut } from '../sim/lights';
+import { perfTime } from '../core/perf';
 
 export const WALL_H = 2.6;
 const ROT_Y = [0, -Math.PI / 2, Math.PI, Math.PI / 2];
@@ -23,6 +24,66 @@ const emitMat = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: fa
 const screenMat = makeScreenMaterial(0.95);
 const mirrorMat = applyCutaway(new THREE.MeshStandardMaterial({ color: 0x9aa4ac, metalness: 0.85, roughness: 0.14 }), 0.95);
 const glassMat = new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, opacity: 0.35, roughness: 0.1, metalness: 0.6, depthWrite: false });
+
+/**
+ * Built models, shared by every floor: one merged geometry per material bucket for each prop (kind, footprint,
+ * dressing), window and door frame. A floor draws each as one InstancedMesh, so changing floor only builds what it
+ * hasn't seen yet and uploads little else (rebuilding ~300 props from primitives took seconds). Screens and mirrors stay
+ * per-prop (each screen has its own content seed; mirrors are posed individually). Kit geometry is flagged `shared`
+ * so FloorView never disposes it.
+ */
+interface Kit { solid: THREE.BufferGeometry | null; emit: THREE.BufferGeometry | null; glass: THREE.BufferGeometry | null; screen: THREE.BufferGeometry[]; mirror: THREE.BufferGeometry[]; verts: number }
+const kits = new Map<string, Kit>();
+let kitVerts = 0;
+/** ponytail: whole-kit LRU by vertex count; one-off pipe runs are the bulk. Raise if long runs keep rebuilding kinds. */
+const KIT_VERT_BUDGET = 4_000_000;
+const live = new Set<FloorView>();
+function kitOf(key: string, make: () => Parts): Kit {
+  let k = kits.get(key);
+  if (k) { kits.delete(key); kits.set(key, k); return k; } // most recently used last
+  const parts = make();
+  const shared = (g: THREE.BufferGeometry | null) => { if (g) g.userData.shared = true; return g; };
+  k = { solid: shared(merge(parts.solid)), emit: shared(merge(parts.emit)), glass: shared(merge(parts.glass)), screen: parts.screen, mirror: parts.mirror, verts: 0 };
+  k.verts = (k.solid?.attributes.position.count ?? 0) + (k.emit?.attributes.position.count ?? 0) + (k.glass?.attributes.position.count ?? 0);
+  kits.set(key, k);
+  kitVerts += k.verts;
+  return k;
+}
+const propKey = (kind: string, w: number, h: number, snowy: boolean) => `${kind}|${w}|${h}|${snowy ? 's' : ''}|${currentHoliday() ?? ''}`;
+const snowyOf = (L: FloorLayout) => L.floor === 0 && currentHoliday() === 'xmas';
+function propKit(kind: string, w: number, h: number, snowy = false): Kit {
+  return kitOf(propKey(kind, w, h, snowy), () => {
+    const parts = buildProp(kind, w, h);
+    if (snowy) christmasSnow(Object.assign(new Builder(), { p: parts }), kind, w - 0.1, h - 0.1); // outdoor props under snow
+    return parts;
+  });
+}
+/** Drop the least recently used kits over budget (never one a live floor view uses). */
+function trimKits() {
+  if (kitVerts <= KIT_VERT_BUDGET) return;
+  const keep = new Set<string>([propKey('vending', 1, 1, false)]);
+  for (const v of live) for (const k of v.kitKeys) keep.add(k);
+  for (const [key, k] of kits) {
+    if (kitVerts <= KIT_VERT_BUDGET) break;
+    if (keep.has(key)) continue;
+    k.solid?.dispose(); k.emit?.dispose(); k.glass?.dispose();
+    kits.delete(key);
+    kitVerts -= k.verts;
+  }
+}
+/** Props a floor draws from kits (street furniture on the street and in the sandbox has its own builder). */
+const isKitProp = (L: FloorLayout, p: FloorLayout['props'][number]) => p.kind !== 'vending' && !((L.floor === 0 || L.theme === 'sandbox') && STREET_KINDS.has(p.kind));
+/**
+ * Build the prop kits a floor will need, one per call (idle-time prefetch before the floor is entered).
+ * Returns false once there is nothing left to build.
+ */
+export function prefetchKit(L: FloorLayout): boolean {
+  const snowy = snowyOf(L);
+  const p = L.props.find((q) => isKitProp(L, q) && !kits.has(propKey(q.kind, q.w, q.h, snowy)));
+  if (!p) return false;
+  propKit(p.kind, p.w, p.h, snowy);
+  return true;
+}
 
 export interface ViewCtx {
   flight: (f: number, i: number) => StairCondition;
@@ -49,17 +110,31 @@ export class FloorView {
   fireSpots: { x: number; y: number; r: number; kind: 'fire' | 'shock' | 'stairfire' }[] = [];
   private lenses: { mesh: THREE.Mesh; li: number; base: THREE.Color }[] = [];
 
-  constructor(L: FloorLayout, private ctx: ViewCtx) {
+  /** stair-pit and lift dressing is baked in at build time: a view built ahead of time is stale if they changed */
+  private builtSig: string;
+  private sig() { const f = this.L.floor; return this.L.stairs.map((s) => (f > 1 ? this.ctx.flight(f - 1, s.index) : '')).join() + this.L.elevators.map((e) => this.ctx.elevatorWorking(f, e.index)).join(); }
+  stale() { return this.sig() !== this.builtSig; }
+
+  /** live stair/lift state; a view built ahead of time gets the game's own when it is entered (GameRenderer.viewFor) */
+  constructor(L: FloorLayout, public ctx: ViewCtx) {
     this.L = L;
-    this.buildFloor();
-    this.buildWalls();
-    this.buildProps();
+    live.add(this);
+    this.builtSig = this.sig();
+    perfTime('view: floor', () => this.buildFloor());
+    perfTime('view: walls', () => this.buildWalls());
+    perfTime('view: props', () => this.buildProps());
     this.buildHackMarkers();
-    this.buildStairs();
-    this.buildElevators();
+    perfTime('view: stairs', () => this.buildStairs());
+    perfTime('view: elevators', () => this.buildElevators());
     this.buildFixtures();
-    if (L.floor === 0) this.buildStreetBackdrop();
+    if (L.floor === 0) perfTime('view: street', () => this.buildStreetBackdrop());
     this.buildLightBars();
+    // CCTV, traps and vending machines (state-driven in update) are made now too, so a view built ahead of time has
+    // them on the GPU and their shaders compiled before the floor is entered
+    for (const c of L.cameras) this.makeCam(c);
+    for (const t of L.traps) this.makeTrap(t);
+    for (const v of L.vendings) this.makeVend(v);
+    trimKits();
   }
 
   private track<T extends { dispose(): void }>(x: T): T { this.disposables.push(x); return x; }
@@ -151,40 +226,44 @@ export class FloorView {
     this.group.add(caps);
     if (facade.length) this.group.add(buildFacade(applyCutaway));
     // windows: sill + glass/boards + lintel
-    const wp = newParts();
     for (const [x, y, boarded] of windows) {
-      const b = new Builder();
       const vertical = x === 0 || x === FW - 1;
-      const w = 1, d = 0.25;
-      const bw = vertical ? d : w, bd = vertical ? w : d;
-      b.box(bw, 0.9, bd, 0, 0.45, 0, 0x55534e).box(bw, 0.35, bd, 0, WALL_H - 0.175, 0, 0x55534e);
-      if (boarded) b.box(bw * 1.1, 1.35, bd * 1.1, 0, 1.575, 0, 0x3d2c1e);
-      else b.box(vertical ? 0.06 : 0.96, 1.35, vertical ? 0.96 : 0.06, 0, 1.575, 0, 0x2a3a50, 'glass');
-      place(b.p, x + 0.5, y + 0.5, 0, wp);
+      this.placeKit(`win|${vertical}|${boarded}`, kitOf(`win|${vertical}|${boarded}`, () => {
+        const b = new Builder();
+        const w = 1, d = 0.25;
+        const bw = vertical ? d : w, bd = vertical ? w : d;
+        b.box(bw, 0.9, bd, 0, 0.45, 0, 0x55534e).box(bw, 0.35, bd, 0, WALL_H - 0.175, 0, 0x55534e);
+        if (boarded) b.box(bw * 1.1, 1.35, bd * 1.1, 0, 1.575, 0, 0x3d2c1e);
+        else b.box(vertical ? 0.06 : 0.96, 1.35, vertical ? 0.96 : 0.06, 0, 1.575, 0, 0x2a3a50, 'glass');
+        return b.p;
+      }), x + 0.5, y + 0.5, 0);
     }
-    this.addParts(wp);
     // door frames
-    const dp = newParts();
     for (let y = 1; y < FH - 1; y++)
       for (let x = 1; x < FW - 1; x++) {
         if (L.tiles[idx(x, y)] !== T_DOOR) continue;
         // the frame follows the wall line: windows and neighbouring door tiles (double doors) count as wall
         const t = (dx: number, dy: number) => L.tiles[idx(x + dx, y + dy)];
         const ns = doorRunsNS(L, x, y);
-        const b = new Builder();
-        const c = 0x2a2826;
-        if (ns) {
-          b.box(0.3, 0.12, 1, 0, WALL_H - 0.3, 0, c);
-          if (t(0, -1) !== T_DOOR) b.box(0.32, 2.2, 0.08, 0, 1.1, -0.46, c); // no post in the middle of a double door
-          if (t(0, 1) !== T_DOOR) b.box(0.32, 2.2, 0.08, 0, 1.1, 0.46, c);
-        } else {
-          b.box(1, 0.12, 0.3, 0, WALL_H - 0.3, 0, c);
-          if (t(-1, 0) !== T_DOOR) b.box(0.08, 2.2, 0.32, -0.46, 1.1, 0, c);
-          if (t(1, 0) !== T_DOOR) b.box(0.08, 2.2, 0.32, 0.46, 1.1, 0, c);
-        }
-        place(b.p, x + 0.5, y + 0.5, 0, dp);
+        // no post in the middle of a double door
+        const postA = ns ? t(0, -1) !== T_DOOR : t(-1, 0) !== T_DOOR, postB = ns ? t(0, 1) !== T_DOOR : t(1, 0) !== T_DOOR;
+        const key = `door|${ns}|${postA}|${postB}`;
+        this.placeKit(key, kitOf(key, () => {
+          const b = new Builder();
+          const c = 0x2a2826;
+          if (ns) {
+            b.box(0.3, 0.12, 1, 0, WALL_H - 0.3, 0, c);
+            if (postA) b.box(0.32, 2.2, 0.08, 0, 1.1, -0.46, c);
+            if (postB) b.box(0.32, 2.2, 0.08, 0, 1.1, 0.46, c);
+          } else {
+            b.box(1, 0.12, 0.3, 0, WALL_H - 0.3, 0, c);
+            if (postA) b.box(0.08, 2.2, 0.32, -0.46, 1.1, 0, c);
+            if (postB) b.box(0.08, 2.2, 0.32, 0.46, 1.1, 0, c);
+          }
+          return b.p;
+        }), x + 0.5, y + 0.5, 0);
       }
-    this.addParts(dp);
+    this.flushKits();
   }
 
   addParts(p: Parts) {
@@ -282,16 +361,51 @@ export class FloorView {
     this.group.add(g);
   }
 
+  /** Kit instances placed so far this build (key -> kit + transforms); flushKits() turns them into InstancedMeshes. */
+  private placed = new Map<string, { k: Kit; at: THREE.Matrix4[] }>();
+  kitKeys: string[] = [];
+  /** drawn once off-screen ahead of time (GameRenderer.prerender): on the GPU, programs linked */
+  warmed = false;
+  private placeKit(key: string, k: Kit, x: number, z: number, ry: number) {
+    let e = this.placed.get(key);
+    if (!e) this.placed.set(key, (e = { k, at: [] }));
+    e.at.push(new THREE.Matrix4().makeRotationY(ry).setPosition(x, 0, z));
+  }
+  private flushKits() {
+    for (const [key, { k, at }] of this.placed) {
+      this.kitKeys.push(key);
+      const inst = (g: THREE.BufferGeometry | null, mat: THREE.Material) => {
+        if (!g) return null;
+        const m = new THREE.InstancedMesh(g, mat, at.length);
+        at.forEach((x, i) => m.setMatrixAt(i, x));
+        this.group.add(m);
+        return m;
+      };
+      const s = inst(k.solid, propSolidMat);
+      if (s) { s.castShadow = true; s.receiveShadow = true; }
+      inst(k.emit, emitMat);
+      const g = inst(k.glass, glassMat);
+      if (g) g.renderOrder = 2;
+    }
+    this.placed.clear();
+  }
+
   private buildProps() {
-    const all = newParts(), snowy = this.L.floor === 0 && currentHoliday() === 'xmas';
+    const all = newParts(), snowy = snowyOf(this.L);
     for (const p of this.L.props) {
       if (p.kind === 'vending') continue;
-      if ((this.L.floor === 0 || this.L.theme === 'sandbox') && STREET_KINDS.has(p.kind)) { const o = buildStreetProp(p); if (o) { this.group.add(o); o.traverse((c) => { if (c.userData.spin) this.spinners.push(c); }); continue; } }
-      const parts = buildProp(p.kind, p.w, p.h);
-      if (snowy) christmasSnow(Object.assign(new Builder(), { p: parts }), p.kind, p.w - 0.1, p.h - 0.1); // outdoor props under snow
-      place(parts, p.x, p.y, p.w === p.h ? ROT_Y[p.rot] ?? 0 : 0, all);
+      if (!isKitProp(this.L, p)) { const o = buildStreetProp(p); if (o) { this.group.add(o); o.traverse((c) => { if (c.userData.spin) this.spinners.push(c); }); continue; } }
+      const ry = p.w === p.h ? ROT_Y[p.rot] ?? 0 : 0, k = propKit(p.kind, p.w, p.h, snowy);
+      this.placeKit(propKey(p.kind, p.w, p.h, snowy), k, p.x, p.y, ry);
+      if (k.screen.length || k.mirror.length) {
+        const own = newParts();
+        place({ ...newParts(), screen: k.screen, mirror: k.mirror }, p.x, p.y, ry, own);
+        for (const g of own.screen) all.screen.push(reseedScreen(g));
+        all.mirror.push(...own.mirror);
+      }
       if (p.kind === 'panel') this.makePanelLeds(p.id, p.x, p.y, ROT_Y[p.rot] ?? 0);
     }
+    this.flushKits();
     this.addParts(all);
     if (this.L.mainframe) {
       const ring = new THREE.Mesh(this.track(new THREE.TorusGeometry(2.2, 0.06, 8, 48)), new THREE.MeshBasicMaterial({ color: 0x3090ff, toneMapped: false }));
@@ -570,20 +684,7 @@ export class FloorView {
     }
     // vending machines
     for (const v of fs.vendings) {
-      let o = this.vends.get(v.id);
-      if (!o) {
-        const g = new THREE.Group();
-        const parts = buildProp('vending', 1, 1);
-        const into = newParts();
-        place(parts, 0, 0, 0, into);
-        const s = merge(into.solid)!, e = merge(into.emit)!, gl = merge(into.glass)!;
-        g.add(new THREE.Mesh(s, propSolidMat), new THREE.Mesh(e, emitMat.clone()), new THREE.Mesh(gl, glassMat));
-        g.position.set(v.x, 0, v.y);
-        g.rotation.y = ROT_Y[v.rot] ?? 0;
-        this.group.add(g);
-        o = { g, broken: false };
-        this.vends.set(v.id, o);
-      }
+      const o = this.vends.get(v.id) ?? this.makeVend(v);
       if (v.broken && !o.broken) {
         o.broken = true;
         o.g.children[2].visible = false;
@@ -593,7 +694,19 @@ export class FloorView {
     }
   }
 
-  private makeCam(c: FloorState['cameras'][number]): CamVis {
+  private makeVend(v: VendingSpec) {
+    const g = new THREE.Group();
+    const k = propKit('vending', 1, 1);
+    g.add(new THREE.Mesh(k.solid!, propSolidMat), new THREE.Mesh(k.emit!, emitMat.clone()), new THREE.Mesh(k.glass!, glassMat));
+    g.position.set(v.x, 0, v.y);
+    g.rotation.y = ROT_Y[v.rot] ?? 0;
+    this.group.add(g);
+    const o = { g, broken: false };
+    this.vends.set(v.id, o);
+    return o;
+  }
+
+  private makeCam(c: CameraSpec): CamVis {
     const mount = new THREE.Group();
     const b = new Builder().box(0.18, 0.18, 0.12, 0, 0, 0, 0x2a2c2e);
     mount.add(new THREE.Mesh(merge(b.p.solid)!, propSolidMat));
@@ -623,7 +736,7 @@ export class FloorView {
     return v;
   }
 
-  private makeTrap(tr: FloorState['traps'][number]): THREE.Object3D {
+  private makeTrap(tr: TrapSpec): THREE.Object3D {
     const g = new THREE.Group();
     if (tr.kind === 'tripwire') {
       const len = Math.hypot(tr.x2 - tr.x, tr.y2 - tr.y);
@@ -651,7 +764,12 @@ export class FloorView {
   }
 
   dispose() {
-    this.group.traverse((o) => { const m = o as THREE.Mesh; if (m.geometry) m.geometry.dispose(); });
+    live.delete(this);
+    this.group.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.geometry && !m.geometry.userData.shared) m.geometry.dispose();
+      if ((o as THREE.InstancedMesh).isInstancedMesh) (o as THREE.InstancedMesh).dispose(); // its instance buffers
+    });
     for (const d of this.disposables) d.dispose();
   }
 }

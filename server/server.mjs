@@ -1,5 +1,6 @@
 // TOWER BREACH server: serves the built game (dist/) and relays multiplayer traffic over WebSocket (/ws).
 // The game is host-authoritative: one player's browser runs the simulation; this relay only routes messages.
+// For a server that runs the game itself (no player hosts, cross-play with the desktop apps) see src/server/dedicated.ts.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -43,7 +44,24 @@ const send = (ws, m) => { if (ws.readyState === 1) ws.send(typeof m === 'string'
 wss.on('connection', (ws) => {
   ws.isAlive = true;
   ws.on('pong', () => (ws.isAlive = true));
-  ws.on('message', (raw) => {
+  ws.on('message', (raw, isBinary) => {
+    // proximity voice (src/net/voice.ts): a client's [0x56][opus] goes to its host tagged with the sender id;
+    // the host (which knows positions) answers [0x57][speaker][n][ids][opus] and the relay fans that out
+    if (isBinary) {
+      const r = rooms.get(ws.room);
+      if (!r || raw.length < 2 || raw.length > 2048) return;
+      if (!ws.isHost && raw[0] === 0x56) {
+        const out = Buffer.alloc(raw.length + 4);
+        out[0] = 0x56; out.writeUInt32LE(ws.pid, 1); raw.copy(out, 5, 1);
+        if (r.host.readyState === 1) r.host.send(out);
+      } else if (ws.isHost && raw[0] === 0x57 && raw.length > 6) {
+        const n = raw[5], body = 6 + n * 4;
+        if (raw.length <= body) return;
+        const out = Buffer.concat([Buffer.from([0x56]), raw.subarray(1, 5), raw.subarray(body)]);
+        for (let i = 0; i < n; i++) { const c = r.clients.get(raw.readUInt32LE(6 + i * 4)); if (c && c.readyState === 1) c.send(out); }
+      }
+      return;
+    }
     let m;
     try { m = JSON.parse(raw.toString()); } catch { return; }
     if (m.t === 'host') {

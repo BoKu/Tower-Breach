@@ -18,6 +18,7 @@ const VOWELS: Record<string, [number, number, number]> = {
 export class GameAudio {
   s: Synth | null = null;
   private lastFloor = -1;
+  private warmT = 0;
   private ambNodes: AudioNode[] = [];
   private buzz: { src: OscillatorNode; g: GainNode; p: PannerNode; li: number }[] = [];
   private steps = new Map<number, { x: number; y: number; acc: number }>();
@@ -372,7 +373,10 @@ export class GameAudio {
     const fs = view.floorState(me.floor);
     const L = s.ctx.listener;
     if (L.positionX) { L.positionX.value = me.x; L.positionY.value = 6; L.positionZ.value = me.y; L.forwardX.value = -0.5; L.forwardY.value = -0.7; L.forwardZ.value = -0.5; L.upX.value = -0.5; L.upY.value = 0.7; L.upZ.value = -0.5; }
-    if (me.floor !== this.lastFloor) { this.lastFloor = me.floor; this.startAmbience(fs); this.steps.clear(); }
+    if (me.floor !== this.lastFloor) { this.lastFloor = me.floor; this.startAmbience(fs); this.steps.clear(); this.warmT = 0; }
+    // the tower's ambience beds (~20 s of noise each, tens of ms to make) are made on the street a few seconds in,
+    // one per frame, instead of in the frame that enters the tower
+    if (this.warmT >= 0 && (this.warmT += dt) > 3) { this.scape?.longNoise(this.warmT > 3.2 ? 'pink' : 'brown'); if (this.warmT > 3.2) this.warmT = -1; }
     // footsteps from movement for everyone on this floor
     const Lay = fs.L;
     const surf = (x: number, y: number) => Lay.rooms[Lay.roomAt[idx(Math.floor(x), Math.floor(y))]]?.surface ?? 'concrete';

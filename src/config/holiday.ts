@@ -30,7 +30,8 @@ export function holidayOn(d: Date): Holiday | null {
 
 /** undefined = follow today's date; null = force no holiday; a Holiday = force it (sandboxes, dev URLs). */
 let override: Holiday | null | undefined;
-export function setHolidayOverride(h: Holiday | null | undefined) { override = h; }
+/** Returns the previous override so a co-op session can restore it. */
+export function setHolidayOverride(h: Holiday | null | undefined) { const prev = override; override = h; return prev; }
 export function currentHoliday(): Holiday | null {
   return override !== undefined ? override : holidayOn(new Date());
 }

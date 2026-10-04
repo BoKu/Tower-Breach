@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { gunKindOf } from './models';
+import { gunKindOf, cloneRig } from './models';
+import { currentHoliday } from '../config/holiday';
 import { OperatorRig, GunKind } from './operator';
 import { DogRig, DroneRig, WardenRig } from './beasts';
 import { stairElevation } from '../sim/stairs';
@@ -26,6 +27,31 @@ const pingTexture = (() => {
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
 })();
+
+const beastProtos = new Map<string, DogRig | DroneRig | WardenRig>();
+/** Beast rigs are built once per kind (and holiday) and copied after that, like OperatorRig.make. */
+function makeBeast(type: Enemy['type'], bite: boolean): DogRig | DroneRig | WardenRig {
+  const key = `${type}:${bite}:${currentHoliday()}`;
+  let p = beastProtos.get(key);
+  if (!p) beastProtos.set(key, (p = type === 'drone' ? new DroneRig(bite) : type === 'warden' ? new WardenRig(bite) : new DogRig(type === 'dogcyborg')));
+  const r = cloneRig(p);
+  const blur = (r as any).blur as THREE.Mesh[] | undefined; // drone rotor blur fades per drone
+  if (blur?.length) { const m = (blur[0].material as THREE.Material).clone(); for (const b of blur) b.material = m; }
+  return r;
+}
+
+/** The rig for an enemy (also called ahead of time with a floor's spawns, so their looks are built before arrival). */
+export function enemyRig(e: Pick<Enemy, 'id' | 'type' | 'elite' | 'weapon'>): Pick<ERig, 'op' | 'beast'> {
+  if (e.type === 'loyalist' || e.type === 'cyborg') {
+    // humans and human-cyborgs use the articulated rig; Halloween zombies ('bite') are unarmed
+    const zombie = e.weapon === 'bite';
+    const op = OperatorRig.make(0xff2020, { outfit: e.type === 'cyborg' ? (e.elite ? 'cyborgElite' : 'cyborg') : e.elite ? 'loyalistElite' : 'loyalist', skin: [0xb88c6a, 0x8a5a3c, 0xd8a888, 0x6a4430][e.id % 4], zombie });
+    op.setGun(zombie ? null : (gunKindOf(weapon(e.weapon).category) as GunKind));
+    return { op, beast: null };
+  }
+  // Halloween bats / ogres ('bite') are synced via weapon, so co-op clients build the same rig
+  return { op: null, beast: makeBeast(e.type, e.weapon === 'bite') };
+}
 
 export class Entities {
   group = new THREE.Group();
@@ -89,19 +115,8 @@ export class Entities {
       seen.add(e.id);
       let r = this.enemies.get(e.id);
       if (!r) {
-        if (e.type === 'loyalist' || e.type === 'cyborg') {
-          // humans and human-cyborgs use the articulated rig; Halloween zombies ('bite') are unarmed
-          const zombie = e.weapon === 'bite';
-          const op = new OperatorRig(0xff2020, { outfit: e.type === 'cyborg' ? (e.elite ? 'cyborgElite' : 'cyborg') : e.elite ? 'loyalistElite' : 'loyalist', skin: [0xb88c6a, 0x8a5a3c, 0xd8a888, 0x6a4430][e.id % 4], zombie });
-          op.setGun(zombie ? null : (gunKindOf(weapon(e.weapon).category) as GunKind));
-          this.group.add(op.root);
-          r = { op, beast: null, lastX: e.x, lastY: e.y, vis: 0, visT: 0 };
-        } else {
-          // Halloween bats / ogres ('bite') are synced via weapon, so co-op clients build the same rig
-          const beast = e.type === 'drone' ? new DroneRig(e.weapon === 'bite') : e.type === 'warden' ? new WardenRig(e.weapon === 'bite') : new DogRig(e.type === 'dogcyborg');
-          this.group.add(beast.root);
-          r = { op: null, beast, lastX: e.x, lastY: e.y, vis: 0, visT: 0 };
-        }
+        r = { ...enemyRig(e), lastX: e.x, lastY: e.y, vis: 0, visT: 0 };
+        this.group.add(rootOf(r));
         this.enemies.set(e.id, r);
         (e as any).eyeGlow = e.type !== 'loyalist' && e.type !== 'dog';
       }
@@ -146,14 +161,14 @@ export class Entities {
       else if (ev.e === 'melee' && ev.pid >= 0) this.players.get(ev.pid)?.rig.onMelee();
     }
     for (const p of view.players) {
-      if (p.floor !== fs.floor || p.life === 'out') continue;
+      if (p.floor !== fs.floor || p.life === 'out' || !p.connected) continue; // a disconnected teammate vanishes
       pseen.add(p.id);
       const ci = teamColorIndex(view.players, localId, p.id);
       const color = p.id === localId ? SELF_COLOR : TEAM_COLORS[ci % 4];
       let r = this.players.get(p.id);
       if (!r || r.color !== color) {
         if (r) { this.group.remove(r.rig.root); this.group.remove(r.marks); }
-        const rig = new OperatorRig(color);
+        const rig = OperatorRig.make(color);
         const marks = new THREE.Group();
         const ring = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.5, 32), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.6, toneMapped: false }));
         ring.rotation.x = -Math.PI / 2; ring.position.y = 0.03;

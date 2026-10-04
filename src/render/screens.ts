@@ -115,13 +115,21 @@ export function screenQuad(w: number, h: number, style = -1): THREE.BufferGeomet
   const g = new THREE.PlaneGeometry(w, h).toNonIndexed();
   const n = g.attributes.position.count;
   const uv = g.attributes.uv.array as Float32Array;
-  const scr = new Float32Array(n * 3);
+  g.setAttribute('aSUv', new THREE.BufferAttribute(new Float32Array(uv), 2));
+  g.setAttribute('aScr', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+  g.deleteAttribute('uv');
+  g.userData.scr = { style, aspect: w / h };
+  return reseedScreen(g);
+}
+
+/** Give a screen quad (or a clone of a cached one) its own content: a fresh seed, and a fresh style unless fixed. */
+export function reseedScreen(g: THREE.BufferGeometry): THREE.BufferGeometry {
+  const { style, aspect } = g.userData.scr as { style: number; aspect: number };
   const id = counter++;
   const s = style >= 0 ? style : Math.floor((Math.sin(id * 91.7) * 0.5 + 0.5) * SCREEN_STYLES) % SCREEN_STYLES;
   const seed = (id * 0.6180339) % 1;
-  for (let i = 0; i < n; i++) { scr[i * 3] = s; scr[i * 3 + 1] = seed; scr[i * 3 + 2] = w / h; }
-  g.setAttribute('aSUv', new THREE.BufferAttribute(new Float32Array(uv), 2));
-  g.setAttribute('aScr', new THREE.BufferAttribute(scr, 3));
-  g.deleteAttribute('uv');
+  const a = g.attributes.aScr as THREE.BufferAttribute;
+  for (let i = 0; i < a.count; i++) a.setXYZ(i, s, seed, aspect);
+  a.needsUpdate = true;
   return g;
 }

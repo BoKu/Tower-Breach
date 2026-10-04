@@ -4,3 +4,4 @@ dist
 .playwright-mcp
 release
 .publish-guard
+dist-server

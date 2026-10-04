@@ -102,9 +102,9 @@ export function trace(sim: Sim, fs: FloorState, ox: number, oy: number, ang: num
     // ceiling fixtures: only an aimed 3D shot climbs to their height (a flat shot would clip every lamp it passes under)
     if (vert) fs.L.lights.forEach((l, i) => { if ((l.kind === 'ceiling' || l.kind === 'emergency') && !fs.lights[i].broken && !fs.lights[i].cut) consider('light', l.x, l.y, 0.45, i, false, [2.35, 2.65]); });
     for (const pn of fs.panels) if (!pn.dead) consider('panel', pn.x, pn.y, 0.62, pn, false, [0.2, 1.8]); // reaches past its solid tile's edge
-    if (sim.cfg.friendlyFire && fs.floor !== 0) for (const p of sim.players) if (p.floor === fs.floor && p.life === 'alive' && p.id !== srcId) consider('player', p.x, p.y, 0.34, p, false, p.crouch ? [0, 1.25] : [0, 1.8]);
+    if (sim.cfg.friendlyFire && fs.floor !== 0) for (const p of sim.players) if (p.floor === fs.floor && p.life === 'alive' && p.connected && p.id !== srcId) consider('player', p.x, p.y, 0.34, p, false, p.crouch ? [0, 1.25] : [0, 1.8]);
   } else {
-    for (const p of sim.players) if (p.floor === fs.floor && p.life === 'alive' && p.id !== srcId) consider('player', p.x, p.y, 0.34, p, p.crouch);
+    for (const p of sim.players) if (p.floor === fs.floor && p.life === 'alive' && p.connected && p.id !== srcId) consider('player', p.x, p.y, 0.34, p, p.crouch);
   }
   return best;
 }
@@ -177,7 +177,7 @@ export function enemyDrops(rng: Rng, e: Enemy, loot: number): LootItem[] {
 
 /** Player damage with armour absorption and degradation. */
 export function damagePlayer(sim: Sim, p: PlayerState, dmg: number, pen: number, kind: 'bullet' | 'melee' | 'blast' | 'fire' | 'shock', crit = false) {
-  if (p.life !== 'alive' || p.cheats?.god) return;
+  if (p.life !== 'alive' || !p.connected || p.cheats?.god) return;
   if (crit && !p.helmet) dmg *= 1.8;
   let hpD = dmg;
   let armorHit = false;
@@ -207,7 +207,7 @@ export function explode(sim: Sim, fs: FloorState, x: number, y: number, r: numbe
     damageEnemy(sim, fs, e, dmg * (1 - d / r) + 10, 0.6, owner, 'blast');
   }
   for (const p of sim.players) {
-    if (p.floor !== fs.floor || p.life !== 'alive') continue;
+    if (p.floor !== fs.floor || p.life !== 'alive' || !p.connected) continue;
     const d = dist(x, y, p.x, p.y);
     if (d > r || !lineOfSight(fs.L, x, y, p.x, p.y)) continue;
     if (owner && owner.id !== p.id && (!sim.cfg.friendlyFire || fs.floor === 0)) continue; // teammates' blasts only hurt with friendly fire on
@@ -315,7 +315,7 @@ function detonate(sim: Sim, fs: FloorState, g: Grenade) {
         e.burstLeft = 0;
       }
       for (const p of sim.players) {
-        if (p.floor !== fs.floor || p.life !== 'alive') continue;
+        if (p.floor !== fs.floor || p.life !== 'alive' || !p.connected) continue;
         const d = dist(g.x, g.y, p.x, p.y);
         if (d > 10 || !lineOfSight(fs.L, g.x, g.y, p.x, p.y)) continue;
         const toG = Math.atan2(g.y - p.y, g.x - p.x);
@@ -345,7 +345,7 @@ export function updateZones(sim: Sim, fs: FloorState, dt: number) {
     z.tick -= dt;
     if (z.kind === 'fire') {
       for (const e of fs.enemies) if (e.state !== 'dead' && e.type !== 'warden' && dist(z.x, z.y, e.x, e.y) < z.r) damageEnemy(sim, fs, e, 11 * dt, 1, null, 'fire');
-      for (const p of sim.players) if (p.floor === fs.floor && p.life === 'alive' && dist(z.x, z.y, p.x, p.y) < z.r && p.z < 0.3) { damagePlayer(sim, p, 9 * dt, 1, 'fire'); p.burnT = 0.5; }
+      for (const p of sim.players) if (p.floor === fs.floor && p.life === 'alive' && p.connected && dist(z.x, z.y, p.x, p.y) < z.r && p.z < 0.3) { damagePlayer(sim, p, 9 * dt, 1, 'fire'); p.burnT = 0.5; }
     } else if (z.kind === 'decoy' && z.tick <= 0) {
       z.tick = 0.35 + sim.rng.next() * 0.7;
       const a = sim.rng.range(0, 6.28);
@@ -357,7 +357,7 @@ export function updateZones(sim: Sim, fs: FloorState, dt: number) {
   // static hazards
   for (const h of fs.hazards) {
     for (const p of sim.players) {
-      if (p.floor !== fs.floor || p.life !== 'alive' || p.z > 0.3) continue;
+      if (p.floor !== fs.floor || p.life !== 'alive' || !p.connected || p.z > 0.3) continue;
       if (dist(h.x, h.y, p.x, p.y) < h.r) {
         damagePlayer(sim, p, (h.kind === 'fire' ? 12 : 18) * dt, 1, h.kind === 'fire' ? 'fire' : 'shock');
         if (h.kind === 'fire') p.burnT = 0.5;

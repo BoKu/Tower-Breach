@@ -44,14 +44,14 @@ Download the file for your system from the project's **Releases** page.
 | macOS | `TowerBreach-<version>-arm64.dmg` (Apple Silicon: M1 and later) or `TowerBreach-<version>-x64.dmg` (Intel) | Open the dmg and drag Tower Breach to Applications. The first time, **right-click the app and choose Open**, then confirm. After that it opens normally. |
 | Linux (Debian, Ubuntu) | `tower-breach_<version>_amd64.deb` | In the download folder, run `sudo apt install ./tower-breach_*.deb`. |
 
-The desktop app is single player. Co-op runs in the browser version, hosted with its relay server (see
-[Co-op](#16-co-op)).
+Co-op works in the desktop app and in the browser: you join a **dedicated server** by its address (see
+[Co-op](#16-co-op)). The server itself is a separate download ([HOSTING.md](HOSTING.md)).
 
 ### Main menu
 
 - **Continue:** resume your saved run. It shows the floor and difficulty. It only appears when you have a save.
 - **Single Player:** start a new run.
-- **Co-op (up to 5):** host or join a squad. Browser version only.
+- **Co-op (up to 5):** join a dedicated server, or (browser version) host or join a squad by code.
 - **Hall of Records:** your best runs, top 10 for each difficulty.
 - **Settings:** graphics, audio, controls and gameplay options.
 - **Controls:** the full list of controls.
@@ -407,12 +407,34 @@ The HUD shows the darkness level next to the zone name.
 
 ## 16. Co-op
 
-Co-op is for up to **5 players** and runs in the browser version. One player hosts the game. Everyone opens the
-host's game URL. The host shares a **5-letter code**, and friends join with it. The person running the server can
-also share a public link (see [docs/DEVELOPMENT.md](DEVELOPMENT.md#playing-co-op-online)).
+Co-op is for up to **5 players**, and players on Windows, macOS, Linux and in a browser can share a squad. There are
+two ways to play.
 
-- **Before you go in:** the host picks the difficulty and the **friendly fire** setting (off by default) in the squad
-  lobby. Then the whole squad visits the armory before deploying.
+**Dedicated server (recommended).** Someone runs the TOWER BREACH server on a computer that stays on, or on a VPS
+(see [HOSTING.md](HOSTING.md)). The server runs the game, not any player, so the run carries on when someone leaves.
+
+1. Main menu → **Co-op** → enter your **callsign**.
+2. Type the **server address** you were given, such as `203.0.113.7:8787` or `oursquad.duckdns.org:8787`, and the
+   **password** if it has one. You can leave out `ws://` and, for the standard port, the `:8787`.
+3. Press **Join server**. You go straight into the squad armory. The server's name and message of the day are at the
+   top.
+4. Pick your kit and press **Deploy**. The squad deploys when everyone is ready. If someone stays idle, a countdown
+   (90 s by default) deploys them anyway with the starter kit.
+   If the squad has already deployed but is **still on the street**, you can still join. You get your own armory
+   visit, and **Deploy** puts you on the street next to the start point. The squad sees "*name* joined the squad".
+5. When the run ends, press **Back to server lobby** for the next tower, or **Main menu** to leave.
+
+In a browser you can simply open `http://<server address>` (for example `http://203.0.113.7:8787`): the game loads
+from the server and the address is already filled in. The server owner sets the difficulty and friendly fire. The
+address is remembered for next time. The password is only kept until you close the game.
+
+**Browser-hosted squad.** In the browser version, served by the relay (`npm start`), one player presses **Host a
+squad** and shares the **5-letter code**, and friends join with it. The host's browser runs the game, so the mission
+ends if the host leaves.
+
+- **Before you go in:** on a dedicated server, the server's owner sets the difficulty and the **friendly fire**
+  setting. In a browser-hosted squad, the host picks them in the squad lobby. Then the whole squad visits the armory
+  before deploying.
 - **Friendly fire** only applies inside the tower. When it's on, your bullets, knife and grenades can hurt teammates,
   at reduced damage. The street is always safe.
 - **Going down:** at 0 HP you go down rather than die. A teammate has **60 seconds** to reach you and hold **E** for 3
@@ -421,10 +443,34 @@ also share a public link (see [docs/DEVELOPMENT.md](DEVELOPMENT.md#playing-co-op
 - **Losing:** the run is lost when nobody is left standing. On floor 200, the squad wins if anyone is alive when the
   timer ends.
 - **Pausing:** in co-op, opening the menu doesn't pause the game.
-- **Disconnects:** if you drop out, rejoin with the **same callsign** to get your operator back. If the host leaves,
-  the mission ends for everyone.
+- **Join window:** the run really starts when the **first operator walks into the tower** (through **Breach the
+  tower** to floor 1). Until then the squad is open. New players can join from the armory, and anyone who leaves is
+  simply out of the run: their callsign is free and they don't count as a lost teammate. Once someone is inside, the
+  squad is **locked**. New callsigns are refused with "the squad has already entered the tower" until the run ends.
+- **Disconnects (after the squad is in the tower):** if you drop out, rejoin with the **same callsign** to get your
+  operator back. On a dedicated server the run continues while anyone is still in it. In a browser-hosted squad, the
+  mission ends for everyone if the host leaves.
+- **Name tags:** each teammate's callsign floats over their head in their team colour. You only see tags for
+  teammates on the floor you are viewing. A downed teammate's tag says **DOWN**, and a mic symbol shows who is
+  talking.
 - **Team colours:** you always see yourself in white and your teammates in blue, green, yellow and purple. Red is only
   used for enemies.
+
+### Voice chat (proximity)
+
+In co-op you can talk to squadmates who are **on the same floor and close by**. You hear them at full volume within
+about 3 m. They fade out with distance and are silent from about 10 m, so split up and you lose contact. A wall
+between you muffles them. Voices are panned left and right to match where the speaker is on screen.
+
+- **Push-to-talk (default):** hold **H** to talk. (V is already the knife.) Rebind it under **Settings → Controls**
+  (*Push-to-talk*). Controllers have no free button: pad players can use open mic.
+- **Open mic:** you transmit whenever you speak.
+- **Settings → Audio:** voice chat on/off, push-to-talk or open mic, voice volume, which microphone, and **Test mic**
+  with a level bar.
+- While you transmit, **TRANSMITTING** shows at the bottom of the screen. A teammate who is talking gets a pulsing mic
+  on their name tag.
+- Voice goes through the game server, so there is nothing extra to set up. If you turn voice chat off, you don't send
+  or receive any voice.
 
 ## 17. The final floor
 
@@ -496,8 +542,33 @@ Right-click (or Control-click) the app in Applications, choose **Open**, then co
 **Which Mac download do I need?**
 Apple menu → About This Mac. If it lists an Apple M-series chip, download `arm64`. If it lists Intel, download `x64`.
 
-**Where is co-op in the desktop app?**
-The desktop app is single player only. Co-op needs the browser version and its relay server.
+**How do I play co-op from the desktop app?**
+Co-op → callsign → server address → **Join server**. Someone needs to run a dedicated server: see
+[HOSTING.md](HOSTING.md). Desktop players on any OS and browser players can share a squad.
+
+**"Could not reach the server."**
+Check the address and port, and that the server is running. If it is on your home network, use its local IP
+(`192.168.…`). For friends over the internet, the server's port must be forwarded and allowed through its firewall.
+[HOSTING.md](HOSTING.md#9-troubleshooting) has a checklist.
+
+**"Version mismatch."**
+Your game and the server are different releases. Update whichever is older.
+
+**"Mission in progress: the squad has already entered the tower."**
+The squad on that server is already inside the tower, so it is locked. Wait until the run ends. If you were in it,
+rejoin with exactly the same callsign. While a squad is still on the street, anyone can join.
+
+**Voice chat: nobody hears me, or "listening only".**
+- Hold the push-to-talk key (**H** by default, see **Settings → Controls**). **TRANSMITTING** should show at the
+  bottom of the screen. Teammates only hear you when they are on your floor and within about 10 m.
+- **Desktop app:** allow the microphone when asked. On macOS, check **System Settings → Privacy & Security →
+  Microphone** and switch on **Tower Breach**. On Windows, check **Settings → Privacy → Microphone** ("Let desktop
+  apps access your microphone").
+- **Browser:** a browser only lets a page use the microphone over **https** or on **localhost**. If you play by
+  opening `http://<server IP>:8787` from another computer, the browser blocks the mic. You still hear your squad, but
+  to talk, use the **desktop app**. Very old browsers without WebCodecs get no voice at all.
+- **Settings → Audio → Test mic** shows whether the game hears your microphone. Pick another one under
+  **Microphone** if the bar doesn't move.
 
 **My controller doesn't work.**
 Press any button on it while the game window has focus, then check **Controls** to see whether it was detected. The

@@ -1,7 +1,15 @@
 import type { PlayerState, FloorState, SimEvent, Enemy, PlayerInput } from '../sim/state';
+import { emptyInput } from '../sim/state';
 import type { Sim } from '../sim/sim';
 
 export const SNAP_HZ = 15;
+/** Wire protocol version: bump on any incompatible message change. Clients send it on join; servers refuse a mismatch. */
+export const NET_VERSION = 3; // v3 (1.2.0): late join window, proximity voice (binary frames, {k:"vc"})
+export const versionMismatch = (theirs: unknown) =>
+  `Version mismatch: this server speaks co-op protocol v${NET_VERSION}, your game speaks v${Number(theirs) || 1}. Update the game (or the server) so both run the same release.`;
+
+/** Callsign rules (same as the co-op screen): letters, digits, space . - ' _ ; max 16. */
+export const cleanName = (n: unknown) => String(n ?? '').replace(/[^\w .\-']/g, '').trim().slice(0, 16);
 const r2 = (v: number) => Math.round(v * 100) / 100;
 
 /** Player fields every client needs; the recipient gets its own inventory in full. */
@@ -10,7 +18,7 @@ export function encodePlayer(p: PlayerState, full: boolean) {
     id: p.id, slot: p.slot, name: p.name, c: p.connected, f: p.floor, x: r2(p.x), y: r2(p.y), z: r2(p.z), fa: r2(p.facing),
     ax: r2(p.aimX), ay: r2(p.aimY), az: Number.isFinite(p.aimZ) ? r2(p.aimZ) : null, hp: Math.round(p.hp * 10) / 10, ar: Math.round(p.armor), hl: p.helmet, inj: p.injured, life: p.life, dt: r2(p.downT),
     cr: p.crouch, sp: p.sprinting, am: p.aiming, mv: p.moving, sel: p.sel, w: p.weapons, torch: p.torchOn, bat: r2(p.battery), mods: p.mods,
-    hurt: r2(p.hurtT), tp: (p as any).tp ?? 0, k: p.kills, ride: p.ride,
+    hurt: r2(p.hurtT), tp: (p as any).tp ?? 0, k: p.kills, ride: p.ride, ci: p.checkedIn ? 1 : 0,
   };
   if (full) {
     Object.assign(base, {
@@ -27,7 +35,7 @@ export function decodePlayer(p: PlayerState, o: any, isLocal: boolean) {
     p.crouch = o.cr; p.sprinting = o.sp; p.aiming = o.am; p.moving = o.mv;
   }
   p.slot = o.slot; p.name = o.name; p.connected = o.c; p.floor = o.f; p.hp = o.hp; p.armor = o.ar; p.helmet = o.hl; p.injured = o.inj;
-  p.life = o.life; p.downT = o.dt; p.sel = o.sel; p.weapons = o.w; p.torchOn = o.torch; p.battery = o.bat; p.mods = o.mods; p.hurtT = o.hurt; p.kills = o.k; p.ride = o.ride;
+  p.life = o.life; p.downT = o.dt; p.sel = o.sel; p.weapons = o.w; p.torchOn = o.torch; p.battery = o.bat; p.mods = o.mods; p.hurtT = o.hurt; p.kills = o.k; p.ride = o.ride; p.checkedIn = !!o.ci; // co-op HUD street objective
   if (o.ammo) {
     p.ammo = o.ammo; p.grenades = o.gr; p.grenadeSel = o.gs; p.items = o.it; p.itemSel = o.is; p.boostT = o.boost; p.reloadT = o.rl; p.reloadDur = o.rd; p.hold = o.hold;
     p.exposure = o.exp; p.prompt = o.pr; (p as any).panel = o.panel; (p as any).vest = o.vest; p.flashT = o.fl; p.burnT = o.burn;
@@ -74,3 +82,29 @@ export function encodeInput(p: PlayerState) {
   return { k: 'in', i, x: r2(p.x), y: r2(p.y), z: r2(p.z), cr: p.crouch, sp: p.sprinting, mv: p.moving, tp: (p as any).tp ?? 0 };
 }
 export type InputPacket = { k: 'in'; i: PlayerInput; x: number; y: number; z: number; cr: boolean; sp: boolean; mv: boolean; tp: number };
+
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+const RANGE: Partial<Record<keyof PlayerInput, [number, number]>> = { mx: [-1, 1], my: [-1, 1], ax: [-1e4, 1e4], ay: [-1e4, 1e4], az: [-50, 50] };
+
+/**
+ * Untrusted client input -> a well-formed InputPacket, or null. Every PlayerInput field is coerced to its
+ * type and clamped; unknown fields are dropped. The sim then applies its own game rules on top.
+ */
+export function sanitizeInputPacket(d: any): InputPacket | null {
+  if (!d || typeof d.i !== 'object' || !d.i) return null;
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : NaN);
+  const x = num(d.x), y = num(d.y), z = num(d.z);
+  if (Number.isNaN(x + y + z)) return null;
+  const i = emptyInput();
+  for (const k of Object.keys(i) as (keyof PlayerInput)[]) {
+    const v = d.i[k];
+    if (typeof i[k] === 'boolean') (i as any)[k] = v === true;
+    else if (k === 'az') i.az = v === null || v === undefined ? NaN : clamp(num(v) || 0, -50, 50); // JSON turns NaN into null
+    else {
+      const [lo, hi] = RANGE[k] ?? [-1e9, 1e9];
+      const n = num(v);
+      (i as any)[k] = Number.isNaN(n) ? (i as any)[k] : RANGE[k] ? clamp(n, lo, hi) : clamp(Math.trunc(n), lo, hi);
+    }
+  }
+  return { k: 'in', i, x, y, z, cr: d.cr === true, sp: d.sp === true, mv: d.mv === true, tp: Math.trunc(num(d.tp)) || 0 };
+}

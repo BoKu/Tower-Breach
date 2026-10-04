@@ -406,3 +406,16 @@ input.text:focus { border-color: var(--cyan); box-shadow: inset 0 0 12px rgba(53
 .press-start small { font-family: var(--jp); color: var(--dim); letter-spacing: 0.3em; }
 @keyframes press-start-pulse { 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) { .press-start div { animation: none; } }
+
+/* co-op name tags (src/ui/nametags.ts): DOM labels over teammates' heads */
+.nametags { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.nametag { position: absolute; left: 0; top: 0; white-space: nowrap; font-weight: 700; letter-spacing: 0.06em; padding: 1px 6px; background: rgba(3, 4, 5, 0.55); border-radius: 3px; text-shadow: 0 1px 2px #000; will-change: transform; }
+.nametag b { color: #ff5a5a; font-weight: 700; }
+.nametag .mic, .voice-ind .mic { display: inline-block; width: 0.45em; height: 0.8em; margin-right: 0.4em; border-radius: 0.25em; background: currentColor; box-shadow: 0 0 6px currentColor; vertical-align: -0.05em; animation: micpulse 0.5s ease-in-out infinite alternate; }
+.nametag.talk { box-shadow: 0 0 0 1px currentColor; }
+@keyframes micpulse { from { opacity: 0.55; } to { opacity: 1; } }
+/* own microphone: shown while transmitting */
+.voice-ind { position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); font-size: 12px; letter-spacing: 0.14em; color: var(--good); padding: 3px 10px; background: rgba(3, 4, 5, 0.6); border: 1px solid currentColor; border-radius: 3px; display: none; }
+.voice-ind.on { display: block; }
+.mic-meter { display: inline-block; width: 160px; height: 8px; background: #111; border: 1px solid #333; vertical-align: middle; }
+.mic-meter i { display: block; height: 100%; width: 0; background: var(--good); transition: width 0.06s; }
