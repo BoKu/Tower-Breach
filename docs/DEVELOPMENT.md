@@ -87,8 +87,9 @@ hidden because there is no relay server, and saves live in the app's own storage
 
 - The builds are unsigned. Windows SmartScreen warns on first run ("More info" → "Run anyway"). On macOS,
   right-click the app and choose Open the first time.
-- To use a custom Windows icon, add `"icon": "build/icon.ico"` under `build.win` in `package.json` and change
-  `signAndEditExecutable` to `true`. On a Mac, that step needs Wine.
+- **App icon:** `build/icon.svg` is the source. After editing it, run `npx electron build/render-icon.cjs` to
+  regenerate `build/icon.png` (1024×1024). electron-builder turns that into the Windows `.ico`, the macOS `.icns`
+  and the Linux icon. Building from a Mac embeds it in the Windows exe without Wine.
 
 ## How the systems fit together
 

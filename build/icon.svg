@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Tower Breach app icon: the tower at night, a red beacon on the crown, targeting brackets. Source for
+       build/icon.png (rendered by build/render-icon.cjs); electron-builder makes the .ico/.icns from it. -->
+  <defs>
+    <radialGradient id="sky" cx="50%" cy="30%" r="80%">
+      <stop offset="0" stop-color="#123447"/>
+      <stop offset="0.55" stop-color="#071621"/>
+      <stop offset="1" stop-color="#020507"/>
+    </radialGradient>
+    <linearGradient id="front" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#2a3a48"/>
+      <stop offset="1" stop-color="#121a22"/>
+    </linearGradient>
+    <linearGradient id="side" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#16212b"/>
+      <stop offset="1" stop-color="#090e13"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#ff3b30" stop-opacity="0.9"/>
+      <stop offset="0.35" stop-color="#ff3b30" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#ff3b30" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="win" width="44" height="40" patternUnits="userSpaceOnUse" x="398" y="300">
+      <rect x="8" y="10" width="26" height="14" rx="2" fill="#0b1219"/>
+    </pattern>
+    <clipPath id="tile"><rect x="24" y="24" width="976" height="976" rx="220"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#tile)">
+    <rect width="1024" height="1024" fill="url(#sky)"/>
+    <!-- faint HUD grid -->
+    <g stroke="#29d3ff" stroke-opacity="0.07" stroke-width="2">
+      <path d="M0 256H1024M0 512H1024M0 768H1024M256 0V1024M512 0V1024M768 0V1024"/>
+    </g>
+    <!-- distant skyline -->
+    <path d="M24 1000V760h90v-60h70v90h60v-140h80v210h50V700h70v300zM700 1000V720h70v-80h80v120h60v-60h90v300z" fill="#0a131b"/>
+
+    <!-- the tower: front face, side face, crown -->
+    <polygon points="380,290 640,290 640,1000 380,1000" fill="url(#front)"/>
+    <polygon points="640,290 720,330 720,1000 640,1000" fill="url(#side)"/>
+    <polygon points="380,290 470,220 690,220 640,290" fill="#1f2c38"/>
+    <polygon points="640,290 690,220 720,250 720,330" fill="#121b23"/>
+    <rect x="398" y="290" width="228" height="710" fill="url(#win)"/> <!-- 5 whole window columns -->
+    <!-- lit windows -->
+    <g fill="#39d0ff">
+      <rect x="450" y="350" width="26" height="14" rx="2"/><rect x="538" y="390" width="26" height="14" rx="2"/>
+      <rect x="406" y="470" width="26" height="14" rx="2"/><rect x="582" y="510" width="26" height="14" rx="2"/>
+      <rect x="494" y="590" width="26" height="14" rx="2"/><rect x="450" y="670" width="26" height="14" rx="2"/>
+      <rect x="582" y="750" width="26" height="14" rx="2"/><rect x="406" y="830" width="26" height="14" rx="2"/>
+      <rect x="538" y="910" width="26" height="14" rx="2"/>
+    </g>
+    <g fill="#ffb347"><rect x="538" y="630" width="26" height="14" rx="2"/><rect x="494" y="430" width="26" height="14" rx="2"/></g>
+    <!-- side-face window slits -->
+    <g stroke="#39d0ff" stroke-opacity="0.35" stroke-width="6">
+      <path d="M660 420l40 18M660 560l40 18M660 700l40 18M660 840l40 18"/>
+    </g>
+    <!-- antenna and beacon -->
+    <path d="M580 220V110" stroke="#2a3a48" stroke-width="14"/>
+    <circle cx="580" cy="104" r="120" fill="url(#glow)"/>
+    <circle cx="580" cy="104" r="22" fill="#ff5a4f"/>
+    <circle cx="580" cy="104" r="9" fill="#fff1ee"/>
+
+    <!-- targeting brackets around the crown -->
+    <g fill="none" stroke="#29d3ff" stroke-width="26" stroke-linecap="square">
+      <path d="M300 180V110h70M860 180V110h-70M300 440v70h70M860 440v70h-70"/>
+    </g>
+  </g>
+  <!-- tile rim -->
+  <rect x="24" y="24" width="976" height="976" rx="220" fill="none" stroke="#29d3ff" stroke-opacity="0.35" stroke-width="10"/>
+</svg>
