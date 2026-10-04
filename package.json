@@ -1,0 +1,98 @@
+{
+  "name": "tower-breach",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "TOWER BREACH - isometric co-op tactical survival game (WebGL)",
+  "scripts": {
+    "dev": "vite",
+    "relay": "node server/server.mjs --relay-only",
+    "build": "tsc --noEmit && vite build",
+    "start": "node server/server.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "online": "bash scripts/play-online.sh",
+    "desktop": "npm run build && electron .",
+    "dist:win": "npm run build && electron-builder --win --x64",
+    "dist:linux": "npm run build && electron-builder --linux deb --x64",
+    "dist:mac": "npm run build && electron-builder --mac dmg --x64 --arm64"
+  },
+  "dependencies": {
+    "@fontsource/chakra-petch": "^5.3.0",
+    "three": "^0.186.1",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "@types/three": "^0.186.0",
+    "@types/ws": "^8.18.1",
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1",
+    "vitest": "^5.0.2"
+  },
+  "main": "desktop/main.cjs",
+  "build": {
+    "appId": "io.github.boku.towerbreach",
+    "productName": "Tower Breach",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "desktop/**/*",
+      "package.json",
+      "!node_modules/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Tower Breach"
+    },
+    "portable": {
+      "artifactName": "TowerBreach-${version}-portable.exe"
+    },
+    "linux": {
+      "target": [
+        "deb"
+      ],
+      "category": "Game",
+      "maintainer": "BoKu <discreet.computing583@silomails.com>",
+      "synopsis": "Isometric co-op tactical survival game",
+      "syncDesktopName": true
+    },
+    "deb": {
+      "packageName": "tower-breach"
+    },
+    "mac": {
+      "category": "public.app-category.action-games",
+      "target": [
+        "dmg"
+      ],
+      "identity": null
+    },
+    "dmg": {
+      "artifactName": "TowerBreach-${version}-${arch}.dmg"
+    }
+  },
+  "author": {
+    "name": "BoKu",
+    "email": "discreet.computing583@silomails.com"
+  },
+  "homepage": "https://github.com/BoKu/Tower-Breach",
+  "desktopName": "tower-breach.desktop",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BoKu/Tower-Breach.git"
+  }
+}
