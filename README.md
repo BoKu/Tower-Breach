@@ -120,15 +120,18 @@ You can remap every key under **Settings → Controls**. The [manual](docs/MANUA
 
 ## Holiday themes
 
-Themes switch on automatically on **Halloween** and **Christmas**, and on the 3 days before each, using your device's
-date. At Halloween the tower fills with zombies, skeleton dogs, bats and ogres. At Christmas the street is under snow,
-the police wear Santa suits and the loyalists are armed elves. In the browser build, add `?holiday=halloween`,
-`?holiday=xmas` or `?holiday=none` to the URL to choose a theme.
+Themes switch on automatically at **Halloween**, **Christmas** and **Easter**, on the day and the 3 days before each,
+using your device's date. At Halloween the tower fills with zombies, skeleton dogs, bats and ogres. At Christmas the
+street is under snow, the police wear Santa suits and the loyalists are armed elves. At Easter the street turns to
+chocolate, the police cars are giant baskets, the police wear bunny suits and the enemies are dentists. Each theme has
+its own lift music. In the browser build, add `?holiday=halloween`, `?holiday=xmas`, `?holiday=easter` or
+`?holiday=none` to the URL to choose a theme.
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/screenshots/halloween.jpg" alt="Halloween street"><br><sub><b>Halloween</b></sub></td>
-    <td width="50%"><img src="docs/screenshots/christmas.jpg" alt="Christmas street"><br><sub><b>Christmas</b></sub></td>
+    <td width="33%"><img src="docs/screenshots/halloween.jpg" alt="Halloween street"><br><sub><b>Halloween</b></sub></td>
+    <td width="33%"><img src="docs/screenshots/christmas.jpg" alt="Christmas street"><br><sub><b>Christmas</b></sub></td>
+    <td width="33%"><img src="docs/screenshots/easter.jpg" alt="Easter street"><br><sub><b>Easter</b></sub></td>
   </tr>
 </table>
 

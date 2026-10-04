@@ -488,13 +488,14 @@ win.
 
 ## 18. Holiday themes
 
-The game dresses up for **Halloween** and **Christmas**. Each theme runs on the day itself and the 3 days before it,
-going by your computer's date.
+The game dresses up for **Halloween**, **Christmas** and **Easter**. Each theme runs on the day itself and the 3 days
+before it, going by your computer's date. Easter moves every year (Easter Sunday), and the game works it out.
 
 <table>
   <tr>
-    <td width="50%"><img src="screenshots/halloween.jpg" alt="Halloween"></td>
-    <td width="50%"><img src="screenshots/christmas.jpg" alt="Christmas"></td>
+    <td width="33%"><img src="screenshots/halloween.jpg" alt="Halloween"></td>
+    <td width="33%"><img src="screenshots/christmas.jpg" alt="Christmas"></td>
+    <td width="33%"><img src="screenshots/easter.jpg" alt="Easter"></td>
   </tr>
 </table>
 
@@ -509,9 +510,17 @@ going by your computer's date.
   - Dogs are snowmen, drones have reindeer antlers and Wardens wear Santa hats.
   - The tower is decked out with trees, presents and lights.
   - The lift muzak is festive.
+- **Easter:**
+  - The street is chocolate: a milk-chocolate road and dark chocolate-bar pavements, with bunny footprints, painted
+    eggs, carrots and chicks, and pastel petals drifting down.
+  - The police cars are giant woven baskets, and the police wear pastel bunny suits.
+  - The loyalists and cyborgs are dentists. They are still armed.
+  - Dogs are hopping chocolate bunnies, pigeons are chicks and rats are baby bunnies. Drones and Wardens wear bunny ears.
+  - The tower is decorated with eggs, spring flowers and chocolate bunnies.
+  - The lift plays a springy Easter tune.
 
-In the browser version you can choose a theme by adding `?holiday=halloween`, `?holiday=xmas` or `?holiday=none` to the
-address.
+In the browser version you can choose a theme by adding `?holiday=halloween`, `?holiday=xmas`, `?holiday=easter` or
+`?holiday=none` to the address.
 
 ## 19. Tips
 
