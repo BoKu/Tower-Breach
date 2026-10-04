@@ -875,7 +875,7 @@ export class WardenRig {
     const ph = this.phase;
     for (const l of this.legs) {
       const p = ph + (l.side < 0 ? 0 : Math.PI);
-      const hip = -0.5 + Math.sin(p) * 0.32 * move - 0.55 * this.deadK;
+      const hip = -0.5 - Math.sin(p) * 0.32 * move - 0.55 * this.deadK; // thigh swings forward while the knee lifts
       const knee = 1.05 + Math.max(0, Math.sin(p + 1.6)) * 0.55 * move + 1.0 * this.deadK;
       l.hip.rotation.x = hip;
       l.knee.rotation.x = knee;

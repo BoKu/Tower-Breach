@@ -333,15 +333,32 @@ the Uplink console.
 **How to hack:**
 
 1. Your connection bounces through a few relays. Then the **trace** starts to fill.
-2. **Crack the password.** One of the words in the leaked memory dump is the password. Click a word to try it. If you
-   pick wrong, the console shows its *likeness*: how many letters are in the right position. The password shares
-   exactly that many with every word you got wrong, so you can work it out. Every wrong pick adds to the trace.
-3. **Decrypt.** Click the key bytes in order in the grid. The grid reshuffles every few seconds, and wrong bytes add
-   to the trace.
+2. Solve **two puzzles**. Each terminal picks them at random from its own set, so no two hacks play the same.
+
+**Security terminal puzzles:**
+
+- **Password Breaker.** One of the words in the leaked memory dump is the password. Click a word to try it. If you
+  pick wrong, the console shows its *likeness*: how many letters are in the right position. The password shares
+  exactly that many with every word you got wrong, so you can work it out.
+- **Decrypter.** Click the key bytes in order in the grid. The grid reshuffles every few seconds.
+- **Camera Sequence.** The wall of nine camera feeds flashes a sequence. Repeat it. Each round adds one more feed. A
+  wrong feed replays the sequence from the start.
+- **Signal Jam.** Use **−** and **+** to tune the live wave (bright) until it lies on the camera carrier (dim), then
+  press **Loop Feed**. On higher floors you also tune the phase.
+
+**Lighting terminal puzzles:**
+
+- **Wire Patch.** Click a wire on the left, then the wire of the same colour on the right.
+- **Breaker Switches.** Get every breaker ON. Each switch also flips the switches next to it.
+- **Circuit Route.** Click tiles to rotate them until power runs from the source to the bulb. Live tiles glow.
+- **Voltage Calibrate.** A needle sweeps the gauge. Press **Lock** while it is in the green band, three times.
+
+Mistakes add to the trace: a wrong password, byte, feed or splice, a missed lock, or looping a feed that does not
+match. Flipping breakers, rotating tiles and tuning are free, but the clock keeps running.
 
 If the trace reaches 100%, the terminal locks for good, there is a loud noise, and the network is alerted. The
-higher the floor, the faster the trace fills. You can **disconnect** (Esc) at any time without penalty and try again
-later.
+higher the floor, the faster the trace fills and the harder the puzzles. You can **disconnect** (Esc) at any time
+without penalty and try again later.
 
 ## 12. Breaker panels and lights
 

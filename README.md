@@ -47,8 +47,10 @@ You get one life. Each run is a new tower. You can go in alone or with up to fou
   where you are.
 - 🤖 **Six enemy types:** loyalists, attack dogs, patrol drones, cyborgs, cyber-hounds and Warden mechs. The machines
   share an AI network and respond to each other's alarms.
-- 💻 **Hacking.** Crack a terminal's password before the trace finishes. A security terminal kills the cameras and
-  traps on its floor. A lighting terminal brings the lights back.
+- 💻 **Hacking.** Beat two puzzles before the trace finishes. Security terminals throw password cracking, byte
+  decrypting, camera sequences and signal jamming at you. Lighting terminals throw wiring, breakers, circuit routing and
+  voltage calibration. A security terminal kills the cameras and traps on its floor. A lighting terminal brings the
+  lights back.
 - 🪜 **A route up.** Stairwells can be on fire, full of debris or collapsed, and only some lifts have power. Every
   floor has at least one way up.
 - 🛒 **Armory.** Spend your budget on 22 guns, armour, five grenade types and gear. After that, you only have what

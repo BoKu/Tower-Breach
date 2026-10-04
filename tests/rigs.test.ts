@@ -37,3 +37,27 @@ test('Easter rigs are cached apart from the everyday look', () => {
   expect(firstGeo(OperatorRig.make(0xff2020, { outfit: 'cyborg', skin: 0x8a5a3c }))).toBe(firstGeo(plain));
   setHolidayOverride(prev);
 });
+
+// Walk cycle direction: a lifted foot must swing forward and a planted foot push back (not a moonwalk).
+test('warden and ogre feet swing forward in the air and push back on the ground', async () => {
+  const { WardenRig } = await import('../src/render/beasts');
+  for (const ogre of [false, true]) {
+    const w = new WardenRig(ogre), ankle = (w as any).legs[0].ankle as THREE.Object3D, v = new THREE.Vector3();
+    const samples: { y: number; z: number }[] = [];
+    // facing +z (root.rotation.y = 0), standing still in place with a walking velocity
+    for (let i = 0; i < 400; i++) {
+      w.update({ dt: 1 / 60, t: i / 60, x: 0, y: 0, facing: Math.PI / 2, state: 'chase', ground: 0, alert: false, vel: { vx: 0, vy: 1 } });
+      w.root.updateMatrixWorld(true);
+      ankle.getWorldPosition(v);
+      if (i > 100) samples.push({ y: v.y, z: v.z });
+    }
+    const ys = samples.map((s) => s.y), mid = (Math.min(...ys) + Math.max(...ys)) / 2;
+    let air = 0, ground = 0;
+    for (let i = 1; i < samples.length; i++) {
+      const dz = samples[i].z - samples[i - 1].z;
+      if (samples[i].y > mid) air += dz; else ground += dz;
+    }
+    expect(air, ogre ? 'ogre' : 'mech').toBeGreaterThan(0);
+    expect(ground, ogre ? 'ogre' : 'mech').toBeLessThan(0);
+  }
+});

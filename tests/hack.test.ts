@@ -3,7 +3,7 @@ import { Sim } from '../src/sim/sim';
 import { emptyLoadout } from '../src/ui/shop';
 import { BuildingPlan } from '../src/gen/building';
 import { generateFloor, HACK_MAX_FLOOR } from '../src/gen/floor';
-import { HackGame, GUESS_PENALTY, likeness } from '../src/ui/hackgame';
+import { HackGame, GUESS_PENALTY, WRONG_PENALTY, POOLS, Circuit, likeness, type PuzzleId } from '../src/ui/hackgame';
 import { lightLevel } from '../src/sim/lights';
 
 function sim() {
@@ -83,7 +83,7 @@ describe('hackable computers', () => {
 
   it('password breaker: deduction by likeness cracks it in a few picks; wrong picks cost trace', () => {
     for (const [floor, seed] of [[1, 3], [60, 9], [120, 7], [190, 11]]) {
-      const g = new HackGame(floor, 'security', seed);
+      const g = new HackGame(floor, 'security', seed, ['password', 'decrypt']);
       let t = 0, picks = 0;
       while (!g.done && t < 60) {
         g.tick(1 / 60); t += 1 / 60;
@@ -98,7 +98,7 @@ describe('hackable computers', () => {
       expect(picks).toBeLessThanOrEqual(5);
       expect(g.trace).toBeLessThan(0.75);
     }
-    const g = new HackGame(1, 'lights', 5);
+    const g = new HackGame(1, 'lights', 5, ['password']);
     for (let i = 0; i < 130; i++) g.tick(1 / 60);
     const before = g.trace, wrong = g.words.find((w) => w !== g.password)!;
     expect(g.guess(wrong)).toBe(false);
@@ -107,8 +107,112 @@ describe('hackable computers', () => {
     expect(g.guess(wrong)).toBe(false); // same word twice is ignored
     expect(g.trace).toBeCloseTo(before + GUESS_PENALTY, 5);
     // idle: the trace still gets you
-    const idle = new HackGame(1, 'lights', 3);
+    const idle = new HackGame(1, 'lights', 3, ['wires']);
     for (let i = 0; i < 60 * 60; i++) idle.tick(1 / 60);
     expect(idle.stage).toBe('traced');
   });
+
+  it('each terminal draws two different puzzles from its own pool, fixed by the seed', () => {
+    for (const kind of ['security', 'lights'] as const) {
+      const seen = new Set<PuzzleId>();
+      for (let seed = 1; seed < 60; seed++) {
+        const g = new HackGame(50, kind, seed);
+        expect(g.stages.length).toBe(2);
+        expect(new Set(g.stages).size).toBe(2);
+        for (const id of g.stages) { expect(POOLS[kind]).toContain(id); seen.add(id); }
+        expect(new HackGame(50, kind, seed).stages).toEqual(g.stages);
+      }
+      expect(seen.size).toBe(4);
+    }
+  });
+
+  it('every new puzzle is solvable at floor 1 and 190, and both stages chain to granted', () => {
+    for (const floor of [1, 190]) for (const seed of [2, 17, 44]) {
+      for (const pair of [['wires', 'breakers'], ['circuit', 'voltage'], ['cameras', 'signal']] as PuzzleId[][]) {
+        const g = new HackGame(floor, pair[0] === 'cameras' ? 'security' : 'lights', seed, pair);
+        let t = 0;
+        while (!g.done && t < 60) { g.tick(1 / 60); t += 1 / 60; solveStep(g); }
+        expect(g.stage, `${pair} floor ${floor} seed ${seed}`).toBe('granted');
+        expect(g.trace).toBeLessThan(0.5);
+      }
+    }
+  });
+
+  it('puzzle mistakes cost trace', () => {
+    const at = (id: PuzzleId) => { const g = new HackGame(1, 'lights', 9, [id]); while (g.stage !== id) g.tick(1 / 60); return g; };
+    const w = at('wires'), wp = w.p.wires!;
+    const bad = wp.right.findIndex((c) => c !== wp.left[0]);
+    w.act('wires', (p) => p.pick('L', 0));
+    expect(w.act('wires', (p) => p.pick('R', bad))).toBe(false);
+    expect(w.trace).toBeCloseTo(WRONG_PENALTY, 1);
+    const v = at('voltage'), vp = v.p.voltage!;
+    vp.center = vp.x > 0.5 ? 0.1 : 0.9;
+    expect(v.act('voltage', (p) => p.lock())).toBe(false);
+    expect(v.trace).toBeGreaterThanOrEqual(WRONG_PENALTY);
+    const c = at('cameras'), cp = c.p.cameras!;
+    while (cp.showT !== null) c.tick(1 / 60);
+    expect(c.act('cameras', (p) => p.pick((cp.seq[0] + 1) % 9))).toBe(false);
+    expect(cp.showT).not.toBeNull(); // replays the sequence
+    const s = at('signal');
+    expect(s.act('signal', (p) => p.loop())).toBe(false);
+    expect(s.stage).toBe('signal');
+    // neutral moves are free
+    const b = at('breakers'), before = b.trace;
+    b.act('breakers', (p) => p.flip(0));
+    expect(b.trace).toBe(before);
+  });
 });
+
+/** One move of a perfect player in whichever new puzzle is up. */
+function solveStep(g: HackGame) {
+  const p = g.p;
+  switch (g.stage) {
+    case 'wires': { const w = p.wires!, i = w.left.findIndex((c) => !w.done.has(c)); g.act('wires', (x) => x.pick('L', i)); g.act('wires', (x) => x.pick('R', w.right.indexOf(w.left[i]))); break; }
+    case 'breakers': {
+      // brute-force the set of flips (at most 2^7)
+      const on = p.breakers!.on, n = on.length;
+      for (let mask = 1; mask < 1 << n; mask++) {
+        const t = on.slice();
+        for (let i = 0; i < n; i++) if (mask & (1 << i)) for (const j of [i - 1, i, i + 1]) if (j >= 0 && j < n) t[j] = !t[j];
+        if (t.every(Boolean)) { for (let i = 0; i < n; i++) if (mask & (1 << i)) g.act('breakers', (x) => x.flip(i)); break; }
+      }
+      break;
+    }
+    case 'circuit': {
+      const c = p.circuit!, want = solveCircuit(c);
+      want.forEach((m, i) => { for (let k = 0; k < 4 && c.tiles[i] !== m; k++) g.act('circuit', (x) => x.rotate(i)); });
+      break;
+    }
+    case 'voltage': { const v = p.voltage!; if (Math.abs(v.x - v.center) < v.width / 2 - 0.01) g.act('voltage', (x) => x.lock()); break; }
+    case 'cameras': { const c = p.cameras!; if (c.showT === null) g.act('cameras', (x) => x.pick(c.seq[c.idx])); break; }
+    case 'signal': {
+      const s = p.signal!;
+      for (const k of s.params) while (s.val[k] !== s.target[k]) g.act('signal', (x) => x.tune(k, Math.sign(s.target[k] - s.val[k])));
+      g.act('signal', (x) => x.loop());
+      break;
+    }
+  }
+}
+
+/** Tile masks that power the bulb: depth-first along the route, trying each rotation of each tile. */
+function solveCircuit(c: Circuit): number[] {
+  const n = c.n, tiles = c.tiles.slice(), used = new Set<number>(), bulb = c.bulbRow * n + n - 1;
+  const go = (cell: number, from: number): boolean => {
+    used.add(cell);
+    let m = tiles[cell];
+    for (let r = 0; r < 4; r++, m = Circuit.rot(m)) {
+      if (!(m & (1 << from))) continue;
+      tiles[cell] = m;
+      for (let d = 0; d < 4; d++) {
+        if (d === from || !(m & (1 << d))) continue;
+        if (cell === bulb && d === 1) return true;
+        const x = (cell % n) + Circuit.DIRS[d][0], y = Math.floor(cell / n) + Circuit.DIRS[d][1], nc = y * n + x;
+        if (x >= 0 && y >= 0 && x < n && y < n && !used.has(nc) && go(nc, (d + 2) % 4)) return true;
+      }
+    }
+    used.delete(cell);
+    return false;
+  };
+  expect(go(c.srcRow * n, 3)).toBe(true);
+  return tiles;
+}

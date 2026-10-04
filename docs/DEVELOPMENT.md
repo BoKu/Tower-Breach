@@ -71,6 +71,7 @@ Append these to the game URL. They work in single player only.
 | `&floor=sandbox` | Asset sandbox: every character, animal, weapon, gear and prop model on a labelled grid in all its poses and orientations, plus CCTV, traps, hazards, vending, light types and stair conditions. Two hack terminals (security and lighting) stand at the west end. No AI, no saving; the god, ammo and torch cheats are on |
 | `&floor=sandbox-xmas`, `sandbox-easter`, `sandbox-halloween` | The same sandbox with every model dressed for that holiday. Models that keep their default look are left out (weapons, CCTV, traps, pipes, couches, chairs, monitors, plant-room machinery and so on) |
 | `?holiday=xmas\|easter\|halloween\|none` | Force a holiday theme, or none, in any game including normal play, e.g. `localhost:5173/?holiday=halloween` |
+| `&hack=wires,signal` | Hack terminals run these puzzles in this order instead of two random ones: `password`, `decrypt`, `cameras`, `signal`, `wires`, `breakers`, `circuit`, `voltage` |
 | `&diff=hard` / `insane` | Difficulty |
 | `&torch=1` | Torch on, and the battery never drains |
 | `&god=1` | Take no damage |

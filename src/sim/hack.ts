@@ -28,7 +28,7 @@ export function fixFloorLights(fs: FloorState) {
 /** Trace time (s) and puzzle size for the minigame at a floor. */
 export function hackDifficulty(floor: number) {
   const k = Math.min(1, Math.max(0, (floor - 1) / 189));
-  return { trace: Math.round(48 - k * 20), wordLen: 5 + Math.round(k * 2), words: 6 + Math.round(k * 4), seqLen: 3 + Math.round(k * 2) };
+  return { k, trace: Math.round(48 - k * 20), wordLen: 5 + Math.round(k * 2), words: 6 + Math.round(k * 4), seqLen: 3 + Math.round(k * 2) };
 }
 
 export function applyHack(sim: Sim, p: PlayerState, fs: FloorState, h: HackState, ok: boolean) {
