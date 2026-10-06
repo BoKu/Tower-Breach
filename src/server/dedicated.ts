@@ -99,8 +99,32 @@ Options (flags beat environment variables, which beat the config file):
 Config file keys: port, difficulty, maxPlayers, friendlyFire, password, name, motd, holiday, readyTimeout, webRoot, tlsCert, tlsKey.
 `;
 
+/**
+ * `npm run server --holiday xmas` (without "--") never reaches us as flags: npm keeps --options for itself and exports
+ * them as npm_config_* (an option it doesn't know becomes "true" and its value a bare argument). Turn them back into
+ * flags; when the split-off values can't be paired up unambiguously, say how to run it instead.
+ */
+function npmFlags(argv: string[], env: Record<string, string | undefined>): string[] {
+  const VALUE = ['port', 'difficulty', 'max-players', 'password', 'name', 'motd', 'holiday', 'ready-timeout', 'web-root', 'tls-cert', 'tls-key', 'config'];
+  const flags: string[] = [], split: string[] = [];
+  for (const o of [...VALUE, 'friendly-fire']) {
+    const v = env['npm_config_' + o.replace(/-/g, '_')];
+    if (!v) continue;
+    if (o === 'friendly-fire') { if (v !== 'false') flags.push('--friendly-fire'); } else if (v === 'true') split.push(o); else flags.push(`--${o}`, v);
+  }
+  const bare = argv.filter((a) => !a.startsWith('-')), rest = argv.filter((a) => a.startsWith('-') || !bare.includes(a));
+  if (split.length === 1 && bare.length === 1) return [...flags, `--${split[0]}`, bare[0], ...rest];
+  if (split.length || bare.length) {
+    // npm doesn't say which value belonged to which option, so don't guess
+    const fix = [...split.map((o) => `--${o} <value>`), ...flags.map((f) => (f.includes(' ') ? JSON.stringify(f) : f))].join(' ');
+    throw new Error(`npm kept your options for itself. Put "--" before them: npm run server -- ${fix}`);
+  }
+  return [...flags, ...argv];
+}
+
 /** Merge defaults < config file < environment < flags. Returns null for --help; throws a readable Error on bad input. */
 export function parseConfig(argv: string[], env: Record<string, string | undefined> = {}): ServerConfig | null {
+  if (env.npm_lifecycle_event) argv = npmFlags(argv, env);
   const { values: f } = parseArgs({
     args: argv, strict: true, allowPositionals: false,
     options: {

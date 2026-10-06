@@ -47,20 +47,23 @@ You get one life. Each run is a new tower. You can go in alone or with up to fou
   where you are.
 - 🤖 **Six enemy types:** loyalists, attack dogs, patrol drones, cyborgs, cyber-hounds and Warden mechs. The machines
   share an AI network and respond to each other's alarms.
-- 💻 **Hacking.** Beat three puzzles before the trace finishes. Security terminals throw password cracking, byte
-  decrypting, camera sequences, signal jamming and keypad code-breaking at you. Lighting terminals throw wiring,
-  breakers, circuit routing, voltage calibration and load balancing. A security terminal kills the cameras and traps on its floor. A lighting terminal brings the
-  lights back.
+- 💻 **Hacking.** Beat three random puzzles before the trace finishes. Security terminals throw password cracking,
+  byte decrypting, camera sequences, signal jamming and keypad code-breaking at you. Lighting terminals throw wiring,
+  breakers, circuit routing, voltage calibration and load balancing. A security terminal kills the cameras and traps
+  on its floor. A lighting terminal brings the lights back.
 - 🪜 **A route up.** Stairwells can be on fire, full of debris or collapsed, and only some lifts have power. Every
   floor has at least one way up.
-- 🚪 **Doors and master keys.** Doorways have doors you can open, shut and lock. Each floor hides one master key that
+- 🚪 **Doors and master keys.** Some doorways have doors you can open, shut and lock. Each floor hides one master key that
   opens its locked rooms, and lets you lock a door behind you. Enemies open doors but can't pass a locked one.
 - 🪙 **Coins and vending machines.** Collect coins from desks and safes, and buy drinks and snacks quietly from
   vending machines instead of smashing them open.
 - 🛒 **Armory.** Spend your budget on 22 guns, armour, five grenade types and gear. After that, you only have what
   you find on the way up.
-- 👥 **Co-op for up to 5.** Revive downed teammates with a Health Kit. Friendly fire is optional.
-- 🎃 **Holiday themes.** Halloween and Christmas versions of the street and the tower.
+- 👥 **Co-op for up to 5.** Cross-play between the desktop app and the browser, proximity voice chat, and revives
+  with a Health Kit. Friendly fire is optional.
+- ✨ **Lighting and reflections.** Every lamp casts its own coloured light, mirrors show you and the enemy, and an
+  optional ray-traced mode adds a sheen to floors and the street.
+- 🎃 **Holiday themes.** Halloween, Christmas and Easter versions of the street and the tower.
 - 🎛️ **Everything is generated in code.** All models, textures, animations and sound effects. The only recorded
   audio is the street ambience.
 
@@ -94,11 +97,14 @@ Get the latest build from **[Releases](../../releases/latest)**:
 
 **Co-op with cross-play.** Someone runs the **dedicated server**: a single download for Windows, macOS or Linux
 (`towerbreach-server-<os>`), or a small VPS. Friends join it from the **desktop app on any OS** (Co-op → server
-address → **Join server**), or from a **browser** by opening `http://<server>:8787`. Both kinds of player can be in
+address → **Join server**), or from a **browser** by opening `http://<server>:8787` (`https://` if the server has a
+certificate). Both kinds of player can be in
 the same squad. The server runs the game itself, so the run carries on when anyone leaves, and they can rejoin with
 the same callsign. Late friends can still join while the squad is on the street; once someone enters the tower the
 squad is locked. Squadmates on the same floor and close by can talk with **proximity voice chat** (push-to-talk,
-routed through the server, no extra setup). How to run one, including port forwarding and firewalls:
+routed through the server). It works in the desktop app with no setup. Browsers only allow voice chat on `https://`
+pages, so browser players need the server to run with a certificate (`--tls-cert` / `--tls-key`). The server's
+options (password, difficulty, holiday theme, friendly fire and more) are listed in the hosting guide. How to run one, including port forwarding and firewalls:
 **[docs/HOSTING.md](docs/HOSTING.md)**. Browser players can also still host a squad in their own browser through the
 relay (`npm start`, 5-letter codes). See the [co-op notes](docs/DEVELOPMENT.md#playing-co-op-online).
 
@@ -151,6 +157,7 @@ npm run dev          # play at http://localhost:5173
 npm run build        # production build into dist/
 npm start            # game + co-op relay at http://localhost:8080
 npm run server       # dedicated co-op server at http://localhost:8787 (after npm run build)
+npm run server -- --holiday xmas --password secret   # server options go after the --
 npm test             # headless test suite
 
 npm run dist:win     # Windows installer + portable exe
@@ -159,6 +166,9 @@ npm run dist:linux   # Debian .deb
 npm run dist:server  # dedicated server binaries for Windows, macOS (x64, arm64), Linux (needs Bun)
 npx install-electron && npm run desktop   # run the desktop app locally
 ```
+
+Options for `npm run server` go after `--`, otherwise npm keeps them for itself. A single option such as
+`npm run server --holiday xmas` still works, and the server tells you the right command if it can't work out the rest.
 
 `npm run online` starts a server with a public Cloudflare link you can share for co-op. Test URLs, the architecture,
 the asset pipeline and modding notes are in **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)**.

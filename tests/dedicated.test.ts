@@ -49,6 +49,12 @@ describe('dedicated server', () => {
     expect(c).toMatchObject({ port: 9001, friendlyFire: true, difficulty: 'hard', password: 'x', maxPlayers: 3 });
     expect(() => parseConfig(['--max-players', '9'])).toThrow(/max-players/);
     expect(() => parseConfig(['--bogus'])).toThrow();
+    // `npm run server --holiday xmas` (no "--"): npm keeps the flags for itself (npm_config_*), the server must still get them
+    const npm = { npm_lifecycle_event: 'server' };
+    expect(parseConfig([], { ...npm, npm_config_holiday: 'xmas', npm_config_password: 'abc', npm_config_friendly_fire: 'true', npm_config_max_players: '3' }))
+      .toMatchObject({ holiday: 'xmas', password: 'abc', friendlyFire: true, maxPlayers: 3 });
+    expect(parseConfig(['xmas'], { ...npm, npm_config_holiday: 'true' })).toMatchObject({ holiday: 'xmas' }); // value split off by npm
+    expect(() => parseConfig(['xmas', '9000'], { ...npm, npm_config_holiday: 'true', npm_config_port: 'true' })).toThrow(/npm run server -- --/);
   });
 
   it('serves the web build and a server-info endpoint, never files outside it', async () => {
