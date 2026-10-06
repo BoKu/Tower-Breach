@@ -4,6 +4,7 @@ import { startDedicated, diskAssets, parseConfig, DEFAULTS, RunningServer } from
 import { ClientSession } from '../src/net/client';
 import { normalizeServerAddress } from '../src/net/transport';
 import { NET_VERSION } from '../src/net/protocol';
+import { APP_VERSION } from '../src/config/version';
 import { emptyLoadout } from '../src/sim/loadout';
 import { VOICE } from '../src/net/voice';
 
@@ -88,8 +89,11 @@ describe('dedicated server', () => {
 
   it('refuses bad versions, passwords, oversized and unknown messages', async () => {
     expect((await raw([{ t: 'join', name: 'Old', code: '' }])).reply.msg).toMatch(/version mismatch/i);
-    expect((await raw([{ t: 'join', name: 'X', v: NET_VERSION }])).reply.msg).toMatch(/needs a password/i);
-    expect((await raw([{ t: 'join', name: 'X', v: NET_VERSION, pw: 'nope' }])).reply.msg).toMatch(/wrong server password/i);
+    // same protocol but a different release (or none reported) is refused too: server and game versions match 1:1
+    expect((await raw([{ t: 'join', name: 'Near', code: '', v: NET_VERSION, av: '0.0.1' }])).reply.msg).toMatch(new RegExp(`server runs Tower Breach ${APP_VERSION.replace(/\./g, '\\.')}.*0\\.0\\.1`));
+    expect((await raw([{ t: 'join', name: 'Older', code: '', v: NET_VERSION }])).reply.msg).toMatch(/version mismatch/i);
+    expect((await raw([{ t: 'join', name: 'X', v: NET_VERSION, av: APP_VERSION }])).reply.msg).toMatch(/needs a password/i);
+    expect((await raw([{ t: 'join', name: 'X', v: NET_VERSION, av: APP_VERSION, pw: 'nope' }])).reply.msg).toMatch(/wrong server password/i);
     expect((await raw([{ t: 'host', name: 'X' }])).reply.msg).toMatch(/dedicated server/i);
     expect((await raw([{ t: 'whatever' }])).reply.msg).toMatch(/unexpected/i);
     expect((await raw(['not json'])).closed).toBe(true);
@@ -295,10 +299,10 @@ describe('dedicated server', () => {
     let why = '';
     c.onDisconnect = (r) => (why = r);
     // a stalled client catching up (5 s of inputs at once) is fine
-    for (let i = 0; i < 150; i++) c.t.send({ t: 'to_host', d: { k: 'hello', v: NET_VERSION } });
+    for (let i = 0; i < 150; i++) c.t.send({ t: 'to_host', d: { k: 'hello', v: NET_VERSION, av: APP_VERSION } });
     await wait(300);
     expect(why).toBe('');
-    for (let i = 0; i < 1000; i++) c.t.send({ t: 'to_host', d: { k: 'hello', v: NET_VERSION } });
+    for (let i = 0; i < 1000; i++) c.t.send({ t: 'to_host', d: { k: 'hello', v: NET_VERSION, av: APP_VERSION } });
     await until(() => why !== '');
     expect(why).toMatch(/too many/i);
     c.close();

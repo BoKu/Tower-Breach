@@ -1,4 +1,4 @@
-import { encodeSnapshot, SNAP_HZ, InputPacket, NET_VERSION, versionMismatch, cleanName, sanitizeInputPacket } from './protocol';
+import { encodeSnapshot, SNAP_HZ, InputPacket, sameRelease, versionMismatch, cleanName, sanitizeInputPacket } from './protocol';
 import { Sim } from '../sim/sim';
 import type { Loadout, SimEvent } from '../sim/state';
 import { emptyInput } from '../sim/state';
@@ -230,7 +230,7 @@ export abstract class SquadAuthority {
   fromPeer(id: number, d: any) {
     const peer = this.peers.get(id);
     if (!d || typeof d !== 'object' || !peer) return;
-    if (d.k === 'hello') { if (d.v !== NET_VERSION) this.kick(id, versionMismatch(d.v)); }
+    if (d.k === 'hello') { if (!sameRelease(d)) this.kick(id, versionMismatch(d.av)); }
     else if (d.k === 'ready' && this.stage === 'shop') {
       const lo = sanitizeLoadout(d.loadout);
       if (!lo) return;

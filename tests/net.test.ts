@@ -3,6 +3,8 @@ import { spawn, ChildProcess } from 'node:child_process';
 import { HostSession } from '../src/net/host';
 import { ClientSession } from '../src/net/client';
 import { emptyLoadout } from '../src/ui/shop';
+import { NET_VERSION } from '../src/net/protocol';
+import { APP_VERSION } from '../src/config/version';
 
 const PORT = 18787;
 const URL = `ws://localhost:${PORT}/ws`;
@@ -43,6 +45,19 @@ async function pump(host: HostSession, clients: ClientSession[], sec: number, ea
 }
 
 describe('multiplayer (host-authoritative over relay)', () => {
+  it('a browser host refuses a game from a different release (versions match 1:1)', async () => {
+    const host = new HostSession();
+    const code = await host.open(URL, 'Alpha');
+    const c = new ClientSession();
+    let why = '';
+    c.onDisconnect = (r) => (why = r);
+    await c.join(URL, code, 'Mismatch');
+    c.t.send({ t: 'to_host', d: { k: 'hello', name: 'Mismatch', v: NET_VERSION, av: '0.0.1' } });
+    await until(() => why !== '');
+    expect(why).toMatch(new RegExp(`server runs Tower Breach ${APP_VERSION.replace(/\./g, '\\.')}.*0\\.0\\.1`));
+    c.close(); host.close();
+  });
+
   it('lobby -> armory -> deploy with 5 players; roster, seed and colours consistent', async () => {
     const { host, clients } = await squad(4);
     host.setDifficulty('hard');

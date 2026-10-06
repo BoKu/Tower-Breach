@@ -1,6 +1,7 @@
 import type { PlayerState, FloorState, SimEvent, Enemy, PlayerInput } from '../sim/state';
 import { emptyInput } from '../sim/state';
 import type { Sim } from '../sim/sim';
+import { APP_VERSION } from '../config/version';
 import { stockLeft } from '../sim/inventory';
 import type { DoorMode } from '../gen/floor';
 import { lookToWire, lookFromWire } from '../config/look';
@@ -10,8 +11,10 @@ export const DOOR_MODES: DoorMode[] = ['open', 'closed', 'locked'];
 export const SNAP_HZ = 15;
 /** Wire protocol version: bump on any incompatible message change. Clients send it on join; servers refuse a mismatch. */
 export const NET_VERSION = 5; // v5: player appearance (look) in ready + snapshots; v4: doors (they change collision), coins + keys; v3 (1.2.0): late join window, proximity voice
+/** Joins report the protocol (v) and the app release (av): server and every game must be the very same release, 1:1. */
+export const sameRelease = (m: { v?: unknown; av?: unknown }) => m.v === NET_VERSION && m.av === APP_VERSION;
 export const versionMismatch = (theirs: unknown) =>
-  `Version mismatch: this server speaks co-op protocol v${NET_VERSION}, your game speaks v${Number(theirs) || 1}. Update the game (or the server) so both run the same release.`;
+  `Version mismatch: the server runs Tower Breach ${APP_VERSION}, your game is ${typeof theirs === 'string' && /^[\w.\-]{1,20}$/.test(theirs) ? theirs : 'an older release'}. Everyone must run the same release: update the game (or the server).`;
 
 /** Callsign rules (same as the co-op screen): letters, digits, space . - ' _ ; max 16. */
 export const cleanName = (n: unknown) => String(n ?? '').replace(/[^\w .\-']/g, '').trim().slice(0, 16);

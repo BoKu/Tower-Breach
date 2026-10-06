@@ -2,6 +2,7 @@ import { fixFloorLights } from '../sim/hack';
 import { makePanels } from '../sim/lights';
 import { Transport, RelayMsg } from './transport';
 import { decodePlayer, encodeInput, NET_VERSION, DOOR_MODES } from './protocol';
+import { APP_VERSION } from '../config/version';
 import { stockLeft, takeStock } from '../sim/inventory';
 import { unpackVoice, VOICE_UP } from './voice';
 import { BuildingPlan, StairCondition } from '../gen/building';
@@ -220,12 +221,12 @@ export class ClientSession {
           this.t.onMsg = (mm) => this.handle(mm);
           this.t.onClose = (r) => this.onDisconnect(r);
           this.t.onBinary = (b) => { const v = unpackVoice(b); if (v) this.onVoice(v.speaker, v.opus); };
-          this.t.send({ t: 'to_host', d: { k: 'hello', name, v: NET_VERSION } });
+          this.t.send({ t: 'to_host', d: { k: 'hello', name, v: NET_VERSION, av: APP_VERSION } });
           resolve();
         } else if (m.t === 'error') reject(new Error(m.msg));
       };
       this.t.onClose = (r) => reject(new Error(r)); // refused without a message (e.g. connection limit)
-      this.t.send({ t: 'join', code: code.trim().toUpperCase(), name, v: NET_VERSION, pw: password });
+      this.t.send({ t: 'join', code: code.trim().toUpperCase(), name, v: NET_VERSION, av: APP_VERSION, pw: password });
     });
   }
 

@@ -10,7 +10,7 @@ import { promises as fsp, existsSync, readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { SquadAuthority } from '../net/authority';
-import { NET_VERSION, versionMismatch, cleanName } from '../net/protocol';
+import { NET_VERSION, sameRelease, versionMismatch, cleanName } from '../net/protocol';
 import { startTunnel, publicIp, reachesUs, type Tunnel } from './tunnel';
 import { DEDICATED_PORT } from '../net/transport';
 import { VOICE, VOICE_UP, packVoice } from '../net/voice';
@@ -300,7 +300,7 @@ export async function startDedicated(cfg: ServerConfig, assets: AssetReader, log
     const head = { 'x-content-type-options': 'nosniff' };
     if (url === '/server-info') {
       res.writeHead(200, { ...head, 'content-type': 'application/json', 'cache-control': 'no-store' });
-      res.end(JSON.stringify({ dedicated: true, name: cfg.name, motd: cfg.motd, players: squad.sockets.size, maxPlayers: cfg.maxPlayers, password: !!cfg.password, stage: squad.stage, difficulty: cfg.difficulty, version: NET_VERSION, run }));
+      res.end(JSON.stringify({ dedicated: true, name: cfg.name, motd: cfg.motd, players: squad.sockets.size, maxPlayers: cfg.maxPlayers, password: !!cfg.password, stage: squad.stage, difficulty: cfg.difficulty, version: NET_VERSION, app: APP_VERSION, run }));
       return;
     }
     if (url === '/') url = '/index.html';
@@ -364,7 +364,7 @@ export async function startDedicated(cfg: ServerConfig, assets: AssetReader, log
       if (!id) {
         if (m.t === 'host') { refuse('This is a dedicated server: use "Join server" with its address instead of hosting a squad.'); return; }
         if (m.t !== 'join') { refuse('Disconnected: unexpected message.'); return; }
-        if (m.v !== NET_VERSION) { refuse(versionMismatch(m.v)); return; }
+        if (!sameRelease(m)) { refuse(versionMismatch(m.av)); return; }
         const fails = (pwFails.get(ip) ?? []).filter((t) => now - t < 60_000);
         if (fails.length >= LIMITS.pwFailsPerMin) { refuse('Too many wrong passwords. Wait a minute and try again.'); return; }
         if (!pwOk(m.pw)) {

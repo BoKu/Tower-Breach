@@ -25,6 +25,10 @@ void main() {
  * (scanlines, grid, vignette, flicker). Own small renderer; it draws only while its canvas is on the page and frees
  * itself once the canvas leaves it (tab switched, armory closed).
  */
+/** One GL context for every preview: reopening the Appearance tab reuses it instead of creating another. */
+let shared: THREE.WebGLRenderer | null = null;
+let owner: LookPreview | null = null;
+
 export class LookPreview {
   readonly canvas: HTMLCanvasElement;
   private r: THREE.WebGLRenderer;
@@ -39,7 +43,8 @@ export class LookPreview {
   private last = 0;
 
   constructor(look: PlayerLook, w = 340, h = 440) {
-    this.r = new THREE.WebGLRenderer({ antialias: false, alpha: false });
+    this.r = shared ??= new THREE.WebGLRenderer({ antialias: false, alpha: false });
+    owner = this;
     this.r.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
     this.r.setSize(w, h, false);
     this.r.outputColorSpace = THREE.SRGBColorSpace;
@@ -71,7 +76,7 @@ export class LookPreview {
   }
 
   private frame = (now: number) => {
-    if (!this.canvas.isConnected) { this.dispose(); return; }
+    if (owner !== this || !this.canvas.isConnected) { this.dispose(); return; }
     this.raf = requestAnimationFrame(this.frame);
     const t = (now - this.t0) / 1000, dt = Math.min(0.1, t - this.last);
     this.last = t;
@@ -87,8 +92,9 @@ export class LookPreview {
 
   dispose() {
     cancelAnimationFrame(this.raf);
-    // the rig's geometry and materials are shared with the game (OperatorRig cache): only this renderer's own resources go
+    // the rig's geometry and materials are shared with the game (OperatorRig cache), and the renderer with the next
+    // preview: only this preview's own targets go
     this.rt.dispose(); this.post.mat.dispose();
-    this.r.dispose(); this.r.forceContextLoss();
+    if (owner === this) owner = null;
   }
 }

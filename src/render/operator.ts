@@ -93,10 +93,10 @@ vec3 camoCol(vec3 p) {
     if (camoN(p * 6.0) * 0.7 + camoN(p * 14.0) * 0.3 > 0.55) c = uCamoC[1];
     if (camoN(p * 7.0 + 17.0) * 0.7 + camoN(p * 16.0 + 3.0) * 0.3 > 0.6) c = uCamoC[2];
     if (camoN(p * 10.0 + 41.0) > 0.72) c = uCamoC[3];
-  } else if (uCamoPat == 2) { // desert digital: the same blobs on a pixel grid
-    vec3 q = floor(p * 30.0) / 30.0;
-    if (camoN(q * 6.0) * 0.7 + camoN(q * 13.0) * 0.3 > 0.54) c = uCamoC[1];
-    if (camoN(q * 7.0 + 23.0) > 0.64) c = uCamoC[2];
+  } else if (uCamoPat == 2) { // desert digital: blobs on a coarse pixel grid (~6 cm pixels, still readable in game)
+    vec3 q = floor(p * 16.0) / 16.0;
+    if (camoN(q * 6.0) * 0.7 + camoN(q * 13.0) * 0.3 > 0.5) c = uCamoC[1];
+    if (camoN(q * 7.0 + 23.0) > 0.6) c = uCamoC[2];
   } else if (uCamoPat == 3) { // urban: angular grey blocks with dark splotches
     float a = camoH(floor(p * vec3(8.0, 5.0, 8.0) + camoN(p * 4.0) * 1.6));
     if (a > 0.62) c = uCamoC[1]; else if (a < 0.28) c = uCamoC[2];
@@ -477,7 +477,7 @@ export class OperatorRig {
     const cb = new Builder();
     if (santa) {
       // red Santa coat: fur placket and collar, the badge pinned on, shoulder radio kept
-      cb.limb(0.145, 0.48, 0, 0.44, 0, XM.red, 0, 0, 1.25, 0.78)
+      cb.limb(0.145, 0.64, 0, 0.44, 0, XM.red, 0, 0, 1.25, 0.78)
         .rbox(0.065, 0.42, 0.03, 0.014, 0, 0.21, 0.106, XM.fur)
         .rbox(0.22, 0.075, 0.18, 0.035, 0, 0.45, 0, XM.fur)
         .rbox(0.06, 0.07, 0.012, 0.006, -0.1, 0.3, 0.098, 0xd9c070) // badge
@@ -485,7 +485,7 @@ export class OperatorRig {
         .geo(new THREE.CylinderGeometry(0.004, 0.004, 0.08), P.black, -0.13, 0.46, 0.1);
     } else if (elf) {
       // tunic with a pointed collar and gold buttons
-      cb.limb(0.145, 0.48, 0, 0.44, 0, E.coat, 0, 0, 1.25, 0.8).rbox(0.07, 0.36, 0.02, 0.01, 0, 0.22, 0.108, E.coat2);
+      cb.limb(0.145, 0.64, 0, 0.44, 0, E.coat, 0, 0, 1.25, 0.8).rbox(0.07, 0.36, 0.02, 0.01, 0, 0.22, 0.108, E.coat2);
       for (let i = 0; i < 3; i++) cb.geo(new THREE.SphereGeometry(0.017, 8, 6), XM.gold, 0, 0.32 - i * 0.1, 0.12);
       for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; spike(cb, i % 2 ? E.trim : E.coat2, V(Math.sin(a) * 0.08, 0.45, Math.cos(a) * 0.065), V(Math.sin(a), -0.7, Math.cos(a)), 0.11, 0.04, 0.004, 4); }
       if (elite) cb.rbox(0.3, 0.022, 0.012, 0.005, 0, 0.06, 0.112, E.trim);
@@ -497,7 +497,7 @@ export class OperatorRig {
       }
     } else if (dentist) {
       // clinic coat (or scrub top): lapels, name badge, breast pocket with pens; cyborgs keep the spine implant and core
-      cb.limb(0.145, 0.48, 0, 0.44, 0, D.coat, 0, 0, 1.25, 0.8)
+      cb.limb(0.145, 0.64, 0, 0.44, 0, D.coat, 0, 0, 1.25, 0.8)
         .rbox(0.16, 0.06, 0.14, 0.03, 0, 0.47, 0, scrubs ? D.coat2 : D.coat) // collar
         .rbox(0.07, 0.08, 0.012, 0.006, -0.1, 0.24, 0.115, D.coat2) // breast pocket
         .rbox(0.07, 0.022, 0.012, 0.004, 0.1, 0.33, 0.118, D.badge); // name badge
@@ -513,7 +513,7 @@ export class OperatorRig {
       }
     } else if (bunny) {
       // bunny onesie: white tummy patch, zip, badge (gold for the Chief) and shoulder radio kept on
-      cb.limb(0.15, 0.48, 0, 0.44, 0, SUIT, 0, 0, 1.25, 0.8)
+      cb.limb(0.15, 0.64, 0, 0.44, 0, SUIT, 0, 0, 1.25, 0.8)
         .geo(new THREE.SphereGeometry(0.1, 12, 10), SUIT === EA.white ? 0xf8dce4 : EA.white, 0, 0.2, 0.06, 0, 0, 0, 'solid', 1.2, 1.5, 0.75) // tummy patch
         .rbox(0.012, 0.36, 0.01, 0.004, 0, 0.27, 0.118, SUIT2) // zip
         .rbox(0.07, 0.08, 0.012, 0.006, -0.1, 0.34, 0.112, chief ? XM.gold : 0xd9c070) // badge
@@ -521,7 +521,7 @@ export class OperatorRig {
         .geo(new THREE.CylinderGeometry(0.004, 0.004, 0.08), P.black, -0.13, 0.48, 0.1);
     } else if (cop) {
       // uniform shirt, slim duty vest, badge, name bar, epaulettes, shoulder radio
-      cb.limb(0.145, 0.48, 0, 0.44, 0, NAVY, 0, 0, 1.25, 0.78)
+      cb.limb(0.145, 0.64, 0, 0.44, 0, NAVY, 0, 0, 1.25, 0.78)
         .rbox(0.36, 0.3, 0.07, 0.03, 0, 0.24, 0.085, NAVY2).rbox(0.34, 0.28, 0.06, 0.03, 0, 0.25, -0.085, NAVY2)
         .rbox(0.07, 0.08, 0.012, 0.006, -0.1, 0.32, 0.125, 0xd9c070) // badge
         .rbox(0.08, 0.02, 0.01, 0.004, 0.1, 0.33, 0.125, 0xd8d8d8) // name bar
@@ -532,7 +532,7 @@ export class OperatorRig {
         .rbox(0.02, 0.2, 0.012, 0.005, 0, 0.3, 0.125, 0x10182e); // tie/placket
     } else if (zom) {
       // torn shirt: rotting skin through the rips, blood down the front, rags hanging off the hem
-      cb.limb(0.15, 0.48, 0, 0.44, 0, P.uniform, 0, 0, 1.28, 0.8)
+      cb.limb(0.15, 0.64, 0, 0.44, 0, P.uniform, 0, 0, 1.28, 0.8)
         .rbox(0.12, 0.1, 0.02, 0.03, 0.07, 0.3, 0.115, skin, 0, 0, 0.4).rbox(0.09, 0.07, 0.02, 0.02, -0.12, 0.1, 0.11, skin, 0, 0, -0.3)
         .rbox(0.07, 0.04, 0.012, 0.01, 0.07, 0.3, 0.126, ROT, 0, 0, 0.4) // wound
         .rbox(0.1, 0.2, 0.012, 0.02, -0.04, 0.24, 0.123, BLOOD, 0, 0, 0.15).rbox(0.05, 0.12, 0.012, 0.015, 0.1, 0.05, 0.12, BLOOD)
@@ -546,11 +546,11 @@ export class OperatorRig {
         cb.rbox(0.05, 0.05, 0.015, 0.01, 0.04, 0.3, 0.13, 0xff2020, 0, 0, 0.5, 'emit');
       }
     } else if (op) {
-      camo(cb, true, () => cb.limb(0.15, 0.48, 0, 0.44, 0, P.uniform, 0, 0, 1.28, 0.8).rbox(0.16, 0.06, 0.14, 0.03, 0, 0.47, 0, P.uniform2)); // shirt, collar
+      camo(cb, true, () => cb.limb(0.15, 0.64, 0, 0.44, 0, P.uniform, 0, 0, 1.28, 0.8).rbox(0.16, 0.06, 0.14, 0.03, 0, 0.47, 0, P.uniform2)); // shirt, collar
       // shaped plate carrier: front bag with a tapered top, back plate, cummerbund wrapping the sides
       cb.rbox(0.38, 0.3, 0.1, 0.035, 0, 0.22, 0.1, KIT.plate).rbox(0.3, 0.07, 0.09, 0.03, 0, 0.39, 0.095, KIT.plate)
         .rbox(0.36, 0.3, 0.08, 0.03, 0, 0.24, -0.1, KIT.plate).rbox(0.29, 0.07, 0.07, 0.03, 0, 0.4, -0.095, KIT.plate)
-        .rbox(0.42, 0.17, 0.25, 0.045, 0, 0.1, 0, KIT.plate2);
+        .rbox(0.42, 0.25, 0.25, 0.045, 0, 0.06, 0, KIT.plate2); // cummerbund, down to the belt
       for (const sx of [-1, 1]) {
         cb.rbox(0.09, 0.05, 0.22, 0.02, sx * 0.17, 0.4, 0, KIT.plate) // shoulder straps
           .rbox(0.03, 0.022, 0.012, 0.004, sx * 0.16, 0.37, 0.15, KIT.metal) // strap buckles
@@ -569,7 +569,7 @@ export class OperatorRig {
       cb.rbox(0.07, 0.05, 0.012, 0.005, -0.2, 0.29, 0.13, teamColor, 0, 0.5, 0, 'emit');
       cb.rbox(0.07, 0.05, 0.012, 0.005, 0.2, 0.29, 0.13, teamColor, 0, -0.5, 0, 'emit');
     } else {
-      cb.limb(0.15, 0.48, 0, 0.44, 0, P.uniform, 0, 0, 1.28, 0.8)
+      cb.limb(0.15, 0.64, 0, 0.44, 0, P.uniform, 0, 0, 1.28, 0.8)
         .rbox(0.4, 0.34, 0.1, 0.03, 0, 0.24, 0.1, P.plate)
         .rbox(0.38, 0.32, 0.08, 0.03, 0, 0.25, -0.1, P.plate)
         .rbox(0.1, 0.06, 0.2, 0.02, 0.19, 0.36, 0, P.plate).rbox(0.1, 0.06, 0.2, 0.02, -0.19, 0.36, 0, P.plate) // shoulder straps
@@ -594,7 +594,7 @@ export class OperatorRig {
     this.neck.add(this.head);
     this.head.position.y = 0.1;
     const hb = new Builder()
-      .limb(0.05, 0.12, 0, 0.02, 0, skin)
+      .limb(0.056, 0.2, 0, 0.02, 0, skin) // neck: reaches into the collar so head and torso read as one
       .geo(new THREE.SphereGeometry(0.105, 16, 12), skin, 0, 0.06, 0.01, 0, 0, 0, 'solid', 0.9, 1.05, 1);
     if (cop) {
       policeHead(hb, skin, opts.look ?? {}, santa, bunny ? SUIT : undefined);

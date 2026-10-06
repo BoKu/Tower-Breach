@@ -388,7 +388,7 @@ use the local IP; the OS firewall allows the port (section 4); the router forwar
 **"Port 8787 is already in use."** Another program (or a second copy of the server) has the port. Stop it or use
 `--port 8790`, and forward that port instead.
 
-**"Version mismatch."** The player's game and the server are different releases. Update both to the same release.
+**"Version mismatch."** The player's game and the server are different releases. Since 1.8.1 they must match exactly (1.8.1 with 1.8.1): the message names both versions. Update both to the same release, including browser hosts and the desktop apps.
 
 **"Mission in progress: the squad has already entered the tower."** Players can join freely while the squad is in
 the armory or still on the street. The log says `Run started: the squad entered the tower` when the first player
