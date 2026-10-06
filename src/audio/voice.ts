@@ -22,8 +22,9 @@ const VAD_LEVEL = 0.02, VAD_HOLD_MS = 350;
 
 /** Why voice can't work here, or '' when it can. Listening needs only the decoder; talking also needs a mic. */
 export function voiceUnsupported(talk: boolean): string {
+  // browsers hide the audio codecs (and the mic) on plain http pages, so say why instead of blaming the browser
+  if (!window.isSecureContext) return 'voice chat needs a secure page: the server must use https (see docs/HOSTING.md), or use the desktop app';
   if (typeof AudioDecoder === 'undefined' || typeof AudioEncoder === 'undefined') return 'this browser has no WebCodecs audio (use the desktop app, or a current Chrome / Edge / Firefox)';
-  if (talk && !window.isSecureContext) return 'the microphone needs a secure page (https or localhost): use the desktop app to talk';
   if (talk && !navigator.mediaDevices?.getUserMedia) return 'no microphone access in this browser';
   return '';
 }
@@ -44,6 +45,8 @@ export class VoiceChat {
   private enc: AudioEncoder | null = null;
   private ts = 0;
   private loudAt = 0;
+  private micAt = 0;
+  private micDebt = 0;
   /** mic level 0..1 (smoothed RMS), for the settings meter */
   level = 0;
   /** hold the push-to-talk key (or open mic + speech): frames go out */
@@ -98,6 +101,10 @@ export class VoiceChat {
     const rms = Math.sqrt(sum / buf.length);
     this.level = Math.max(rms * 4, this.level * 0.85);
     const now = performance.now();
+    // blocks that queued up behind a main-thread stall arrive together: send at most a few, drop the stale rest
+    this.micDebt = Math.max(0, this.micDebt - (now - this.micAt) / VOICE.frameMs) + 1;
+    this.micAt = now;
+    if (this.micDebt > 5) return;
     if (rms > VAD_LEVEL) this.loudAt = now;
     const talk = this.openMic ? this.wantTalk && now - this.loudAt < VAD_HOLD_MS : this.wantTalk;
     if (!talk || !this.enc || this.enc.state !== 'configured') return;

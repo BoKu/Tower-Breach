@@ -2,6 +2,7 @@
 // serves the web build so browser players can just open http://IP:port, and speaks the same WebSocket
 // envelope as the relay (join / to_host -> data), so ClientSession works against either.
 import http from 'node:http';
+import https from 'node:https';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -30,27 +31,46 @@ export interface ServerConfig {
   readyTimeout: number;
   /** serve the web build from this folder instead of the embedded copy ('' = embedded, or ./dist from source) */
   webRoot: string;
+  /** PEM certificate + private key files: serve https/wss (browser voice chat needs a secure page). '' = plain http */
+  tlsCert: string;
+  tlsKey: string;
 }
 
 export const DEFAULTS: ServerConfig = {
   port: DEDICATED_PORT, difficulty: 'normal', maxPlayers: 5, friendlyFire: false, password: '', name: 'Tower Breach server', motd: '',
-  holiday: 'auto', readyTimeout: 90, webRoot: '',
+  holiday: 'auto', readyTimeout: 90, webRoot: '', tlsCert: '', tlsKey: '',
 };
 
 /** Internet-facing limits. */
 export const LIMITS = {
   maxMsgBytes: 16 * 1024, // client messages are inputs (~400 B) and loadouts (~300 B)
+  // rates are token buckets: a burst (a client catching up after a network or main-thread stall) is fine; past the
+  // burst, messages are dropped; a client still pushing a full burst past that is flooding and gets disconnected
   msgsPerSec: 90, // clients send 30 inputs/s
+  msgBurst: 300,
   maxConns: 32,
   maxConnsPerIp: 8,
   joinTimeoutMs: 10_000,
   pwFailsPerMin: 5,
-  // proximity voice: binary frames [0x56][opus] with their own budget, outside msgsPerSec. SquadAuthority.voiceFrom
-  // forwards at most VOICE.framesPerSec (60) per speaker and drops the rest; past voiceMsgsPerSec, a frame over
+  // proximity voice: binary frames [0x56][opus] (50/s while talking) with their own bucket, outside msgsPerSec.
+  // SquadAuthority.voiceFrom forwards at most VOICE.framesPerSec (60) per speaker and drops the rest; a frame over
   // maxVoiceBytes or any other binary message disconnects.
   maxVoiceBytes: 1 + VOICE.maxFrameBytes,
   voiceMsgsPerSec: 120,
+  voiceBurst: 300,
 };
+
+/** Token bucket: 'ok' within rate + burst, 'drop' past it, 'flood' once a whole further burst has been dropped. */
+function bucket(perSec: number, burst: number) {
+  let tokens = burst, at = Date.now();
+  return (): 'ok' | 'drop' | 'flood' => {
+    const now = Date.now();
+    tokens = Math.min(burst, tokens + ((now - at) * perSec) / 1000);
+    at = now;
+    tokens--;
+    return tokens >= 0 ? 'ok' : tokens < -burst ? 'flood' : 'drop';
+  };
+}
 
 const TICK = 1 / 60;
 const END_HOLD_MS = 12_000; // the end screen plays out before the squad goes back to the armory
@@ -70,11 +90,13 @@ Options (flags beat environment variables, which beat the config file):
       --ready-timeout <s>   deploy unready players this long after the  (TB_READY_TIMEOUT, default 90,
                             first READY (0 = wait for everyone)          0 = off)
       --web-root <dir>      serve the game from this folder instead of the built-in copy (TB_WEB_ROOT)
+      --tls-cert <file>     PEM certificate (e.g. Let's Encrypt fullchain.pem): serve https + wss, which
+      --tls-key <file>      browser players need for voice chat       (TB_TLS_CERT, TB_TLS_KEY)
   -c, --config <file>       JSON config file (default: ./${CONFIG_FILE} if present)
   -v, --version             print the server version
   -h, --help                this text
 
-Config file keys: port, difficulty, maxPlayers, friendlyFire, password, name, motd, holiday, readyTimeout, webRoot.
+Config file keys: port, difficulty, maxPlayers, friendlyFire, password, name, motd, holiday, readyTimeout, webRoot, tlsCert, tlsKey.
 `;
 
 /** Merge defaults < config file < environment < flags. Returns null for --help; throws a readable Error on bad input. */
@@ -84,7 +106,7 @@ export function parseConfig(argv: string[], env: Record<string, string | undefin
     options: {
       port: { type: 'string', short: 'p' }, difficulty: { type: 'string', short: 'd' }, 'max-players': { type: 'string' }, 'friendly-fire': { type: 'boolean' },
       password: { type: 'string' }, name: { type: 'string' }, motd: { type: 'string' }, holiday: { type: 'string' }, 'ready-timeout': { type: 'string' },
-      'web-root': { type: 'string' }, config: { type: 'string', short: 'c' }, help: { type: 'boolean', short: 'h' },
+      'web-root': { type: 'string' }, 'tls-cert': { type: 'string' }, 'tls-key': { type: 'string' }, config: { type: 'string', short: 'c' }, help: { type: 'boolean', short: 'h' },
     },
   });
   if (f.help) return null;
@@ -111,7 +133,10 @@ export function parseConfig(argv: string[], env: Record<string, string | undefin
     holiday: String(pick(f.holiday, 'TB_HOLIDAY', 'holiday')).toLowerCase() as ServerConfig['holiday'],
     readyTimeout: int(pick(f['ready-timeout'], 'TB_READY_TIMEOUT', 'readyTimeout'), 'ready-timeout', 0, 3600),
     webRoot: String(pick(f['web-root'], 'TB_WEB_ROOT', 'webRoot')),
+    tlsCert: String(pick(f['tls-cert'], 'TB_TLS_CERT', 'tlsCert')),
+    tlsKey: String(pick(f['tls-key'], 'TB_TLS_KEY', 'tlsKey')),
   };
+  if (!cfg.tlsCert !== !cfg.tlsKey) throw new Error('--tls-cert and --tls-key go together');
   if (!DIFFICULTIES.includes(cfg.difficulty)) throw new Error(`difficulty must be one of ${DIFFICULTIES.join(', ')}`);
   if (cfg.holiday !== 'auto' && cfg.holiday !== 'none' && !HOLIDAYS.includes(cfg.holiday)) throw new Error(`holiday must be auto, none or one of ${HOLIDAYS.join(', ')}`);
   return cfg;
@@ -223,7 +248,9 @@ export async function startDedicated(cfg: ServerConfig, assets: AssetReader, log
   const perIp = new Map<string, number>();
   let nextId = 1;
 
-  const server = http.createServer(async (req, res) => {
+  const tls = cfg.tlsCert ? { cert: readFileSync(cfg.tlsCert), key: readFileSync(cfg.tlsKey) } : null;
+  const server: http.Server = tls ? https.createServer(tls) : http.createServer();
+  server.on('request', async (req: http.IncomingMessage, res: http.ServerResponse) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); res.end(); return; }
     let url: string;
     try { url = decodeURIComponent(new URL(req.url ?? '/', 'http://x').pathname); } catch { res.writeHead(400); res.end(); return; }
@@ -270,19 +297,20 @@ export async function startDedicated(cfg: ServerConfig, assets: AssetReader, log
     joinTimer = setTimeout(() => { if (!id) ws.close(); }, LIMITS.joinTimeoutMs);
     alive.add(ws);
     ws.on('pong', () => alive.add(ws));
-    let win = Date.now(), count = 0, vwin = win, vcount = 0;
+    const msgs = bucket(LIMITS.msgsPerSec, LIMITS.msgBurst), voice = bucket(LIMITS.voiceMsgsPerSec, LIMITS.voiceBurst);
     ws.on('message', (raw: Buffer, isBinary: boolean) => {
       if (isBinary) {
-        const now = Date.now();
-        if (now - vwin >= 1000) { vwin = now; vcount = 0; }
-        if (++vcount > LIMITS.voiceMsgsPerSec) { refuse('Disconnected: too many messages.'); return; }
+        const v = voice();
+        if (v === 'flood') { refuse('Disconnected: too many messages.'); return; }
+        if (v === 'drop') return;
         if (!id || raw.length > LIMITS.maxVoiceBytes || raw[0] !== VOICE_UP) { refuse('Disconnected: bad message.'); return; }
         squad.voiceFrom(id, raw.subarray(1));
         return;
       }
       const now = Date.now();
-      if (now - win >= 1000) { win = now; count = 0; }
-      if (++count > LIMITS.msgsPerSec) { refuse('Disconnected: too many messages.'); return; }
+      const r = msgs();
+      if (r === 'flood') { refuse('Disconnected: too many messages.'); return; }
+      if (r === 'drop') return;
       if (raw.length > LIMITS.maxMsgBytes) { refuse('Disconnected: bad message.'); return; }
       let m: any;
       try { m = JSON.parse(raw.toString()); } catch { refuse('Disconnected: bad message.'); return; }
@@ -373,7 +401,9 @@ export async function cli(embedded?: AssetReader) {
   stamp(`difficulty ${cfg.difficulty} · up to ${cfg.maxPlayers} players · friendly fire ${cfg.friendlyFire ? 'ON' : 'off'} · password ${cfg.password ? 'ON' : 'off'} · holiday ${cfg.holiday} · ready timeout ${cfg.readyTimeout || 'off'}${cfg.readyTimeout ? ' s' : ''}`);
   stamp(`web build: ${webRoot ? path.resolve(webRoot) : 'built in'}`);
   stamp(`listening on TCP port ${srv.port}. Players join with:`);
-  for (const a of ['localhost', ...lanAddresses()]) stamp(`   ${a}:${srv.port}   (browser: http://${a}:${srv.port})`);
+  const web = cfg.tlsCert ? 'https' : 'http';
+  for (const a of ['localhost', ...lanAddresses()]) stamp(`   ${a}:${srv.port}   (browser: ${web}://${a}:${srv.port})`);
+  if (!cfg.tlsCert) stamp('   browser players get voice chat only over https: see --tls-cert in docs/HOSTING.md');
   stamp(`   <your public IP>:${srv.port} from the internet once the port is forwarded (see docs/HOSTING.md)`);
   stamp('Ctrl+C to stop.');
   let stopping = false;

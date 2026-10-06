@@ -296,18 +296,27 @@ sudo ufw allow 8787/tcp             # and the provider's firewall, if any
 
 To update, stop the service, replace the binary and start it again.
 
-**HTTPS (optional).** Behind a reverse proxy with TLS (Caddy, nginx) that forwards WebSockets on `/ws`, players use
-`https://your.domain` in the browser and `wss://your.domain` in the desktop app. All players then share the proxy's
-IP for the server's per-address limits.
+**HTTPS (needed for voice chat in the browser).** Browsers only run voice chat on `https://` pages. Desktop app
+players don't need this. There are two ways:
+
+- **Built in.** Get a certificate for a domain name that points at your server (for example a free one from Let's
+  Encrypt with `certbot certonly --standalone -d your.domain`), then start the server with
+  `--tls-cert /etc/letsencrypt/live/your.domain/fullchain.pem --tls-key /etc/letsencrypt/live/your.domain/privkey.pem`.
+  Players open `https://your.domain:8787` in the browser and type `wss://your.domain:8787` in the desktop app.
+  A self-signed certificate also works for testing, but every browser player has to click through a warning first.
+- **Reverse proxy.** Put Caddy or nginx with TLS in front and forward WebSockets on `/ws`. Players use
+  `https://your.domain` in the browser and `wss://your.domain` in the desktop app. All players then share the proxy's
+  IP for the server's per-address limits.
 
 ## 8. Security
 
 The server is built to face the internet. It:
 
-- accepts only small JSON messages (16 KB max) and drops clients that send more than 90 messages a second,
-- accepts voice only as small binary frames (401 bytes max) with their own budget. It forwards at most 60 frames a
-  second per speaker, only to players on the speaker's floor within 10 m. It disconnects anyone sending over 120 a
-  second, oversized frames, or other binary data,
+- accepts only small JSON messages (16 KB max) at up to 90 a second. A short burst is fine (a player catching up
+  after lag), messages past it are dropped, and a client that keeps flooding is disconnected,
+- accepts voice only as small binary frames (401 bytes max) with their own budget of 120 a second, handled the same
+  way. It forwards at most 60 frames a second per speaker, only to players on the speaker's floor within 10 m. It
+  disconnects anyone sending oversized frames or other binary data,
 - checks and clamps every client message (inputs, callsigns, loadouts) and disconnects clients that send unknown ones,
 - allows at most 32 connections, 8 per IP address, and drops connections that don't join within 10 seconds,
 - refuses an IP address for a minute after 5 wrong passwords,
@@ -319,7 +328,7 @@ Still:
 - **Keep it updated.** Run the latest release and players must match it anyway.
 - Don't run it as root or administrator. On a VPS use a service user like the systemd example above.
 - Forward only the one TCP port, never DMZ.
-- Traffic is plain `ws://`/`http://` unless you put a TLS proxy in front. Don't reuse an important password as
+- Traffic is plain `ws://`/`http://` unless you use `--tls-cert` or a TLS proxy. Don't reuse an important password as
   the server password.
 
 ## 9. Troubleshooting
@@ -337,9 +346,10 @@ use the local IP; the OS firewall allows the port (section 4); the router forwar
 the armory or still on the street. The log says `Run started: the squad entered the tower` when the first player
 goes in, and from then on new callsigns wait for the next run. If you were in it, rejoin with your old callsign.
 
-**Voice chat doesn't work for browser players.** Browsers only allow the microphone on `https://` pages or
-`localhost`, so a friend opening `http://<your IP>:8787` can listen but not talk. The desktop app has no such limit.
-Voice needs no extra ports: it uses the same WebSocket as the game.
+**Voice chat doesn't work for browser players.** Browsers only run voice chat (both talking and listening) on
+`https://` pages or `localhost`. A friend opening `http://<your IP>:8787` gets no voice at all. Serve HTTPS (section 7)
+or have them use the desktop app, which has no such limit. Voice needs no extra ports: it uses the same WebSocket as
+the game. Players only hear each other within 10 m on the same floor.
 
 **A friend can join at home but not from outside.** That is port forwarding, the firewall or CGNAT. Try
 `http://<public IP>:8787` from a phone on mobile data to see whether the port is reachable.

@@ -40,6 +40,8 @@ export abstract class SquadAuthority {
   /** operators who have voice chat on (they asked with {k:'vc'}; the browser host adds its own id) */
   voiceListeners = new Set<number>();
   private voiceRate = new Map<number, { t: number; n: number }>();
+  /** sim time of each operator's last accepted position report (how far the next one may move) */
+  private lastMove = new Map<number, number>();
   private snapT = 0;
   private contT = 0;
   onChange: () => void = () => {};
@@ -134,7 +136,7 @@ export abstract class SquadAuthority {
     }
     this.snapT += dt; this.contT += dt;
     if (this.snapT < 1 / SNAP_HZ) return;
-    this.snapT = 0;
+    this.snapT = Math.min(this.snapT - 1 / SNAP_HZ, 1 / SNAP_HZ); // keep the cadence instead of drifting late
     const withC = this.contT > 0.4;
     if (withC) this.contT = 0;
     for (const [id, box] of this.outbox) {
@@ -281,8 +283,16 @@ export abstract class SquadAuthority {
     if (pk.tp !== ((p as any).tp ?? 0)) return; // client hasn't applied a teleport yet
     const L = sim.floorState(p.floor).L;
     const d = Math.hypot(pk.x - p.x, pk.y - p.y);
-    if (d < 2.5 && isWalkableTile(L, Math.floor(pk.x), Math.floor(pk.y), true) && !collides(L, pk.x, pk.y, BODY_R * 0.7, true)) {
+    // the client predicts its own movement; allow what it could cover since its last accepted report, plus slack
+    const since = Math.min(1, sim.t - (this.lastMove.get(id) ?? sim.t));
+    if (d < 1.5 + 8 * since && isWalkableTile(L, Math.floor(pk.x), Math.floor(pk.y), true) && !collides(L, pk.x, pk.y, BODY_R * 0.7, true)) {
       p.x = pk.x; p.y = pk.y;
+      this.lastMove.set(id, sim.t);
+    } else {
+      // refused: bump the teleport counter so the client snaps back to the server's position (see ClientView.apply)
+      // instead of walking on where nobody else sees it
+      (p as any).tp = ((p as any).tp ?? 0) + 1;
+      this.lastMove.set(id, sim.t);
     }
     p.z = Math.max(0, Math.min(1.2, pk.z));
     p.crouch = pk.cr; p.moving = pk.mv;

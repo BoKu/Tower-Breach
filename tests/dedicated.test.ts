@@ -59,6 +59,25 @@ describe('dedicated server', () => {
     expect((await fetch(`${base}/nope.js`)).status).toBe(404);
   });
 
+  it('serves https + wss with --tls-cert/--tls-key (browser voice needs a secure page)', async () => {
+    const { execFileSync } = await import('node:child_process');
+    const os = await import('node:os'), path = await import('node:path'), https = await import('node:https');
+    const dir = (await import('node:fs')).mkdtempSync(path.join(os.tmpdir(), 'tb-tls-'));
+    const cert = path.join(dir, 'c.pem'), key = path.join(dir, 'k.pem');
+    execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1', '-subj', '/CN=localhost', '-keyout', key, '-out', cert], { stdio: 'ignore' });
+    const s2 = await startDedicated({ ...DEFAULTS, port: 0, tlsCert: cert, tlsKey: key }, diskAssets('dist'), () => {});
+    try {
+      const info = await new Promise<any>((res, rej) => https.get({ host: 'localhost', port: s2.port, path: '/server-info', rejectUnauthorized: false }, (r) => {
+        let b = ''; r.on('data', (d) => (b += d)); r.on('end', () => res(JSON.parse(b)));
+      }).on('error', rej));
+      expect(info.dedicated).toBe(true);
+      const ws = new WebSocket(`wss://localhost:${s2.port}/ws`, { rejectUnauthorized: false });
+      await new Promise((res, rej) => { ws.on('open', res); ws.on('error', rej); });
+      ws.close();
+    } finally { await s2.close(); }
+    expect(() => parseConfig(['--tls-cert', cert])).toThrow(/together/);
+  });
+
   it('refuses bad versions, passwords, oversized and unknown messages', async () => {
     expect((await raw([{ t: 'join', name: 'Old', code: '' }])).reply.msg).toMatch(/version mismatch/i);
     expect((await raw([{ t: 'join', name: 'X', v: NET_VERSION }])).reply.msg).toMatch(/needs a password/i);
@@ -104,6 +123,13 @@ describe('dedicated server', () => {
     expect(srvMe.x).toBeLessThan(x0 - 1.5);
     expect(b.t.bytesIn - bytes0).toBeGreaterThan(5000);
     expect(Math.abs(b.view!.player(a.id)!.x - srvMe.x)).toBeLessThan(1);
+
+    // a position the server refuses (here a 3 m jump) is corrected on the client, never left to drift apart
+    const sx = srvMe.x, sy = srvMe.y;
+    me.x += 3;
+    await play([a, b], 0.6);
+    expect(Math.hypot(me.x - srvMe.x, me.y - srvMe.y)).toBeLessThan(0.3);
+    expect(Math.hypot(srvMe.x - sx, srvMe.y - sy)).toBeLessThan(0.3);
 
     // Bravo walks into the tower: the run starts and the squad locks
     sim.travel(sim.player(b.id)!, 1, 'start', 'stairs');
@@ -233,6 +259,11 @@ describe('dedicated server', () => {
     await wait(300);
     expect(got.get(c)!.length).toBe(VOICE.framesPerSec);
     expect(srv.squad.sockets.has(a.id)).toBe(true);
+    // a long catch-up burst (a 5 s stall of a talking client) is dropped down to the forward rate, never a kick
+    await wait(1100);
+    for (let i = 0; i < 300; i++) a.sendVoice(frame);
+    await wait(300);
+    expect(srv.squad.sockets.has(a.id)).toBe(true);
     // size: an oversized frame disconnects
     let why = '';
     a.onDisconnect = (r) => (why = r);
@@ -251,7 +282,11 @@ describe('dedicated server', () => {
     await c.join(URL, '', 'Spammer', 'sesame');
     let why = '';
     c.onDisconnect = (r) => (why = r);
-    for (let i = 0; i < 200; i++) c.t.send({ t: 'to_host', d: { k: 'hello', v: NET_VERSION } });
+    // a stalled client catching up (5 s of inputs at once) is fine
+    for (let i = 0; i < 150; i++) c.t.send({ t: 'to_host', d: { k: 'hello', v: NET_VERSION } });
+    await wait(300);
+    expect(why).toBe('');
+    for (let i = 0; i < 1000; i++) c.t.send({ t: 'to_host', d: { k: 'hello', v: NET_VERSION } });
     await until(() => why !== '');
     expect(why).toMatch(/too many/i);
     c.close();

@@ -14,6 +14,10 @@ import type { Difficulty } from '../config/difficulty';
 import { emptyLoadout } from '../sim/loadout';
 import { setHolidayOverride, type Holiday } from '../config/holiday';
 
+type Sample = { t: number; x: number; y: number; fa: number };
+/** Remote entities are drawn this far behind the newest snapshot, so there is (almost) always a pair to interpolate. */
+const INTERP_DELAY = 0.12;
+
 /** Client-side mirror of the host's world, built from deterministic generation + snapshots. */
 export class ClientView implements ViewSource {
   t = 0;
@@ -26,8 +30,11 @@ export class ClientView implements ViewSource {
   stats = { kills: 0, maxFloor: 0, startT: 0, endT: 0 };
   cleared = new Set<string>();
   private floors = new Map<number, FloorState>();
-  private targets = new Map<number, { x: number; y: number; f: number }>();
-  private remoteTargets = new Map<number, { x: number; y: number; fa: number }>();
+  /** timestamped positions of remote players ('p'+id) and enemies ('e'+id), drawn INTERP_DELAY in the past */
+  private hist = new Map<string, Sample[]>();
+  /** local estimate of the authority's sim clock */
+  private clock = NaN;
+  private histFloor = -1;
   events: SimEvent[] = [];
   /** the first snapshot has placed the local player (until then it has no real position to predict from) */
   placed = false;
@@ -76,6 +83,8 @@ export class ClientView implements ViewSource {
 
   apply(s: any, localId: number) {
     this.t = s.t;
+    // follow the authority's clock: snap when far off, otherwise nudge (absorbs network jitter)
+    this.clock = Math.abs(s.t - this.clock) < 0.5 ? this.clock + (s.t - this.clock) * 0.15 : s.t;
     this.phase = s.ph; this.lostReason = s.why; this.objective = s.obj; this.stats = s.st;
     for (const k of s.cl as string[]) if (!this.cleared.has(k)) { this.cleared.add(k); this.unblock(k); }
     for (const o of s.pl) {
@@ -88,11 +97,12 @@ export class ClientView implements ViewSource {
       const first = local && !this.placed;
       if (local) this.placed = true;
       if (local && (first || tpChanged || p.life !== 'alive' || p.ride)) { p.x = o.x; p.y = o.y; p.z = o.z; (p as any).tp = o.tp; p.vx = p.vy = 0; }
-      if (!local) this.remoteTargets.set(p.id, { x: o.x, y: o.y, fa: o.fa });
+      if (!local) this.push('p' + p.id, s.t, o.x, o.y, o.fa);
     }
     this.players = this.players.filter((p) => s.pl.some((o: any) => o.id === p.id));
     const F = s.fl;
     const fs = this.floorState(F.f);
+    if (F.f !== this.histFloor) { this.histFloor = F.f; for (const k of [...this.hist.keys()]) if (k[0] === 'e') this.hist.delete(k); }
     const byId = new Map(fs.enemies.map((e) => [e.id, e]));
     const next: Enemy[] = [];
     for (const a of F.en) {
@@ -101,8 +111,8 @@ export class ClientView implements ViewSource {
       if (!e) {
         e = { id, type, elite: !!elite, x, y, facing, vx: 0, vy: 0, hp, maxHp, armor: 0, state, prevState: state, aware: 0, target, lastKnownX: x, lastKnownY: y, lastSeenT: 0, interestX: x, interestY: y, path: null, pathGoalX: 0, pathGoalY: 0, pathT: 0, route: [], routeI: 0, homeX: x, homeY: y, homeFacing: 0, squad: 0, weapon: wpn, mag: weapon(wpn).mag, fireCd: 0, reloadT: 0, burstLeft: 0, stateT: 0, thinkT: 0, coverX, coverY, hasCover: !!hasCover, flankSide: 1, flashT, stunT: 0, pushing: false, barkT: 0, deadT: 0, anim: 0, shotT, seenBy: 0, spawnWave: false } as Enemy;
       }
-      Object.assign(e, { hp, maxHp, state, shotT, flashT, hasCover: !!hasCover, coverX, coverY, target, facing });
-      this.targets.set(id, { x, y, f: facing });
+      Object.assign(e, { hp, maxHp, state, shotT, flashT, hasCover: !!hasCover, coverX, coverY, target });
+      this.push('e' + id, s.t, x, y, facing);
       next.push(e);
     }
     fs.enemies = next;
@@ -125,25 +135,51 @@ export class ClientView implements ViewSource {
     for (const ev of s.ev) this.events.push(ev);
   }
 
-  /** Smooth remote entities toward their latest replicated positions. */
+  private push(key: string, t: number, x: number, y: number, fa: number) {
+    let h = this.hist.get(key);
+    if (!h) this.hist.set(key, (h = []));
+    if (h.length && t <= h[h.length - 1].t) h.length = 0; // a restarted clock (rejoin): start over
+    h.push({ t, x, y, fa });
+    if (h.length > 24) h.splice(0, h.length - 24);
+  }
+
+  /** Where `key` was at time `t`: interpolated between snapshots, briefly extrapolated past the newest one. */
+  private sample(key: string, t: number): Sample | null {
+    const h = this.hist.get(key);
+    if (!h?.length) return null;
+    let i = h.length - 1;
+    while (i > 0 && h[i].t > t) i--;
+    const a = h[i], b = h[i + 1];
+    if (!b) {
+      // past the newest snapshot: keep going for up to 0.1 s at the last known velocity, then hold
+      const p = h[i - 1];
+      if (!p || t <= a.t || Math.hypot(a.x - p.x, a.y - p.y) > 4) return a;
+      const k = Math.min(t - a.t, 0.1) / (a.t - p.t);
+      return { t, x: a.x + (a.x - p.x) * k, y: a.y + (a.y - p.y) * k, fa: a.fa };
+    }
+    if (t <= a.t || Math.hypot(b.x - a.x, b.y - a.y) > 4) return t < b.t ? a : b; // before the history, or a teleport
+    const k = (t - a.t) / (b.t - a.t);
+    let dfa = b.fa - a.fa;
+    dfa = Math.atan2(Math.sin(dfa), Math.cos(dfa));
+    return { t, x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k, fa: a.fa + dfa * k };
+  }
+
+  /** Place remote players and enemies on the interpolated timeline (INTERP_DELAY behind the authority). */
   smooth(dt: number, localId: number) {
     this.t += dt;
-    const k = Math.min(1, dt * 14);
+    this.clock += dt;
+    const rt = this.clock - INTERP_DELAY;
     for (const p of this.players) {
       if (p.id === localId) continue;
-      const t = this.remoteTargets.get(p.id);
-      if (!t) continue;
-      if (Math.hypot(t.x - p.x, t.y - p.y) > 4) { p.x = t.x; p.y = t.y; }
-      p.x += (t.x - p.x) * k; p.y += (t.y - p.y) * k;
+      const q = this.sample('p' + p.id, rt);
+      if (q) { p.x = q.x; p.y = q.y; p.facing = q.fa; }
     }
     const me = this.player(localId);
     if (!me) return;
     const fs = this.floorState(me.floor);
     for (const e of fs.enemies) {
-      const t = this.targets.get(e.id);
-      if (!t) continue;
-      if (Math.hypot(t.x - e.x, t.y - e.y) > 4) { e.x = t.x; e.y = t.y; }
-      e.x += (t.x - e.x) * k; e.y += (t.y - e.y) * k;
+      const q = this.sample('e' + e.id, rt);
+      if (q) { e.x = q.x; e.y = q.y; e.facing = q.fa; }
     }
   }
 
