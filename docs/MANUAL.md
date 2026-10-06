@@ -113,6 +113,22 @@ click ✕ or − next to an entry to remove it. Press **Confirm loadout** when y
 
 You always carry a combat knife, and you can't lose it. Once you are in the tower, you live on what you find.
 
+### Appearance
+
+The **Appearance** tab at the top of the armory changes how your operator looks. It is cosmetic only: it never
+changes how easily enemies see you.
+
+- **Skin tone:** eight tones, light to deep.
+- **Uniform colour:** pick a preset, or tune it with the hue, saturation and brightness sliders.
+- **Camo pattern:** solid, woodland, desert digital, urban or tiger stripe. The pattern colours come from your uniform
+  colour. **Camo contrast** sets how strong the pattern is.
+- **Randomise** rolls a new look, and **Reset** goes back to the standard olive woodland.
+
+The preview on the right turns your operator slowly so you can see the result. Your gear (plate carrier, pouches,
+helmet) is the same for everyone. Your look is saved on this computer and kept with your single-player save. In
+co-op your squad sees it too; team colours, rings and name tags work as before. On a gamepad, step the sliders with
+the − and + buttons.
+
 ## 2. The objective
 
 Climb from floor 1 to floor 200. On each floor, find a working route up: a stairwell or a powered lift. On floor 200,

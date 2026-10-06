@@ -467,3 +467,24 @@ input.text:focus { border-color: var(--cyan); box-shadow: inset 0 0 12px rgba(53
 .voice-ind.on { display: block; }
 .mic-meter { display: inline-block; width: 160px; height: 8px; background: #111; border: 1px solid #333; vertical-align: middle; }
 .mic-meter i { display: block; height: 100%; width: 0; background: var(--good); transition: width 0.06s; }
+
+/* ---------- armory: Appearance tab ---------- */
+.shop-tabs { margin: -4px 0 12px; }
+.seg button.focus, .shop .cat.focus { --frame: var(--amber); color: #fff; }
+.shop.look { grid-template-columns: 1fr 360px 330px; }
+.lk-ctl { overflow-y: auto; min-height: 0; display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; scrollbar-color: var(--cyan-dim) transparent; }
+.lk-ctl > .hint { margin-top: 6px; letter-spacing: 0.08em; text-transform: uppercase; font-size: 12px; }
+.lk-sw { flex-wrap: wrap; }
+.lk-sw button.sw { width: 34px; height: 30px; padding: 0; --c: 6px; }
+.lk-sw button.sw::after { background: var(--fill); }
+.lk-sw button.sw.on { --frame: #fff; }
+.lk-sw button.sw.on::before, .lk-sw button.sw.focus::before { inset: -2px; }
+.lk-camo { flex-wrap: wrap; }
+.lk-row { grid-template-columns: 110px 1fr 48px; padding: 4px 0; font-size: 14px; }
+.lk-row .v { color: var(--dim); font-variant-numeric: tabular-nums; text-align: right; }
+.lk-sl { display: flex; align-items: center; gap: 8px; }
+.lk-sl .seg button { padding: 4px 10px; font-size: 15px; }
+.lk-btns { display: flex; gap: 8px; margin-top: 8px; }
+.lk-view { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px; min-height: 0; }
+.lk-screen { width: 100%; max-height: calc(100% - 28px); aspect-ratio: 340 / 440; object-fit: contain; border: 1px solid rgba(53, 216, 255, 0.35); box-shadow: 0 0 22px rgba(53, 216, 255, 0.25), inset 0 0 30px rgba(0, 0, 0, 0.6); border-radius: 10px / 14px; }
+.lk-cap { margin-top: 8px; font-size: 12px; letter-spacing: 0.25em; color: var(--cyan); text-shadow: 0 0 8px rgba(53, 216, 255, 0.6); }

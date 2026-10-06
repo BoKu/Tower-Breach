@@ -13,6 +13,7 @@ import type { FloorState, PlayerState, SimEvent, Loadout, Enemy } from '../sim/s
 import type { ViewSource } from '../render/view';
 import type { Difficulty } from '../config/difficulty';
 import { emptyLoadout } from '../sim/loadout';
+import type { PlayerLook } from '../config/look';
 import { setHolidayOverride, type Holiday } from '../config/holiday';
 
 type Sample = { t: number; x: number; y: number; fa: number };
@@ -233,7 +234,7 @@ export class ClientSession {
     if (this.prevHoliday !== false) { setHolidayOverride(this.prevHoliday); this.prevHoliday = false; }
   }
 
-  ready(lo: Loadout) { this.t.send({ t: 'to_host', d: { k: 'ready', loadout: lo } }); }
+  ready(lo: Loadout, look?: PlayerLook) { this.t.send({ t: 'to_host', d: { k: 'ready', loadout: lo, look } }); }
 
   /** Opt in/out of receiving squad voice (the server sends nothing to players with voice off). */
   setVoice(on: boolean) { this.voiceOn = on; this.t.send({ t: 'to_host', d: { k: 'vc', on } }); }

@@ -208,6 +208,32 @@ describe('multiplayer (host-authoritative over relay)', () => {
     stranger.close(); host.close();
   });
 
+  it('appearance: each look reaches the host (clamped) and every client, late joiners included', async () => {
+    const { host, clients, code } = await squad(2);
+    host.goShop();
+    await until(() => clients.every((c) => c.lobby?.stage === 'shop'));
+    const hostLook = { skin: 7, h: 33, s: 0.3, l: 0.42, camo: 'tiger' as const, contrast: 0.8 };
+    host.setHostLoadout(emptyLoadout(), hostLook);
+    clients[0].ready(emptyLoadout(), { skin: 2, h: 210, s: 0.07, l: 0.38, camo: 'urban', contrast: 0.4 });
+    clients[1].ready(emptyLoadout(), { skin: 99, h: 9999, s: 'x', camo: 'clown', contrast: -5 } as any); // a hacked client
+    await until(() => clients.every((c) => !!c.view));
+    const sim = host.sim!;
+    expect(sim.player(1)!.look).toEqual(hostLook);
+    expect(sim.player(clients[1].id)!.look).toMatchObject({ skin: 3, h: 359, camo: 'woodland', contrast: 0 });
+    // a late joiner (before the squad enters the tower) brings a look too
+    const late = new ClientSession();
+    await late.join(URL, code, 'Late');
+    await until(() => late.lobby?.late === true);
+    late.ready(emptyLoadout(), { skin: 0, h: 120, s: 0.5, l: 0.3, camo: 'desert', contrast: 1 });
+    await until(() => !!late.view && sim.players.length === 4);
+    const all = [...clients, late];
+    await pump(host, all, 0.3);
+    for (const c of all) for (const p of sim.players) expect(c.view!.player(p.id)!.look, `${c.id} sees ${p.name}`).toEqual(p.look);
+    expect(late.view!.player(1)!.look!.camo).toBe('tiger');
+    for (const c of all) c.close();
+    host.close();
+  });
+
   it('proximity voice through the relay: the host filters by floor and distance', async () => {
     const { host, clients } = await squad(2);
     host.goShop();

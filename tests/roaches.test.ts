@@ -24,4 +24,17 @@ describe('roaches', () => {
     expect(infested).toBeGreaterThan(3);
     expect(running).toBeGreaterThan(1000);
   }, 30000);
+
+  it('are common enough to notice: most floors have some, several per floor, back out within seconds', () => {
+    let infested = 0, total = 0, n = 0;
+    const plan = new BuildingPlan(77, 'normal');
+    for (let floor = 1; floor <= 40; floor++) {
+      const r = new Roaches(generateFloor(plan, floor)) as any;
+      n++; total += r.roaches.length;
+      if (r.roaches.length) infested++;
+    }
+    expect(infested / n).toBeGreaterThan(0.6);
+    expect(total / infested).toBeGreaterThanOrEqual(4);
+  });
 });
+

@@ -14,7 +14,7 @@ import { TEAM_COLORS, SELF_COLOR, teamColorIndex, ViewSource } from './view';
 /** humans/cyborgs use the operator rig, everything else a beast rig */
 interface ERig { op: OperatorRig | null; beast: DogRig | DroneRig | WardenRig | null; lastX: number; lastY: number; vis: number; visT: number }
 const rootOf = (r: ERig) => (r.beast ? r.beast.root : r.op!.root);
-interface PRig { rig: OperatorRig; color: number; ring: THREE.Mesh; downRing: THREE.Mesh; marks: THREE.Group; lastShot: number }
+interface PRig { rig: OperatorRig; color: number; look: string; ring: THREE.Mesh; downRing: THREE.Mesh; marks: THREE.Group; lastShot: number }
 
 const pingTexture = (() => {
   const c = document.createElement('canvas');
@@ -166,9 +166,10 @@ export class Entities {
       const ci = teamColorIndex(view.players, localId, p.id);
       const color = p.id === localId ? SELF_COLOR : TEAM_COLORS[ci % 4];
       let r = this.players.get(p.id);
-      if (!r || r.color !== color) {
+      const look = JSON.stringify(p.look ?? null); // a teammate's appearance arriving (or changing) rebuilds their rig
+      if (!r || r.color !== color || r.look !== look) {
         if (r) { this.group.remove(r.rig.root); this.group.remove(r.marks); }
-        const rig = OperatorRig.make(color);
+        const rig = OperatorRig.make(color, { player: p.look });
         const marks = new THREE.Group();
         const ring = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.5, 32), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.6, toneMapped: false }));
         ring.rotation.x = -Math.PI / 2; ring.position.y = 0.03;
@@ -176,7 +177,7 @@ export class Entities {
         downRing.rotation.x = -Math.PI / 2; downRing.position.y = 0.04;
         marks.add(ring, downRing);
         this.group.add(rig.root, marks);
-        r = { rig, color, ring, downRing, marks, lastShot: -9 };
+        r = { rig, color, look, ring, downRing, marks, lastShot: -9 };
         this.players.set(p.id, r);
       }
       const wi = p.sel === 'knife' ? null : p.weapons[p.sel];

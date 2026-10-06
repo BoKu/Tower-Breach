@@ -9,8 +9,9 @@ import { isWalkableTile } from '../gen/floor';
 import { currentHoliday, type Holiday } from '../config/holiday';
 import { collides, BODY_R } from '../sim/nav';
 import { VOICE, voiceTargets } from './voice';
+import { sanitizeLook, type PlayerLook } from '../config/look';
 
-export interface LobbyPeer { id: number; name: string; ready: boolean; loadout: Loadout | null; connected: boolean }
+export interface LobbyPeer { id: number; name: string; ready: boolean; loadout: Loadout | null; connected: boolean; look?: PlayerLook }
 
 /**
  * The authoritative co-op squad: lobby, armory readiness, deploy, the Sim, input validation and snapshot
@@ -22,6 +23,7 @@ export abstract class SquadAuthority {
   hostId: number | null = 1;
   hostName = 'Host';
   hostLoadout: Loadout | null = null;
+  hostLook: PlayerLook | undefined;
   peers = new Map<number, LobbyPeer>();
   difficulty: Difficulty = 'normal';
   friendlyFire = false;
@@ -83,7 +85,7 @@ export abstract class SquadAuthority {
     this.broadcastLobby();
   }
 
-  setHostLoadout(lo: Loadout) { this.hostLoadout = lo; this.broadcastLobby(); this.tryDeploy(); }
+  setHostLoadout(lo: Loadout, look?: PlayerLook) { this.hostLoadout = lo; this.hostLook = look && sanitizeLook(look); this.broadcastLobby(); this.tryDeploy(); }
 
   allReady() {
     const peers = this.connectedPeers();
@@ -94,9 +96,9 @@ export abstract class SquadAuthority {
     if (this.stage !== 'shop' || (!this.allReady() && !force)) return;
     if (this.hostId !== null ? !this.hostLoadout : !this.connectedPeers().length) return;
     const sim = new Sim({ seed: this.seed, difficulty: this.difficulty, mode: 'coop', friendlyFire: this.friendlyFire, holiday: this.holiday === undefined ? currentHoliday() : this.holiday });
-    if (this.hostId !== null) sim.addPlayer(this.hostId, this.hostName, this.hostLoadout!);
+    if (this.hostId !== null) sim.addPlayer(this.hostId, this.hostName, this.hostLoadout!).look = this.hostLook;
     for (const p of this.connectedPeers().sort((a, b) => a.id - b.id)) {
-      sim.addPlayer(p.id, p.name, p.loadout && validLoadout(p.loadout, this.difficulty) ? p.loadout : emptyLoadout());
+      sim.addPlayer(p.id, p.name, p.loadout && validLoadout(p.loadout, this.difficulty) ? p.loadout : emptyLoadout()).look = p.look;
       sim.external.add(p.id);
       this.outbox.set(p.id, []);
     }
@@ -232,12 +234,12 @@ export abstract class SquadAuthority {
     else if (d.k === 'ready' && this.stage === 'shop') {
       const lo = sanitizeLoadout(d.loadout);
       if (!lo) return;
-      peer.loadout = lo; peer.ready = true;
+      peer.loadout = lo; peer.ready = true; peer.look = sanitizeLook(d.look); // cosmetic: bad input becomes the default look
       this.broadcastLobby();
       this.tryDeploy();
     } else if (d.k === 'ready' && this.stage === 'game' && this.sim && !this.sim.player(id)) {
       const lo = sanitizeLoadout(d.loadout);
-      if (lo) this.deployLate(peer, lo);
+      if (lo) { peer.look = sanitizeLook(d.look); this.deployLate(peer, lo); }
     } else if (d.k === 'vc') {
       if (d.on === true) this.voiceListeners.add(id); else this.voiceListeners.delete(id);
     } else if (d.k === 'in' && this.sim) {
@@ -265,7 +267,7 @@ export abstract class SquadAuthority {
   private deployLate(peer: LobbyPeer, lo: Loadout) {
     const sim = this.sim!;
     peer.loadout = lo; peer.ready = true;
-    sim.addPlayer(peer.id, peer.name, validLoadout(lo, this.difficulty) ? lo : emptyLoadout());
+    sim.addPlayer(peer.id, peer.name, validLoadout(lo, this.difficulty) ? lo : emptyLoadout()).look = peer.look;
     sim.external.add(peer.id);
     this.outbox.set(peer.id, []);
     this.sendTo(peer.id, this.startMsg());

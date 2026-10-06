@@ -113,11 +113,14 @@ describe('dedicated server', () => {
     a.ready({ ...emptyLoadout(), primary: 'sr4' });
     await wait(100);
     expect(started).toBe(0); // waits for everyone
-    b.ready({ ...emptyLoadout(), primary: 'sr4', grenades: { frag: 99 } as any, items: { bogus: 1 } as any }); // over the limits: clamped/sanitised
+    b.ready({ ...emptyLoadout(), primary: 'sr4', grenades: { frag: 99 } as any, items: { bogus: 1 } as any }, { skin: 1, h: 400, s: 5, l: 0.3, camo: 'tiger', contrast: 0.5 } as any); // over the limits: clamped/sanitised
     await until(() => started === 2);
     const sim = srv.squad.sim!;
     expect(sim.players.map((p) => p.name).sort()).toEqual(['Alpha', 'Bravo']);
     expect(a.view!.cfg.seed).toBe(srv.squad.seed);
+    // appearance: cleaned by the dedicated server and replicated to the other client
+    const lk = sim.players.find((p) => p.name === 'Bravo')!.look!;
+    expect(lk).toMatchObject({ skin: 1, h: 359, s: 0.8, camo: 'tiger' });
 
     // inputs reach the server and snapshots flow back
     await play([a, b], 0.3);
@@ -131,6 +134,7 @@ describe('dedicated server', () => {
     expect(srvMe.x).toBeLessThan(x0 - 1.5);
     expect(b.t.bytesIn - bytes0).toBeGreaterThan(5000);
     expect(Math.abs(b.view!.player(a.id)!.x - srvMe.x)).toBeLessThan(1);
+    expect(a.view!.player(b.id)!.look).toMatchObject({ skin: 1, h: 359, camo: 'tiger' });
 
     // a position the server refuses (here a 3 m jump) is corrected on the client, never left to drift apart
     const sx = srvMe.x, sy = srvMe.y;

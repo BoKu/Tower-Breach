@@ -3,12 +3,13 @@ import { emptyInput } from '../sim/state';
 import type { Sim } from '../sim/sim';
 import { stockLeft } from '../sim/inventory';
 import type { DoorMode } from '../gen/floor';
+import { lookToWire, lookFromWire } from '../config/look';
 
 export const DOOR_MODES: DoorMode[] = ['open', 'closed', 'locked'];
 
 export const SNAP_HZ = 15;
 /** Wire protocol version: bump on any incompatible message change. Clients send it on join; servers refuse a mismatch. */
-export const NET_VERSION = 4; // v4: doors (they change collision), coins + keys; v3 (1.2.0): late join window, proximity voice
+export const NET_VERSION = 5; // v5: player appearance (look) in ready + snapshots; v4: doors (they change collision), coins + keys; v3 (1.2.0): late join window, proximity voice
 export const versionMismatch = (theirs: unknown) =>
   `Version mismatch: this server speaks co-op protocol v${NET_VERSION}, your game speaks v${Number(theirs) || 1}. Update the game (or the server) so both run the same release.`;
 
@@ -22,7 +23,7 @@ export function encodePlayer(p: PlayerState, full: boolean) {
     id: p.id, slot: p.slot, name: p.name, c: p.connected, f: p.floor, x: r2(p.x), y: r2(p.y), z: r2(p.z), fa: r2(p.facing),
     ax: r2(p.aimX), ay: r2(p.aimY), az: Number.isFinite(p.aimZ) ? r2(p.aimZ) : null, hp: Math.round(p.hp * 10) / 10, ar: Math.round(p.armor), hl: p.helmet, inj: p.injured, life: p.life, dt: r2(p.downT),
     cr: p.crouch, sp: p.sprinting, am: p.aiming, mv: p.moving, sel: p.sel, w: p.weapons, torch: p.torchOn, bat: r2(p.battery), mods: p.mods,
-    hurt: r2(p.hurtT), tp: (p as any).tp ?? 0, k: p.kills, ride: p.ride, ci: p.checkedIn ? 1 : 0,
+    hurt: r2(p.hurtT), tp: (p as any).tp ?? 0, k: p.kills, ride: p.ride, ci: p.checkedIn ? 1 : 0, lk: p.look && lookToWire(p.look),
   };
   if (full) {
     Object.assign(base, {
@@ -40,6 +41,7 @@ export function decodePlayer(p: PlayerState, o: any, isLocal: boolean) {
   }
   p.slot = o.slot; p.name = o.name; p.connected = o.c; p.floor = o.f; p.hp = o.hp; p.armor = o.ar; p.helmet = o.hl; p.injured = o.inj;
   p.life = o.life; p.downT = o.dt; p.sel = o.sel; p.weapons = o.w; p.torchOn = o.torch; p.battery = o.bat; p.mods = o.mods; p.hurtT = o.hurt; p.kills = o.k; p.ride = o.ride; p.checkedIn = !!o.ci; // co-op HUD street objective
+  p.look = lookFromWire(o.lk);
   if (o.ammo) {
     p.ammo = o.ammo; p.grenades = o.gr; p.grenadeSel = o.gs; p.items = o.it; p.itemSel = o.is; p.boostT = o.boost; p.reloadT = o.rl; p.reloadDur = o.rd; p.hold = o.hold;
     p.exposure = o.exp; p.prompt = o.pr; (p as any).panel = o.panel; (p as any).vest = o.vest; p.flashT = o.fl; p.burnT = o.burn; p.coins = o.co ?? 0; p.keys = o.ky ?? [];

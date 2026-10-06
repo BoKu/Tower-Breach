@@ -15,7 +15,7 @@ import { Sim } from '../sim/sim';
 import { HostSession } from '../net/host';
 import { ClientSession, ClientView } from '../net/client';
 import { defaultServerUrl, normalizeServerAddress } from '../net/transport';
-import { loadSettings, saveSettings, Settings, ACTION_LABEL, DEFAULT_BINDINGS, keyLabel, Action, loadRecords, addRecord } from '../save/settings';
+import { loadSettings, saveSettings, Settings, ACTION_LABEL, DEFAULT_BINDINGS, keyLabel, Action, loadRecords, addRecord, loadLook } from '../save/settings';
 import { load, save, remove, storageAvailable } from '../save/storage';
 import { randomSeed } from '../core/rng';
 import { DIFFICULTIES, Difficulty, DIFF_BASE, FINAL_FLOOR } from '../config/difficulty';
@@ -250,6 +250,7 @@ export class App {
       this.armory = null;
       const changed = JSON.stringify(shop.lo) !== JSON.stringify(p.loadout);
       if (changed) equipLoadout(p, shop.lo);
+      p.look = shop.look; // cosmetic: applies however the armory closes
       this.show(null);
       p.input.closeSeq++; (p as any).panel = null;
       this.hud.message(changed ? 'Loadout confirmed. The tower door is open to you.' : 'Armory closed. Your gear is unchanged.', changed ? 'good' : 'info');
@@ -278,6 +279,7 @@ export class App {
   private continueRun(s: any) {
     try {
       const sim = Sim.fromSave(s, 1);
+      sim.players[0].look ??= loadLook(); // saves from before appearances
       this.beginSession({ kind: 'local', sim });
       this.hud.showBanner(`FLOOR ${sim.players[0].floor}`, 'Run resumed');
     } catch {
@@ -296,7 +298,7 @@ export class App {
     const sim = new Sim({ seed: this.nextSeed, difficulty: diff, mode: 'single', holiday: currentHoliday() });
     this.nextSeed = randomSeed();
     const p = sim.addPlayer(1, 'Operator', lo); // callsign is registered fresh at the Chief's check-in
-    void p;
+    p.look = loadLook();
     this.beginSession({ kind: 'local', sim });
     this.hud.showBanner('POLICE CORDON', lo.primary ? 'Safe zone. Breach the tower when ready.' : 'Check in with Police Chief Hollis at the blue tent, then gear up.', '警察封鎖線');
     this.saveRun();
@@ -436,7 +438,7 @@ export class App {
     shop.onRendered = () => this.kanji(shop.root);
     shop.onBack = () => { if (host) { host.close(); } else cl?.close(); this.mainMenu(); };
     shop.onDeploy = (lo) => {
-      if (host) host.setHostLoadout(lo); else cl!.ready(lo);
+      if (host) host.setHostLoadout(lo, shop.look); else cl!.ready(lo, shop.look);
       this.mpStatus.textContent = 'READY — waiting for the squad…';
     };
     this.mpShopEl = shop.root;

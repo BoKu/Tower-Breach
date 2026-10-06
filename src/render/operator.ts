@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Builder, merge, cloneRig } from './models';
 import { currentHoliday } from '../config/holiday';
+import { DEFAULT_LOOK, SKIN_TONES, type Camo, type PlayerLook } from '../config/look';
 
 /**
  * Special-forces operator: articulated rig (hips → spine → chest → neck/head, two-segment arms and legs),
@@ -58,9 +59,84 @@ function pointyHat(hb: Builder, cone: number, band: number, tip: number, len: nu
   hb.geo(new THREE.SphereGeometry(0.036, 10, 8), tip, t2.x, t2.y, t2.z);
 }
 
-function meshes(b: Builder, mat: THREE.Material): THREE.Group {
+/**
+ * Player camo: uniform cloth goes to the builder's 'glass' bucket (operator rigs never use glass) and is merged into the
+ * same mesh as the gear with a `camo` vertex attribute (0 = gear, 1 + part seed = cloth), so camo costs no extra draw
+ * calls. The pattern is 3D value noise in the mesh's own (object) space, so it sticks to each limb as it moves.
+ */
+const camo = (b: Builder, on: boolean, f: () => void) => { const n = b.p.solid.length; f(); if (on) b.p.glass.push(...b.p.solid.splice(n)); };
+const CAMO_PAT: Record<Camo, number> = { solid: 0, woodland: 1, desert: 2, urban: 3, tiger: 4 };
+/** Pattern colours as [hue shift, saturation ×, lightness ×] off the uniform's base colour (index 0 = the base). */
+const CAMO_COLS: Record<Camo, [number, number, number][]> = {
+  solid: [[0, 1, 1]],
+  woodland: [[0, 1, 1], [22, 1.15, 1.45], [-12, 0.9, 0.6], [0, 0.5, 0.35]],
+  desert: [[0, 1, 1], [8, 0.9, 1.35], [-10, 1.1, 0.7]],
+  urban: [[0, 0.25, 1], [0, 0.2, 1.5], [0, 0.2, 0.62], [0, 0.15, 0.38]],
+  tiger: [[0, 1, 1], [18, 1, 1.3], [0, 0.6, 0.36]],
+};
+/** A colour off the look's uniform base (HSL in sRGB, like the armory's CSS swatches). */
+export function uniformColor(lk: PlayerLook, dh = 0, sm = 1, lm = 1) {
+  return new THREE.Color().setHSL((((lk.h + dh) % 360) + 360) % 360 / 360, Math.min(1, lk.s * sm), Math.min(0.92, lk.l * lm), THREE.SRGBColorSpace);
+}
+const CAMO_GLSL = `
+uniform int uCamoPat; uniform float uCamoAmt; uniform vec3 uCamoC[4]; uniform float uCamoLum;
+varying float vCamo; varying vec3 vCamoP;
+float camoH(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+float camoN(vec3 p) {
+  vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(camoH(i), camoH(i + vec3(1, 0, 0)), f.x), mix(camoH(i + vec3(0, 1, 0)), camoH(i + vec3(1, 1, 0)), f.x), f.y),
+             mix(mix(camoH(i + vec3(0, 0, 1)), camoH(i + vec3(1, 0, 1)), f.x), mix(camoH(i + vec3(0, 1, 1)), camoH(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+}
+vec3 camoCol(vec3 p) {
+  vec3 c = uCamoC[0];
+  if (uCamoPat == 1) { // woodland: layered organic blobs
+    if (camoN(p * 6.0) * 0.7 + camoN(p * 14.0) * 0.3 > 0.55) c = uCamoC[1];
+    if (camoN(p * 7.0 + 17.0) * 0.7 + camoN(p * 16.0 + 3.0) * 0.3 > 0.6) c = uCamoC[2];
+    if (camoN(p * 10.0 + 41.0) > 0.72) c = uCamoC[3];
+  } else if (uCamoPat == 2) { // desert digital: the same blobs on a pixel grid
+    vec3 q = floor(p * 30.0) / 30.0;
+    if (camoN(q * 6.0) * 0.7 + camoN(q * 13.0) * 0.3 > 0.54) c = uCamoC[1];
+    if (camoN(q * 7.0 + 23.0) > 0.64) c = uCamoC[2];
+  } else if (uCamoPat == 3) { // urban: angular grey blocks with dark splotches
+    float a = camoH(floor(p * vec3(8.0, 5.0, 8.0) + camoN(p * 4.0) * 1.6));
+    if (a > 0.62) c = uCamoC[1]; else if (a < 0.28) c = uCamoC[2];
+    if (camoN(p * 7.0 + 9.0) > 0.72) c = uCamoC[3];
+  } else if (uCamoPat == 4) { // tiger stripe: broken horizontal bands
+    if (camoN(p * vec3(6.0, 2.5, 6.0) + 5.0) > 0.56) c = uCamoC[1];
+    if (sin(p.y * 38.0 + camoN(p * vec3(3.0, 1.0, 3.0)) * 8.0 + camoN(p * 10.0) * 2.0) > 0.5 && camoN(p * vec3(4.0, 1.0, 4.0) + 11.0) > 0.3) c = uCamoC[2];
+  }
+  return c;
+}`;
+/** The pattern on a material (chains any earlier onBeforeCompile, e.g. the cutaway; its own program cache key). */
+function withCamo<T extends THREE.Material>(m: T, u: Record<string, THREE.IUniform>): T {
+  const prev = m.onBeforeCompile.bind(m), prevKey = m.customProgramCacheKey.bind(m);
+  m.onBeforeCompile = (sh, r) => {
+    prev(sh, r);
+    Object.assign(sh.uniforms, u);
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float camo; varying float vCamo; varying vec3 vCamoP;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCamo = camo; vCamoP = position + vec3(camo * 1.73);');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>' + CAMO_GLSL)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        if (vCamo > 0.5) diffuseColor.rgb = mix(diffuseColor.rgb, camoCol(vCamoP) * (dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)) / uCamoLum), uCamoAmt);`);
+  };
+  m.customProgramCacheKey = () => prevKey() + '|camo';
+  return m;
+}
+/** One look's cloth and gear materials (shared by every rig with that look; each look's rigs get their own). */
+function camoMats(lk: PlayerLook) {
+  const cols = CAMO_COLS[lk.camo], base = uniformColor(lk);
+  const u = {
+    uCamoPat: { value: CAMO_PAT[lk.camo] }, uCamoAmt: { value: lk.camo === 'solid' ? 0 : lk.contrast * 0.75 }, // capped: stays readable on dark floors
+    uCamoC: { value: [0, 1, 2, 3].map((i) => { const [dh, sm, lm] = cols[i] ?? cols[0]; return uniformColor(lk, dh, sm, lm); }) },
+    uCamoLum: { value: Math.max(1e-3, base.r * 0.2126 + base.g * 0.7152 + base.b * 0.0722) },
+  };
+  return { cloth: withCamo(clothMat.clone(), u), gear: withCamo(gearMat.clone(), u) };
+}
+
+function meshes(b: Builder, mat: THREE.Material, seed = 0): THREE.Group {
   const g = new THREE.Group();
-  const s = merge(b.p.solid);
+  const tag = (l: THREE.BufferGeometry[], v: number) => l.map((x) => x.setAttribute('camo', new THREE.BufferAttribute(new Float32Array(x.attributes.position.count).fill(v), 1)));
+  const s = merge([...tag(b.p.solid, 0), ...tag(b.p.glass, 1 + seed)]);
   if (s) { const m = new THREE.Mesh(s, mat); m.castShadow = true; m.receiveShadow = true; g.add(m); }
   const e = merge(b.p.emit);
   if (e) g.add(new THREE.Mesh(e, emitMat));
@@ -157,7 +233,7 @@ export interface RigInput {
   reload: number; // 0..1 progress, -1 when not reloading
   hurt: boolean;
   /** free-hand arm behaviour for unarmed NPCs (police): natural swing or a held pose */
-  pose?: 'swing' | 'fold' | 'talk' | 'brief' | 'lean';
+  pose?: 'swing' | 'fold' | 'talk' | 'brief' | 'lean' | 'apose';
   /** thumbing the shoulder radio */
   radio?: boolean;
   /** visual ground height under the feet (stair flights) */
@@ -167,6 +243,11 @@ export interface RigInput {
 }
 
 export type Outfit = 'operator' | 'police' | 'loyalist' | 'loyalistElite' | 'cyborg' | 'cyborgElite';
+/** player: the operator's chosen appearance (operator outfit only; cosmetic, holiday themes never touch it) */
+export interface RigOpts { outfit?: Outfit; skin?: number; look?: OfficerLook; zombie?: boolean; player?: PlayerLook }
+
+/** The player operator's fixed kit: two-tone coyote / ranger green with webbing and metal hardware (enemies keep theirs). */
+const KIT = { plate: 0x7a6748, plate2: 0x6a5a3e, pouch: 0x4c5438, flap: 0x3e4530, web: 0x2e3026, metal: 0x8e9196, helmet: 0x565b40, glove: 0x2a2824, boot: 0x5a4a36, knee: 0x3a3e30 };
 
 /** Individual police look (street NPCs + portraits). Every field is optional; defaults are the standard issue. */
 export interface OfficerLook {
@@ -285,7 +366,7 @@ export class OperatorRig {
   readonly zombie: boolean;
   private static protos = new Map<string, OperatorRig>();
   /** A rig with this look: built from primitives once per look (and holiday), copied after that. */
-  static make(teamColor: number, opts: { outfit?: Outfit; skin?: number; look?: OfficerLook; zombie?: boolean } = {}): OperatorRig {
+  static make(teamColor: number, opts: RigOpts = {}): OperatorRig {
     const key = JSON.stringify([teamColor, opts, currentHoliday()]);
     let p = OperatorRig.protos.get(key);
     if (!p) OperatorRig.protos.set(key, (p = new OperatorRig(teamColor, opts)));
@@ -294,8 +375,9 @@ export class OperatorRig {
     return r;
   }
 
-  constructor(private teamColor: number, opts: { outfit?: Outfit; skin?: number; look?: OfficerLook; zombie?: boolean } = {}) {
+  constructor(private teamColor: number, opts: RigOpts = {}) {
     const outfit = (this.outfit = opts.outfit ?? 'operator');
+    const op = outfit === 'operator', lk = opts.player ?? DEFAULT_LOOK;
     const cop = outfit === 'police';
     const loy = outfit === 'loyalist' || outfit === 'loyalistElite';
     const cyb = outfit === 'cyborg' || outfit === 'cyborgElite';
@@ -307,7 +389,10 @@ export class OperatorRig {
       ? { uniform: 0x26272b, uniform2: 0x1c1d20, plate: 0x1b1c1f, pouch: 0x232428, strap: 0x111214, helmet: 0x1a1b1e, knee: 0x151618 }
       : { uniform: 0x4f5864, uniform2: 0x3c434d, plate: 0x30353c, pouch: 0x3b414a, strap: 0x1e2126, helmet: 0x2b303a, knee: 0x22252a });
     if (cyb) Object.assign(P, { uniform: 0x25272b, uniform2: 0x1b1c1f, plate: elite ? 0x4a1016 : 0x3b4046, pouch: 0x2c2f34, strap: 0x151619, helmet: 0x2a2d31, glove: 0x7d858c, boot: 0x1a1a1c, knee: 0x6d757c });
-    let skin = opts.look?.skin ?? opts.skin ?? P.skin;
+    // the player operator: uniform from the chosen look, own camo materials (one pair per look), fixed refreshed kit
+    const M = op ? camoMats(lk) : { cloth: clothMat, gear: gearMat };
+    if (op) Object.assign(P, { uniform: uniformColor(lk).getHex(THREE.SRGBColorSpace), uniform2: uniformColor(lk, 0, 1, 0.82).getHex(THREE.SRGBColorSpace), plate: KIT.plate, pouch: KIT.pouch, strap: KIT.web, helmet: KIT.helmet, glove: KIT.glove, boot: KIT.boot, knee: KIT.knee });
+    let skin = opts.player ? SKIN_TONES[lk.skin] : opts.look?.skin ?? opts.skin ?? P.skin;
     if (zom) {
       // grave-dirt rags over the outfit's colours; grey-green rot keeps a hint of the living skin tone
       skin = new THREE.Color(skin).lerp(new THREE.Color(0x72866a), 0.8).getHex();
@@ -370,6 +455,13 @@ export class OperatorRig {
         .rbox(0.04, 0.07, 0.04, 0.012, -0.17, 0.06, 0.08, P.black) // spray
         .rbox(0.03, 0.03, 0.01, 0.005, -0.02, 0.085, 0.125, 0xc9b060); // buckle
       if (bunny) pb.geo(new THREE.SphereGeometry(0.06, 10, 8), EA.white, 0, -0.02, -0.13); // pom-pom tail
+    } else if (op) {
+      camo(pb, true, () => pb.rbox(0.34, 0.2, 0.22, 0.07, 0, 0.0, 0, P.uniform2));
+      pb.rbox(0.38, 0.06, 0.25, 0.02, 0, 0.08, 0, KIT.web) // belt
+        .rbox(0.06, 0.045, 0.02, 0.008, 0, 0.08, 0.13, KIT.metal).rbox(0.03, 0.02, 0.022, 0.005, 0, 0.08, 0.132, KIT.web) // buckle
+        .rbox(0.07, 0.1, 0.05, 0.015, 0.2, 0.02, 0.02, KIT.pouch).rbox(0.075, 0.03, 0.056, 0.01, 0.2, 0.07, 0.02, KIT.flap) // hip pouch + flap
+        .rbox(0.15, 0.09, 0.05, 0.02, 0, 0.02, -0.13, KIT.pouch).rbox(0.155, 0.025, 0.055, 0.008, 0, 0.065, -0.13, KIT.flap) // dump pouch
+        .rbox(0.06, 0.12, 0.04, 0.015, -0.2, 0.0, 0.04, P.black); // drop holster
     } else {
       pb.rbox(0.34, 0.2, 0.22, 0.07, 0, 0.0, 0, P.uniform2)
         .rbox(0.38, 0.06, 0.25, 0.02, 0, 0.08, 0, P.strap)
@@ -377,7 +469,7 @@ export class OperatorRig {
       if (zom) pb.rbox(0.12, 0.1, 0.02, 0.02, 0.06, -0.02, 0.112, BLOOD); // blood-soaked trousers
       else pb.rbox(0.06, 0.12, 0.04, 0.015, -0.2, 0.0, 0.04, P.black); // drop holster
     }
-    this.hips.add(meshes(pb, clothMat));
+    this.hips.add(meshes(pb, M.cloth));
     this.hips.add(this.spine);
     this.spine.position.y = 0.08;
     this.spine.add(this.chest);
@@ -453,6 +545,29 @@ export class OperatorRig {
         for (const x of [-0.08, 0.08]) cb.geo(new THREE.CylinderGeometry(0.012, 0.012, 0.36, 6), 0x111214, x, 0.3, -0.12, 0.2, 0, 0);
         cb.rbox(0.05, 0.05, 0.015, 0.01, 0.04, 0.3, 0.13, 0xff2020, 0, 0, 0.5, 'emit');
       }
+    } else if (op) {
+      camo(cb, true, () => cb.limb(0.15, 0.48, 0, 0.44, 0, P.uniform, 0, 0, 1.28, 0.8).rbox(0.16, 0.06, 0.14, 0.03, 0, 0.47, 0, P.uniform2)); // shirt, collar
+      // shaped plate carrier: front bag with a tapered top, back plate, cummerbund wrapping the sides
+      cb.rbox(0.38, 0.3, 0.1, 0.035, 0, 0.22, 0.1, KIT.plate).rbox(0.3, 0.07, 0.09, 0.03, 0, 0.39, 0.095, KIT.plate)
+        .rbox(0.36, 0.3, 0.08, 0.03, 0, 0.24, -0.1, KIT.plate).rbox(0.29, 0.07, 0.07, 0.03, 0, 0.4, -0.095, KIT.plate)
+        .rbox(0.42, 0.17, 0.25, 0.045, 0, 0.1, 0, KIT.plate2);
+      for (const sx of [-1, 1]) {
+        cb.rbox(0.09, 0.05, 0.22, 0.02, sx * 0.17, 0.4, 0, KIT.plate) // shoulder straps
+          .rbox(0.03, 0.022, 0.012, 0.004, sx * 0.16, 0.37, 0.15, KIT.metal) // strap buckles
+          .rbox(0.012, 0.045, 0.03, 0.004, sx * 0.212, 0.13, 0.07, KIT.metal); // cummerbund buckles
+      }
+      for (const y of [0.32, 0.27]) cb.rbox(0.36, 0.012, 0.01, 0.004, 0, y, 0.152, KIT.web); // MOLLE webbing rows
+      for (const x of [-0.12, 0, 0.12]) // mag pouches: flap, snap
+        cb.rbox(0.075, 0.1, 0.05, 0.015, x, 0.15, 0.17, KIT.pouch).rbox(0.08, 0.035, 0.056, 0.012, x, 0.195, 0.172, KIT.flap).rbox(0.018, 0.022, 0.008, 0.003, x, 0.185, 0.2, KIT.metal);
+      cb.rbox(0.07, 0.07, 0.045, 0.012, -0.12, 0.31, 0.17, KIT.pouch).rbox(0.075, 0.025, 0.05, 0.008, -0.12, 0.35, 0.172, KIT.flap) // radio pouch
+        .rbox(0.03, 0.12, 0.03, 0.01, -0.13, 0.38, 0.15, P.black) // radio antenna base
+        .rbox(0.09, 0.08, 0.025, 0.01, 0.09, 0.3, 0.165, KIT.flap); // admin panel
+      // assault pack: top flap, compression straps with buckles, front pocket
+      cb.rbox(0.26, 0.24, 0.09, 0.04, 0, 0.22, -0.175, KIT.pouch).rbox(0.27, 0.06, 0.1, 0.03, 0, 0.33, -0.178, KIT.flap).rbox(0.12, 0.12, 0.04, 0.015, 0, 0.18, -0.226, KIT.plate2);
+      for (const sx of [-1, 1]) cb.rbox(0.02, 0.24, 0.012, 0.004, sx * 0.085, 0.21, -0.222, KIT.web).rbox(0.032, 0.02, 0.012, 0.004, sx * 0.085, 0.27, -0.23, KIT.metal);
+      // team identity: shoulder IR patches
+      cb.rbox(0.07, 0.05, 0.012, 0.005, -0.2, 0.29, 0.13, teamColor, 0, 0.5, 0, 'emit');
+      cb.rbox(0.07, 0.05, 0.012, 0.005, 0.2, 0.29, 0.13, teamColor, 0, -0.5, 0, 'emit');
     } else {
       cb.limb(0.15, 0.48, 0, 0.44, 0, P.uniform, 0, 0, 1.28, 0.8)
         .rbox(0.4, 0.34, 0.1, 0.03, 0, 0.24, 0.1, P.plate)
@@ -463,7 +578,6 @@ export class OperatorRig {
         .rbox(0.07, 0.06, 0.04, 0.012, -0.11, 0.3, 0.16, P.pouch) // radio/admin
         .rbox(0.04, 0.12, 0.03, 0.01, -0.12, 0.36, 0.14, P.black) // radio antenna base
         .rbox(0.16, 0.06, 0.14, 0.03, 0, 0.47, 0, P.uniform2); // collar
-      if (outfit === 'operator') cb.rbox(0.26, 0.24, 0.09, 0.04, 0, 0.22, -0.175, P.pouch).rbox(0.1, 0.16, 0.04, 0.015, 0, 0.2, -0.225, P.uniform2); // assault pack
       if (loy) cb.rbox(0.2, 0.2, 0.08, 0.03, 0, 0.2, -0.16, P.pouch); // small daypack
       if (cyb) {
         // spinal implant, cable bundles and a glowing chest core
@@ -472,12 +586,8 @@ export class OperatorRig {
         cb.rbox(0.06, 0.06, 0.015, 0.01, 0, 0.3, 0.152, 0xff2020, 0, 0, 0, 'emit');
         if (elite) cb.rbox(0.3, 0.02, 0.015, 0.005, 0, 0.4, 0.152, 0xff2020, 0, 0, 0, 'emit');
       }
-      if (outfit === 'operator') { // team identity: shoulder IR patches
-        cb.rbox(0.07, 0.05, 0.012, 0.005, -0.2, 0.29, 0.13, teamColor, 0, 0.5, 0, 'emit');
-        cb.rbox(0.07, 0.05, 0.012, 0.005, 0.2, 0.29, 0.13, teamColor, 0, -0.5, 0, 'emit');
-      }
     }
-    this.chest.add(meshes(cb, gearMat));
+    this.chest.add(meshes(cb, M.gear, 1));
     // head
     this.chest.add(this.neck);
     this.neck.position.set(0, 0.5, 0.01);
@@ -547,20 +657,31 @@ export class OperatorRig {
         .geo(new THREE.CylinderGeometry(0.035, 0.035, 0.05, 12), 0x3a3e44, 0.11, 0.05, 0, 0, 0, Math.PI / 2) // audio receptor
         .geo(new THREE.CylinderGeometry(0.035, 0.035, 0.05, 12), 0x3a3e44, -0.11, 0.05, 0, 0, 0, Math.PI / 2);
       hb.geo(new THREE.BoxGeometry(0.17, 0.018, 0.012), 0xff1a1a, 0, 0.078, 0.106, 0, 0, 0, 'emit'); // red visor slit
-        } else {
-      hb.geo(new THREE.SphereGeometry(0.107, 14, 10, 0, Math.PI * 2, Math.PI * 0.52, Math.PI * 0.5), P.black, 0, 0.06, 0.012, 0, 0, 0, 'solid', 0.92, 1.05, 1.02) // face mask (lower half)
-        .geo(new THREE.SphereGeometry(0.135, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), P.helmet, 0, 0.08, 0, 0, 0, 0, 'solid', 1, 0.92, 1.08) // helmet shell
-        .rbox(0.2, 0.025, 0.24, 0.01, 0, 0.075, 0, P.strap) // helmet rim band
+    } else {
+      // the player operator: an open, gender-neutral face (soft rounded jaw, simple eyes, thin brows, no stubble)
+      const lip = new THREE.Color(skin).lerp(new THREE.Color(0x8a4a42), 0.35).getHex();
+      hb.geo(new THREE.SphereGeometry(0.07, 12, 9), skin, 0, 0.018, 0.034, 0, 0, 0, 'solid', 1.05, 0.78, 1) // cheeks and chin, rounded
+        .rbox(0.022, 0.03, 0.024, 0.009, 0, 0.05, 0.108, skin) // nose
+        .rbox(0.036, 0.008, 0.01, 0.003, 0, 0.022, 0.106, lip); // mouth
+      for (const sx of [-1, 1]) hb.geo(new THREE.SphereGeometry(0.013, 8, 6), 0x1a1410, sx * 0.034, 0.073, 0.097).rbox(0.028, 0.006, 0.01, 0.002, sx * 0.035, 0.094, 0.102, 0x2a2018); // eyes, brows
+      // helmet with a ranger-green cover, rim band, side rails, chin strap, ear pro, NVG mount (flipped up)
+      hb.geo(new THREE.SphereGeometry(0.135, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.5), KIT.helmet, 0, 0.1, -0.005, 0, 0, 0, 'solid', 1, 0.92, 1.08)
+        .rbox(0.21, 0.022, 0.25, 0.01, 0, 0.102, -0.005, KIT.web) // rim band
         .geo(new THREE.CylinderGeometry(0.045, 0.045, 0.035, 14), P.dark, 0.115, 0.05, 0, 0, 0, Math.PI / 2) // ear pro
         .geo(new THREE.CylinderGeometry(0.045, 0.045, 0.035, 14), P.dark, -0.115, 0.05, 0, 0, 0, Math.PI / 2)
-        .rbox(0.05, 0.04, 0.04, 0.01, 0, 0.14, 0.12, P.metal) // NVG shroud
-        .rbox(0.1, 0.035, 0.05, 0.012, 0, 0.12, 0.155, P.dark, 0.5) // flipped-up NVG
-        .rbox(0.16, 0.035, 0.02, 0.01, 0, 0.075, 0.1, 0x10161a); // goggles
-      hb.geo(new THREE.BoxGeometry(0.13, 0.012, 0.012), 0x60d8ff, 0, 0.075, 0.113, 0, 0, 0, 'emit'); // goggle lens glint
+        .rbox(0.05, 0.04, 0.04, 0.01, 0, 0.17, 0.12, P.metal) // NVG shroud
+        .rbox(0.1, 0.035, 0.05, 0.012, 0, 0.15, 0.155, P.dark, 0.5) // flipped-up NVG
+        .rbox(0.07, 0.012, 0.012, 0.004, 0, 0.215, 0.07, KIT.web, -0.6); // cover's top strap
+      for (const sx of [-1, 1]) {
+        hb.rbox(0.012, 0.03, 0.12, 0.005, sx * 0.13, 0.115, -0.01, KIT.web); // side rails
+        spike(hb, KIT.web, V(sx * 0.096, 0.02, 0.012), V(-sx * 0.066, -0.065, 0.058), 0.1, 0.006, 0.006, 6); // chin strap
+      }
+      hb.rbox(0.05, 0.016, 0.03, 0.007, 0, -0.045, 0.072, KIT.web); // chin cup
+      hb.geo(new THREE.BoxGeometry(0.07, 0.012, 0.012), 0x60d8ff, 0, 0.142, 0.184, 0.5, 0, 0, 'emit'); // NVG lens glint
     }
-    this.head.add(meshes(hb, gearMat));
+    this.head.add(meshes(hb, M.gear));
     const st = new THREE.Mesh(new THREE.SphereGeometry(0.018, 8, 6), new THREE.MeshBasicMaterial({ color: teamColor, toneMapped: false }));
-    st.position.set(0, 0.2, -0.08);
+    st.position.set(0, 0.22, -0.08); // on the helmet's crown
     st.visible = outfit === 'operator';
     this.head.add(st);
     this.strobe = st;
@@ -571,25 +692,33 @@ export class OperatorRig {
       a.up.position.copy(a.sh);
       this.chest.add(a.up);
       const metal = cyb && side === 'R';
-      const ub = new Builder().limb(metal ? 0.052 : 0.058, L_UP, 0, 0.02, 0, metal ? 0x8a9096 : sleeve).rbox(0.12, 0.08, 0.12, 0.035, sgn * 0.01, 0.0, 0, metal ? 0x5d646b : sleeve2);
+      // limb segments run pivot to pivot with their rounded ends centred on the joints, so bent elbows and knees
+      // stay closed ball joints instead of opening a gap
+      const ur = metal ? 0.052 : 0.058;
+      const ub = new Builder();
+      camo(ub, op, () => ub.limb(ur, L_UP + 2 * ur, 0, ur, 0, metal ? 0x8a9096 : sleeve).rbox(0.12, 0.08, 0.12, 0.035, sgn * 0.01, 0.0, 0, metal ? 0x5d646b : sleeve2));
+      if (op) ub.rbox(0.07, 0.07, 0.012, 0.01, sgn * 0.058, -0.09, 0, KIT.flap, 0, sgn * Math.PI / 2); // velcro sleeve patch
       if (loy && side === 'L' && !dentist) ub.rbox(0.13, 0.05, 0.13, 0.02, 0, -0.1, 0, 0xb81414); // loyalist armband
       if (metal && elf) ub.rbox(0.115, 0.04, 0.115, 0.015, 0, -0.1, 0, XM.red).rbox(0.115, 0.04, 0.115, 0.015, 0, -0.22, 0, XM.red); // candy-cane stripes
-      a.up.add(meshes(ub, metal ? gunMat : clothMat));
+      a.up.add(meshes(ub, metal ? gunMat : M.cloth, side === 'L' ? 2 : 3));
       a.fore.position.y = -L_UP;
       a.up.add(a.fore);
-      const fb = new Builder().limb(0.05, L_FORE, 0, 0, 0, metal ? 0x8a9096 : zom ? skin : sleeve).limb(0.047, 0.1, 0, -L_FORE + 0.1, 0, cop ? sleeve2 : P.glove);
+      const fb = new Builder();
+      camo(fb, op, () => fb.limb(0.05, L_FORE + 0.05, 0, 0.05, 0, metal ? 0x8a9096 : zom ? skin : sleeve));
+      fb.limb(0.047, 0.1, 0, -L_FORE + 0.1, 0, cop ? sleeve2 : P.glove);
       if ((santa || elf || bunny) && !metal) fb.limb(0.06, 0.08, 0, -L_FORE + 0.12, 0, santa || bunny ? XM.fur : E.trim); // fur / trim cuff
       if (metal && elf) fb.rbox(0.105, 0.035, 0.105, 0.012, 0, -0.08, 0, XM.red);      if (zom && !metal) fb.rbox(0.12, 0.06, 0.12, 0.02, 0, -0.02, 0, sleeve, 0.2, 0, sgn * 0.2).rbox(0.04, 0.08, 0.012, 0.01, 0, -0.16, 0.048, BLOOD); // ragged sleeve end, gash
       if (cyb && side === 'R') fb.geo(new THREE.CylinderGeometry(0.014, 0.014, 0.05, 8), elf ? GLOW : dentist ? DGLOW : 0xff2020, 0, -0.12, 0.045, Math.PI / 2, 0, 0, 'emit');
       if (dentist && !metal) fb.limb(0.056, 0.05, 0, -L_FORE + 0.15, 0, D.coat2); // coat cuff above the glove
       if (cop && side === 'L') fb.rbox(0.05, 0.02, 0.06, 0.008, 0, -L_FORE + 0.08, 0.03, 0x111111); // watch
-      a.fore.add(meshes(fb, cyb && side === 'R' ? gunMat : clothMat));
+      a.fore.add(meshes(fb, cyb && side === 'R' ? gunMat : M.cloth, side === 'L' ? 4 : 5));
       a.hand.position.y = -L_FORE;
       a.fore.add(a.hand);
-      const hb2 = new Builder().rbox(0.065, 0.09, 0.05, 0.02, 0, -0.04, 0.005, hand);
+      // the player wears fingerless gloves (their skin tone shows)
+      const hb2 = op ? new Builder().rbox(0.066, 0.06, 0.05, 0.02, 0, -0.028, 0.005, hand).rbox(0.058, 0.045, 0.044, 0.018, 0, -0.07, 0.008, skin) : new Builder().rbox(0.065, 0.09, 0.05, 0.02, 0, -0.04, 0.005, hand);
       if (dentist && metal) { hb2.geo(new THREE.CylinderGeometry(0.012, 0.012, 0.03, 8), 0x3a3e44, 0.02, -0.095, 0.02); spike(hb2, EA.chrome, V(0.02, -0.11, 0.02), DOWN, 0.06, 0.007, 0.002, 6); } // drill-tipped finger
       if (zom) for (const fx of [-0.022, 0, 0.022]) hb2.limb(0.009, 0.07, fx, -0.08, 0.02, metal ? 0x8a9096 : 0x2a2618, 0.5); // claws
-      a.hand.add(meshes(hb2, clothMat));
+      a.hand.add(meshes(hb2, M.cloth));
     }
     // legs
     for (const side of ['L', 'R'] as const) {
@@ -598,22 +727,26 @@ export class OperatorRig {
       this.hips.add(l.thigh);
       // elves: striped stockings (white with coloured rings)
       const stripes = (b: Builder, r: number, len: number) => { for (let y = -0.07; y > -len + 0.04; y -= 0.09) b.geo(new THREE.CylinderGeometry(r, r, 0.045, 10), E.stripe, 0, y, 0, 0, 0, 0, 'solid', 1, 1, 1.05); };
-      const tb = new Builder().limb(0.085, L_THIGH, 0, 0.02, 0, cop ? TROUSER : elf ? XM.fur : dentist ? D.scrub : P.uniform, 0, 0, 1, 1.05);
+      const tb = new Builder();
+      camo(tb, op, () => tb.limb(0.085, L_THIGH + 0.17, 0, 0.085, 0, cop ? TROUSER : elf ? XM.fur : dentist ? D.scrub : P.uniform, 0, 0, 1, 1.05));
       if (elf) stripes(tb, 0.088, L_THIGH);
       else if (dentist) { if (!scrubs) tb.rbox(0.2, 0.16, 0.2, 0.05, -sgn * 0.02, -0.06, -0.01, D.coat); } // coat tails over the thighs
       else if (zom) { if (side === 'R') tb.rbox(0.1, 0.14, 0.02, 0.02, 0, -0.2, 0.078, BLOOD); }
+      else if (op) tb.rbox(0.07, 0.12, 0.05, 0.015, sgn * 0.075, -0.18, 0.01, KIT.pouch).rbox(0.075, 0.035, 0.055, 0.01, sgn * 0.075, -0.125, 0.01, KIT.flap).rbox(0.19, 0.022, 0.19, 0.008, 0, -0.2, 0, KIT.web).rbox(0.022, 0.03, 0.012, 0.004, sgn * 0.02, -0.2, 0.095, KIT.metal); // thigh pouch, flap, leg strap, buckle
       else if (!cop) tb.rbox(0.07, 0.12, 0.05, 0.015, sgn * 0.075, -0.18, 0.01, P.pouch);
-      l.thigh.add(meshes(tb, clothMat));
+      l.thigh.add(meshes(tb, M.cloth, side === 'L' ? 6 : 7));
       l.shin.position.y = -L_THIGH;
       l.thigh.add(l.shin);
-      const sb = new Builder().limb(0.068, L_SHIN, 0, 0, 0, cop ? TROUSER : elf ? XM.fur : dentist ? D.scrub : P.uniform);
+      const sb = new Builder();
+      camo(sb, op, () => sb.limb(0.068, L_SHIN + 0.068, 0, 0.068, 0, cop ? TROUSER : elf ? XM.fur : dentist ? D.scrub : P.uniform));
       if (bunny) sb.geo(new THREE.SphereGeometry(0.09, 10, 8), EA.white, 0, -L_SHIN + 0.1, 0, 0, 0, 0, 'solid', 1, 0.7, 1); // fluffy ankle cuff
       else if (santa) sb.rbox(0.15, 0.17, 0.16, 0.045, 0, -L_SHIN + 0.07, 0, 0x0e0e10).rbox(0.165, 0.045, 0.175, 0.02, 0, -L_SHIN + 0.16, 0, XM.fur); // tall black boot, fur top
       else if (elf) stripes(sb, 0.071, L_SHIN);
       else if (dentist) { /* plain scrub trousers */ }
       else if (zom) { if (side === 'L') sb.rbox(0.1, 0.18, 0.03, 0.02, 0, -0.26, 0.055, skin); } // trouser leg torn away
+      else if (op) sb.rbox(0.11, 0.11, 0.06, 0.03, 0, -0.03, 0.06, P.knee).rbox(0.15, 0.018, 0.15, 0.007, 0, -0.06, 0, KIT.web); // knee pad + strap
       else if (!cop) sb.rbox(0.11, 0.11, 0.06, 0.03, 0, -0.03, 0.06, P.knee);
-      l.shin.add(meshes(sb, clothMat));
+      l.shin.add(meshes(sb, M.cloth, side === 'L' ? 8 : 9));
       l.foot.position.y = -L_SHIN;
       l.shin.add(l.foot);
       const ftb = new Builder();
@@ -628,7 +761,7 @@ export class OperatorRig {
         ftb.geo(new THREE.SphereGeometry(0.08, 12, 8), EA.white, 0, -0.04, 0.06, 0, 0, 0, 'solid', 0.85, 0.6, 1.5);
         for (const tx of [-0.03, 0, 0.03]) ftb.geo(new THREE.SphereGeometry(0.016, 6, 5), EA.pink, tx, -0.03, 0.172);
       } else ftb.rbox(0.11, 0.09, 0.26, 0.035, 0, -0.035, 0.05, cop ? 0x0e0e10 : P.boot).rbox(0.115, 0.022, 0.27, 0.01, 0, -0.078, 0.05, P.black);
-      l.foot.add(meshes(ftb, gearMat));
+      l.foot.add(meshes(ftb, M.gear));
     }
     this.chest.add(this.gunHolder);
     const kb = new Builder().rbox(0.025, 0.03, 0.1, 0.008, 0, 0, 0, P.black).geo(new THREE.BoxGeometry(0.006, 0.03, 0.16), 0xb8c0c8, 0, 0.005, 0.12);
@@ -789,7 +922,14 @@ export class OperatorRig {
     this.gunHolder.updateMatrix();
     // ---- hands
     const poleR = V(0.55, -0.35, -0.25), poleL = V(-0.55, -0.4, 0.05);
-    if (this.gun) {
+    if (r.pose === 'apose') {
+      this.knife.visible = false;
+      // character preview: arms hang straight, angled ~40 degrees out from the body
+      for (const [sd, sx] of [['L', -1], ['R', 1]] as const) {
+        this.arm[sd].up.quaternion.setFromUnitVectors(DOWN, V(sx * Math.sin(0.7), -Math.cos(0.7), 0.04).normalize());
+        this.arm[sd].fore.quaternion.setFromEuler(new THREE.Euler(-0.12, 0, 0));
+      }
+    } else if (this.gun) {
       const gripT = this.gun.grip.clone().applyMatrix4(this.gunHolder.matrix);
       let foreT = this.gun.fore.clone().applyMatrix4(this.gunHolder.matrix);
       if (reloadHand) foreT = reloadHand.clone().applyMatrix4(this.gunHolder.matrix);

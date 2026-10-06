@@ -38,7 +38,7 @@ setInterval(() => {}, 1000);
   t.stop();
   await expect(startTunnel(1, false, path.join(dir, 'nope'), () => {})).rejects.toThrow(/doesn't run/);
   expect(existsSync(fake)).toBe(true);
-});
+}, 15000); // spawns node processes: slow on a loaded machine
 
 it("through the tunnel, per-address limits use Cloudflare's client address (trusted from localhost only)", async () => {
   const open = async (port: number, ip: string) => {

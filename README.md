@@ -59,6 +59,8 @@ You get one life. Each run is a new tower. You can go in alone or with up to fou
   vending machines instead of smashing them open.
 - 🛒 **Armory.** Spend your budget on 22 guns, armour, five grenade types and gear. After that, you only have what
   you find on the way up.
+- 🎨 **Your operator, your look.** Pick a skin tone, a uniform colour and a camo pattern (woodland, desert digital,
+  urban, tiger stripe) in the armory, with a live 3D preview. Your squad sees it too.
 - 👥 **Co-op for up to 5.** Cross-play between the desktop app and the browser, proximity voice chat, and revives
   with a Health Kit. Friendly fire is optional.
 - ✨ **Lighting and reflections.** Every lamp casts its own coloured light, mirrors show you and the enemy, and an

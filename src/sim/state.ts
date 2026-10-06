@@ -1,3 +1,4 @@
+import type { PlayerLook } from '../config/look';
 import type { AmmoType } from '../config/weapons';
 import type { GrenadeType, ItemType } from '../config/items';
 import type { FloorLayout, SpawnSpec, DoorMode } from '../gen/floor';
@@ -95,6 +96,8 @@ export interface PlayerState {
   checkedIn?: boolean;
   /** the loadout bought at the armory (re-editable while still on the street) */
   loadout?: Loadout;
+  /** cosmetic appearance (config/look.ts); unset = the default look */
+  look?: PlayerLook;
 }
 
 export type AiState = 'idle' | 'patrol' | 'guard' | 'sleep' | 'wander' | 'suspicious' | 'investigate' | 'alert' | 'search' | 'dead';

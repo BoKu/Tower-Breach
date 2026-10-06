@@ -14,14 +14,15 @@ import { Rng, hash } from '../core/rng';
 type Pt = { x: number; y: number };
 const DX = [1, 0, -1, 0], DY = [0, 1, 0, -1];
 const OFF = 0.42; // line 0.08 m off the wall plane
-const MAX_RIGS = 6, SHOW_R = 12, THINK_R = 15;
+const MAX_RIGS = 10, SHOW_R = 16, THINK_R = 18;
 // how much each room type attracts roaches (missing = none)
 const DIRT: Partial<Record<RoomType, number>> = {
   kitchen: 4, bathroom: 3.5, storage: 3, maintenance: 3, utility: 2.5, corridor: 2, server: 0.6, open: 0.8, office: 0.8, security: 0.8, boardroom: 0.4, executive: 0.3,
 };
 
 // ------------------------------------------------------------------ rig
-const shellMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.26, metalness: 0.2 });
+// glossy chestnut shell: catches the torch and lamp light so a roach reads against dark floors
+const shellMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.18, metalness: 0.25, emissive: 0x1a0a02 });
 let GEO: { body: THREE.BufferGeometry; legsA: THREE.BufferGeometry; legsB: THREE.BufferGeometry; ant: THREE.BufferGeometry } | null = null;
 
 /** Thin 3-sided cylinder from a to b (model space). */
@@ -36,8 +37,8 @@ function geometry() {
   if (GEO) return GEO;
   const ell = () => new THREE.SphereGeometry(1, 10, 6);
   const body = new Builder()
-    .geo(ell(), 0x4a2410, 0, 0.009, -0.01, 0, 0, 0, 'solid', 0.017, 0.008, 0.03) // wing covers over the abdomen
-    .geo(ell(), 0x6a4222, 0, 0.011, 0.019, 0, 0, 0, 'solid', 0.015, 0.006, 0.011) // pronotum shield
+    .geo(ell(), 0x7a3c18, 0, 0.009, -0.01, 0, 0, 0, 'solid', 0.017, 0.008, 0.03) // wing covers over the abdomen
+    .geo(ell(), 0x9a6232, 0, 0.011, 0.019, 0, 0, 0, 'solid', 0.015, 0.006, 0.011) // pronotum shield
     .geo(ell(), 0x2a160a, 0, 0.012, 0.022, 0, 0, 0, 'solid', 0.008, 0.004, 0.007) // its dark centre mark
     .geo(ell(), 0x24140a, 0, 0.007, 0.032, 0, 0, 0, 'solid', 0.007, 0.006, 0.007) // head
     .box(0.0012, 0.001, 0.05, 0, 0.0168, -0.012, 0x1e0e06); // wing seam
@@ -73,7 +74,7 @@ class RoachRig {
 
   constructor() {
     const g = geometry();
-    this.root.scale.setScalar(2.4); // a big ~12 cm roach: readable from the isometric camera
+    this.root.scale.setScalar(2.9); // a big ~15 cm roach: readable from the isometric camera
     this.root.add(new THREE.Mesh(g.body, shellMat));
     this.legsA = new THREE.Mesh(g.legsA, shellMat);
     this.legsB = new THREE.Mesh(g.legsB, shellMat);
@@ -132,7 +133,7 @@ export class Roaches {
     }
     // deterministic infestation: higher, darker floors more likely and with more rooms; dirty rooms preferred
     const rng = new Rng(hash(L.seed, L.floor, 0xc0c4));
-    if (L.floor < 1 || L.theme === 'sandbox' || !rng.chance(Math.min(0.75, 0.2 + L.floor * 0.015 + L.darkness * 0.4))) return;
+    if (L.floor < 1 || L.theme === 'sandbox' || !rng.chance(Math.min(0.9, 0.55 + L.floor * 0.01 + L.darkness * 0.4))) return;
     const cands = L.rooms.map((room) => {
       const spawns: number[][] = [];
       for (let y = room.y; y < room.y + room.h; y++) for (let x = room.x; x < room.x + room.w; x++) {
@@ -141,11 +142,11 @@ export class Roaches {
       }
       return { wt: DIRT[room.type] ?? 0, spawns };
     }).filter((c) => c.wt > 0 && c.spawns.length >= 4);
-    let rooms = Math.min(cands.length, 1 + rng.int(0, 1 + Math.floor(L.floor / 8)), 5);
+    let rooms = Math.min(cands.length, 2 + rng.int(0, 1 + Math.floor(L.floor / 8)), 6);
     while (rooms-- > 0) {
       const c = cands.splice(rng.weighted(cands.map((c, i) => [i, c.wt] as const)), 1)[0];
-      for (let n = rng.int(1, 3); n > 0; n--) {
-        this.roaches.push({ spawns: c.spawns, tx: 0, ty: 0, d: 0, w: 0, x: 0, y: 0, face: 0, pts: [], state: 'hidden', timer: rng.range(1, 10), budget: 0, speed: 0, panic: false, rig: null, visT: 0, vis: false, seed: rng.next() });
+      for (let n = rng.int(2, 4); n > 0; n--) {
+        this.roaches.push({ spawns: c.spawns, tx: 0, ty: 0, d: 0, w: 0, x: 0, y: 0, face: 0, pts: [], state: 'hidden', timer: rng.range(0.5, 5), budget: 0, speed: 0, panic: false, rig: null, visT: 0, vis: false, seed: rng.next() });
       }
     }
   }
@@ -219,7 +220,7 @@ export class Roaches {
       if (r.timer > 0) return;
       const [tx, ty, w] = rng.pick(r.spawns);
       const p = { x: tx + 0.5, y: ty + 0.5 };
-      if (people.some((q) => Math.hypot(q.x - p.x, q.y - p.y) < 3.5)) { r.timer = 2; return; }
+      if (people.some((q) => Math.hypot(q.x - p.x, q.y - p.y) < 2.8)) { r.timer = 1.5; return; }
       // dart out of a gap along the wall
       r.tx = tx; r.ty = ty; r.w = w; r.d = (w + (rng.chance(0.5) ? 1 : 3)) % 4;
       Object.assign(r, this.at(r, rng.range(-0.35, 0.35)));
@@ -243,7 +244,7 @@ export class Roaches {
       // vanish (more likely by a doorway or furniture), or set off again
       let gap = false;
       for (let k = 0; k < 4; k++) { const nx = r.tx + DX[k], ny = r.ty + DY[k]; if (nx >= 0 && ny >= 0 && nx < FW && ny < FH && (this.L.tiles[idx(nx, ny)] === T_DOOR || this.L.solid[idx(nx, ny)])) gap = true; }
-      if (rng.chance(gap ? 0.6 : 0.3)) this.hide(r, rng.range(6, 20));
+      if (rng.chance(gap ? 0.6 : 0.3)) this.hide(r, rng.range(3, 10));
       else this.run(r, rng.range(0.8, 4), rng.range(0.9, 1.4));
       return;
     }
@@ -262,7 +263,7 @@ export class Roaches {
       if (Math.hypot(q.x - r.x, q.y - r.y) < 1e-3) r.pts.shift();
     }
     if (r.budget <= 0) {
-      if (r.panic) this.hide(r, rng.range(10, 25));
+      if (r.panic) this.hide(r, rng.range(6, 15));
       else { r.state = 'still'; r.timer = rng.range(0.6, 2.5); }
     } else if (!r.panic && rng.chance(dt * 0.7)) { r.state = 'still'; r.timer = rng.range(0.15, 0.6); } // stop-start darting
   }

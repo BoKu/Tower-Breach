@@ -7,6 +7,9 @@ import { GRENADE_CAP } from '../sim/inventory';
 import { armoryArt } from '../render/armoryArt';
 import { createPlayer } from '../sim/player';
 import { emptyLoadout, loadoutCost, validLoadout } from '../sim/loadout';
+import { CAMOS, CAMO_NAME, DEFAULT_LOOK, LOOK_RANGE, SKIN_TONES, UNIFORM_PRESETS, randomLook, sanitizeLook, type PlayerLook } from '../config/look';
+import { loadLook, saveLook } from '../save/settings';
+import { LookPreview } from '../render/lookPreview';
 
 export { emptyLoadout, loadoutCost, validLoadout }; // re-exported for older imports
 
@@ -23,6 +26,10 @@ export class Shop {
   root: HTMLElement;
   lo: Loadout;
   private cat: Cat = 'rifle';
+  /** top tabs: the kit (armory) or the operator's appearance (cosmetic, saved on this device) */
+  private tab: 'kit' | 'look' = 'kit';
+  look: PlayerLook = loadLook();
+  private preview: LookPreview | null = null;
   private budget: number;
   onDeploy: (lo: Loadout) => void = () => {};
   onBack: () => void = () => {};
@@ -86,8 +93,48 @@ export class Shop {
     this.render();
   }
 
+  private setLook(l: PlayerLook, redraw = true) {
+    this.look = sanitizeLook(l);
+    saveLook(this.look);
+    this.preview?.setLook(this.look);
+    if (redraw) this.render();
+  }
+
+  /** Appearance tab: skin, uniform colour (presets + HSL), camo pattern + contrast, live 3D preview. */
+  private lookPanel(): HTMLElement[] {
+    const L = this.look, hex = (n: number) => '#' + n.toString(16).padStart(6, '0');
+    const hsl = (h: number, s: number, l: number) => `hsl(${h} ${Math.round(s * 100)}% ${Math.round(l * 100)}%)`;
+    const pick = (on: boolean, fill: string, title: string, f: () => void) => h('button', { class: `sw ${on ? 'on' : ''}`, style: `--fill:${fill}`, title, onclick: () => { this.sound('click'); f(); } });
+    // sliders: drag with the mouse, or step with the -/+ buttons (gamepad: they are .seg buttons in the menu navigation)
+    const slider = (label: string, k: 'h' | 's' | 'l' | 'contrast', step: number, fmt: (v: number) => string) => {
+      const [lo, hi] = LOOK_RANGE[k], val = h('span', { class: 'v' }, fmt(L[k]));
+      const range = h('input', { type: 'range', min: lo, max: hi, step: step / 10, value: L[k], oninput: () => { val.textContent = fmt(+range.value); this.setLook({ ...this.look, [k]: +range.value }, false); } });
+      const nudge = (d: number) => h('button', { onclick: () => { this.sound('click'); this.setLook({ ...this.look, [k]: Math.max(lo, Math.min(hi, this.look[k] + d * step)) }); } }, d < 0 ? '−' : '+');
+      return h('div', { class: 'srow lk-row' }, h('span', {}, label), h('div', { class: 'lk-sl' }, h('div', { class: 'seg' }, nudge(-1)), range, h('div', { class: 'seg' }, nudge(1))), val);
+    };
+    const pct = (v: number) => `${Math.round(v * 100)}%`;
+    this.preview ??= new LookPreview(L);
+    return [
+      h('div', { class: 'panel lk-ctl' },
+        h('div', { class: 'hint' }, 'Skin tone'),
+        h('div', { class: 'seg lk-sw' }, ...SKIN_TONES.map((c, i) => pick(L.skin === i, hex(c), `Skin ${i + 1}`, () => this.setLook({ ...this.look, skin: i })))),
+        h('div', { class: 'hint' }, 'Uniform colour'),
+        h('div', { class: 'seg lk-sw' }, ...UNIFORM_PRESETS.map(([hh, ss, ll]) => pick(L.h === hh && L.s === ss && L.l === ll, hsl(hh, ss, ll), 'Preset', () => this.setLook({ ...this.look, h: hh, s: ss, l: ll })))),
+        slider('Hue', 'h', 10, (v) => `${Math.round(v)}°`), slider('Saturation', 's', 0.05, pct), slider('Brightness', 'l', 0.03, pct),
+        h('div', { class: 'hint' }, 'Camo pattern'),
+        h('div', { class: 'seg lk-camo' }, ...CAMOS.map((c) => h('button', { class: c === L.camo ? 'on' : '', onclick: () => { this.sound('click'); this.setLook({ ...this.look, camo: c }); } }, CAMO_NAME[c]))),
+        slider('Camo contrast', 'contrast', 0.1, pct),
+        h('div', { class: 'row lk-btns' },
+          h('button', { class: 'btn small', onclick: () => { this.sound('click'); this.setLook(randomLook()); } }, 'Randomise'),
+          h('button', { class: 'btn small', onclick: () => { this.sound('back'); this.setLook({ ...DEFAULT_LOOK }); } }, 'Reset')),
+        h('div', { class: 'hint' }, 'Cosmetic only: your look never changes how easily you are seen. Your squad sees it too.')),
+      h('div', { class: 'panel lk-view' }, this.preview.canvas, h('div', { class: 'lk-cap' }, 'OPERATOR PROFILE · 隊員')),
+    ];
+  }
+
   render() {
     clear(this.root);
+    if (this.tab !== 'look' && this.preview) { this.preview.dispose(); this.preview = null; }
     const itemsEl = h('div', { class: 'items' });
     const wcat = (w: WeaponDef) => (w.category === 'heavy_pistol' ? 'pistol' : w.category);
     if (['pistol', 'smg', 'shotgun', 'rifle', 'sniper', 'machine_gun'].includes(this.cat)) {
@@ -132,11 +179,14 @@ export class Shop {
     for (const [i, n] of Object.entries(this.lo.items)) if (n) slots.push(h('div', { class: 'slot' }, h('span', {}, `${GEAR_BY_ID[i].name} ×${n}`), h('span', { class: 'x', onclick: () => this.dec('i', i) }, '−')));
     for (const [m, on] of Object.entries(this.lo.mods)) if (on) slots.push(h('div', { class: 'slot' }, h('span', {}, GEAR_BY_ID[m].name), h('span', { class: 'x', onclick: () => this.buyGear(m) }, '✕')));
     const warn = !this.lo.items.medkit ? h('div', { class: 'hint', style: { color: '#ff8080' } }, 'No health kits — injuries will slow you by 25% and you cannot revive teammates.') : null;
+    const tabs = h('div', { class: 'tabs seg shop-tabs' }, ...([['kit', 'Armory'], ['look', 'Appearance']] as const).map(([t, n]) => h('button', { class: t === this.tab ? 'on' : '', onclick: () => { if (this.tab === t) return; this.tab = t; this.sound('click'); this.render(); } }, n)));
     this.root.append(
       h('div', { class: 'h2' }, this.title),
-      h('div', { class: 'shop' },
-        h('div', { class: 'cats panel' }, ...CATS.map(([c, n]) => h('div', { class: `cat ${c === this.cat ? 'on' : ''}`, onclick: () => { this.cat = c; this.sound('click'); this.render(); } }, h('span', {}, n), h('span', { class: 'k' }, CATS_JP[c])))),
-        h('div', { class: 'panel', style: { display: 'flex', flexDirection: 'column', minHeight: 0 } }, itemsEl),
+      tabs,
+      h('div', { class: `shop ${this.tab === 'look' ? 'look' : ''}` },
+        ...(this.tab === 'look' ? this.lookPanel() : [
+          h('div', { class: 'cats panel' }, ...CATS.map(([c, n]) => h('div', { class: `cat ${c === this.cat ? 'on' : ''}`, onclick: () => { this.cat = c; this.sound('click'); this.render(); } }, h('span', {}, n), h('span', { class: 'k' }, CATS_JP[c])))),
+          h('div', { class: 'panel', style: { display: 'flex', flexDirection: 'column', minHeight: 0 } }, itemsEl)]),
         h('div', { class: 'panel loadout' },
           h('div', { class: 'hint' }, 'Funds · 資金'), h('div', { class: 'cash' }, `$${this.cash}`),
           // the list scrolls so the confirm/back buttons always stay visible, however much gear is bought

@@ -1,5 +1,6 @@
 import { load, save } from './storage';
 import type { Quality } from '../render/renderer';
+import { sanitizeLook, type PlayerLook } from '../config/look';
 
 export type Action =
   | 'moveUp' | 'moveDown' | 'moveLeft' | 'moveRight' | 'sprint' | 'crouch' | 'jump' | 'reload' | 'melee' | 'interact'
@@ -69,6 +70,10 @@ export function keyLabel(code: string): string {
   const map: Record<string, string> = { Equal: '=', Minus: '-', ShiftLeft: 'L-Shift', ShiftRight: 'R-Shift', ControlLeft: 'L-Ctrl', ControlRight: 'R-Ctrl', Space: 'Space', Escape: 'Esc', Tab: 'Tab', AltLeft: 'L-Alt', Mouse0: 'LMB', Mouse1: 'MMB', Mouse2: 'RMB', Mouse3: 'Mouse4', Mouse4: 'Mouse5', CapsLock: 'Caps' };
   return map[code] ?? code;
 }
+
+/** The operator's appearance (armory Appearance tab), kept on this device. */
+export const loadLook = (): PlayerLook => sanitizeLook(load('look', null));
+export function saveLook(l: PlayerLook) { save('look', l); }
 
 // ------------------------------------------------------------------ score records (Hall of Records)
 /** One finished run. date: ISO 8601 (e.g. 2026-10-01T09:30:00.000Z); time: run length in seconds. */

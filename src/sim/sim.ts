@@ -6,6 +6,7 @@ import { BuildingPlan, StairCondition } from '../gen/building';
 import { perfTime } from '../core/perf';
 import { generateFloor, pointsNear, isWalkableTile, setFlightBlocked, setDoorSolid } from '../gen/floor';
 import { CONTAINER_LABEL } from '../gen/loot';
+import { sanitizeLook } from '../config/look';
 import { AI } from './ai';
 import { explode, updateGrenades, updateZones, breakVending as breakV, canSee, damagePlayer } from './combat';
 import { lightLevel, lightOut, makePanels } from './lights';
@@ -514,7 +515,7 @@ export class Sim {
       player: {
         name: p.name, hp: p.hp, armor: p.armor, helmet: p.helmet, injured: p.injured, vest: (p as any).vest,
         weapons: JSON.parse(JSON.stringify(p.weapons)), sel: p.sel, ammo: { ...p.ammo }, grenades: { ...p.grenades }, items: { ...p.items },
-        mods: { ...p.mods }, battery: p.battery, kills: p.kills, checkedIn: p.checkedIn, loadout: p.loadout, coins: p.coins, keys: [...p.keys],
+        mods: { ...p.mods }, battery: p.battery, kills: p.kills, checkedIn: p.checkedIn, loadout: p.loadout, coins: p.coins, keys: [...p.keys], look: p.look,
       },
     };
   }
@@ -525,6 +526,7 @@ export class Sim {
     (p as any).vest = s.player.vest;
     p.checkedIn = (s.player as any).checkedIn ?? true; // saves from before check-in existed were already kitted
     p.loadout = (s.player as any).loadout;
+    if (s.player.look) p.look = sanitizeLook(s.player.look);
     p.coins = s.player.coins ?? 0; p.keys = s.player.keys ?? []; // older saves had neither
     for (const c of s.cleared) sim.clearedFlights.add(c);
     sim.stats = { ...s.stats };
