@@ -149,14 +149,25 @@ export interface GunModel { g: THREE.Group; grip: THREE.Vector3; fore: THREE.Vec
 /** Detailed weapon, +z forward, origin at the rear of the receiver (stock extends to -z). */
 const guns = new Map<string, GunModel>();
 /** A gun model; each kind is built once and copied after that (shared geometry; the anchor points are read-only). */
-export function buildGun(kind: GunKind, torch: boolean): GunModel {
-  const key = kind + torch;
+export function buildGun(kind: GunKind, torch: boolean, suppressed = false): GunModel {
+  const key = kind + torch + suppressed;
   let p = guns.get(key);
-  if (!p) guns.set(key, (p = makeGun(kind, torch)));
+  if (!p) guns.set(key, (p = makeGun(kind, torch, suppressed)));
   return { ...p, g: p.g.clone() };
 }
 
-function makeGun(kind: GunKind, torch: boolean): GunModel {
+function makeGun(kind: GunKind, torch: boolean, suppressed = false): GunModel {
+  const m = makeGunBase(kind, torch);
+  if (!suppressed) return m;
+  // suppressor mod: a can screwed onto the muzzle (the muzzle flash point moves to its end)
+  const len = kind === 'pistol' ? 0.13 : 0.17, mz = m.muzzle;
+  const b = new Builder();
+  b.geo(new THREE.CylinderGeometry(0.019, 0.019, len, 14), COL.black, mz.x, mz.y, mz.z + len / 2 - 0.01, Math.PI / 2);
+  const g = m.g.clone(); g.add(meshes(b, gunMat));
+  return { ...m, g, muzzle: V(mz.x, mz.y, mz.z + len) };
+}
+
+function makeGunBase(kind: GunKind, torch: boolean): GunModel {
   const b = new Builder();
   const C = COL;
   let fore = V(0, -0.04, 0.34), muzzle = V(0, 0.01, 0.62);
@@ -715,7 +726,13 @@ export class OperatorRig {
       a.hand.position.y = -L_FORE;
       a.fore.add(a.hand);
       // the player wears fingerless gloves (their skin tone shows)
-      const hb2 = op ? new Builder().rbox(0.066, 0.06, 0.05, 0.02, 0, -0.028, 0.005, hand).rbox(0.058, 0.045, 0.044, 0.018, 0, -0.07, 0.008, skin) : new Builder().rbox(0.065, 0.09, 0.05, 0.02, 0, -0.04, 0.005, hand);
+      // player: a fingerless-glove hand with four slightly curled fingers and a thumb (reads as a hand in the preview)
+      const hb2 = op ? new Builder().rbox(0.068, 0.062, 0.042, 0.018, 0, -0.03, 0.005, hand) : new Builder().rbox(0.065, 0.09, 0.05, 0.02, 0, -0.04, 0.005, hand);
+      if (op) {
+        // fingers and thumb start inside the glove so they stay attached
+        [-0.024, -0.008, 0.008, 0.024].forEach((fx, i) => hb2.limb(0.0085, i === 0 || i === 3 ? 0.066 : 0.074, fx, -0.042, 0.008, skin, -0.3)); // fingers
+        hb2.limb(0.009, 0.056, -sgn * 0.024, -0.02, 0.012, skin, -0.5, -sgn * 0.7); // thumb
+      }
       if (dentist && metal) { hb2.geo(new THREE.CylinderGeometry(0.012, 0.012, 0.03, 8), 0x3a3e44, 0.02, -0.095, 0.02); spike(hb2, EA.chrome, V(0.02, -0.11, 0.02), DOWN, 0.06, 0.007, 0.002, 6); } // drill-tipped finger
       if (zom) for (const fx of [-0.022, 0, 0.022]) hb2.limb(0.009, 0.07, fx, -0.08, 0.02, metal ? 0x8a9096 : 0x2a2618, 0.5); // claws
       a.hand.add(meshes(hb2, M.cloth));
@@ -772,11 +789,12 @@ export class OperatorRig {
     this.arm.R.hand.add(this.knife);
   }
 
-  setGun(kind: GunKind | null) {
-    if (kind === this.gunKind) return;
-    this.gunKind = kind;
+  private gunSup = false;
+  setGun(kind: GunKind | null, suppressed = false) {
+    if (kind === this.gunKind && suppressed === this.gunSup) return;
+    this.gunKind = kind; this.gunSup = suppressed;
     if (this.gun) this.gunHolder.remove(this.gun.g);
-    this.gun = kind ? buildGun(kind, true) : null;
+    this.gun = kind ? buildGun(kind, true, suppressed) : null;
     if (this.gun) this.gunHolder.add(this.gun.g);
     this.knife.visible = !kind && this.outfit === 'operator';
   }

@@ -6,7 +6,7 @@ import { GRENADE_CAP } from './inventory';
 
 /** Loadout rules shared by the armory UI, the browser host and the dedicated server (no DOM imports here). */
 export function emptyLoadout(): Loadout {
-  return { primary: null, secondary: 'p9', armor: 'none', grenades: {}, items: {}, mods: { bypass: false, torchmod: false, pouch: false } };
+  return { primary: null, secondary: 'p9', armor: 'none', grenades: {}, items: {}, mods: { bypass: false, torchmod: false, pouch: false, suppressor: false } };
 }
 
 export function loadoutCost(lo: Loadout): number {

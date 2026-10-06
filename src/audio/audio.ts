@@ -127,12 +127,12 @@ export class GameAudio {
   }
 
   // ------------------------------------------------------------------ weapons
-  private gunshot(wid: string, p: Pos, enemy: boolean, near: boolean) {
+  private gunshot(wid: string, p: Pos, enemy: boolean, near: boolean, sup = false) {
     const s = this.s!; const t = s.now;
     const w = weapon(wid);
     const o = s.out(s.sfx, { ...p, ref: 6 }, 0.35);
     const cat = w.category;
-    const quiet = w.noise < 10;
+    const quiet = sup || w.noise <= 10; // suppressed
     if (wid === 'drone_gun') { s.tone(o, t, 0.08, { type: 'square', freq: 1800, to: 300, peak: 0.25, filter: 4000 }); s.noise(o, t, 0.05, { freq: 3000, peak: 0.3 }); return; }
     if (wid === 'warden_mg') { s.noise(o, t, 0.12, { type: 'lowpass', freq: 900, peak: 1.1, buf: 'pink' }); s.tone(o, t, 0.1, { freq: 90, to: 40, peak: 0.8 }); s.noise(o, t, 0.03, { freq: 2500, peak: 0.5 }); return; }
     if (quiet) { s.noise(o, t, 0.06, { freq: 2200, q: 0.8, peak: 0.45 }); s.noise(o, t, 0.02, { type: 'highpass', freq: 5000, peak: 0.3 }); s.tone(o, t + 0.01, 0.04, { type: 'square', freq: 3000, to: 2400, peak: 0.04 }); return; }
@@ -250,7 +250,7 @@ export class GameAudio {
     for (const ev of events) {
       if ('f' in ev && ev.f !== floor) continue;
       switch (ev.e) {
-        case 'shot': if (shots++ < 6) this.gunshot(ev.w, { x: ev.x, y: ev.y }, ev.src === 'e', ev.id === localId); if ((ev.hit === 'metal' && currentHoliday() !== 'halloween') || ev.hit === 'wall' || ev.hit === 'floor') this.impact(ev.x2, ev.y2, ev.hit === 'metal'); break; // Halloween 'metal' is a bat or ogre
+        case 'shot': if (shots++ < 6) this.gunshot(ev.w, { x: ev.x, y: ev.y }, ev.src === 'e', ev.id === localId, ev.sup); if ((ev.hit === 'metal' && currentHoliday() !== 'halloween') || ev.hit === 'wall' || ev.hit === 'floor') this.impact(ev.x2, ev.y2, ev.hit === 'metal'); break; // Halloween 'metal' is a bat or ogre
         case 'explode': this.explosion(ev.kind, { x: ev.x, y: ev.y }); break;
         case 'bark': { const p = epos(ev.id); if (p) this.bark(ev.t, ev.k, p, monster(ev.id)); break; }
         case 'die':

@@ -39,7 +39,7 @@ function label(text: string, w = 1.5, sub = false): THREE.Mesh {
 /** periodic trigger: true once every `period` seconds */
 const every = (t: number, dt: number, period: number) => Math.floor(t / period) !== Math.floor((t - dt) / period);
 
-interface Pose { name: string; set: (r: RigInput, t: number, dt: number, rig: OperatorRig) => void }
+interface Pose { name: string; set: (r: RigInput, t: number, dt: number, rig: OperatorRig) => void; sup?: boolean }
 const move = (speed: number, rel = 0) => (r: RigInput) => { const a = r.facing + rel; r.vel = { vx: Math.cos(a) * speed, vy: Math.sin(a) * speed }; };
 const FULL_POSES: Pose[] = [
   { name: 'idle', set: () => {} },
@@ -142,6 +142,7 @@ export class Showcase {
         this.character('operator', 0x39d0ff, g, { name: g, set: (r) => { r.aiming = true; } }, wrap(DX), y);
         this.character('operator', 0x39d0ff, g, { name: g + ' ready', set: () => {} }, wrap(DX), y);
       }
+      for (const g of ['pistol', 'smg'] as const) this.character('operator', 0x39d0ff, g, { name: g + ' suppressed', sup: true, set: (r) => { r.aiming = true; } }, wrap(DX), y);
       this.character('operator', 0x39d0ff, 'rifle', { name: 'torch on', set: (r, _t, _dt, rig) => { rig.torchOn = true; r.aiming = true; } }, wrap(DX), y);
     }
     // ---- dogs
@@ -223,7 +224,7 @@ export class Showcase {
     row('Armory models', 2.1);
     const items: [string, THREE.Object3D][] = [
       ...(currentHoliday() ? [] : WEAPONS.filter((w) => w.price > 0)).map((w) => [w.id, weaponModel(w.id)] as [string, THREE.Object3D]),
-      ...['vest', 'vesthelm', 'plate', 'frag', 'flash', 'smoke', 'incendiary', 'decoy', 'medkit', 'battery', 'bypass', 'torchmod', 'pouch'].map((id) => [id, gearModel(id)] as [string, THREE.Object3D]),
+      ...['vest', 'vesthelm', 'plate', 'frag', 'flash', 'smoke', 'incendiary', 'decoy', 'medkit', 'battery', 'bypass', 'torchmod', 'pouch', 'suppressor'].map((id) => [id, gearModel(id)] as [string, THREE.Object3D]),
     ];
     for (const [id, m] of items) {
       const bx = wrap(1.3, 1.8), by = y;
@@ -275,7 +276,7 @@ export class Showcase {
 
   private character(outfit: Outfit, color: number, gun: GunKind | null, pose: Pose, x: number, y: number, zombie = false, look?: OfficerLook) {
     const rig = new OperatorRig(color, { outfit, zombie, look });
-    rig.setGun(gun);
+    rig.setGun(gun, pose.sup);
     this.add(rig.root);
     this.tag(pose.name, x, y + 0.75);
     this.exhibits.push((t, dt) => {
@@ -284,7 +285,7 @@ export class Showcase {
         life: 'alive', gun, aimPitch: 0, reload: -1, hurt: false, vel: { vx: 0, vy: 0 },
       };
       pose.set(r, t, dt, rig);
-      rig.setGun(r.gun);
+      rig.setGun(r.gun, pose.sup);
       rig.update(r);
     });
   }

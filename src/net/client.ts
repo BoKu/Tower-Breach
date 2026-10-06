@@ -113,7 +113,7 @@ export class ClientView implements ViewSource {
       const [id, type, elite, x, y, facing, hp, maxHp, state, shotT, flashT, hasCover, coverX, coverY, target, wpn] = a;
       let e = byId.get(id);
       if (!e) {
-        e = { id, type, elite: !!elite, x, y, facing, vx: 0, vy: 0, hp, maxHp, armor: 0, state, prevState: state, aware: 0, target, lastKnownX: x, lastKnownY: y, lastSeenT: 0, interestX: x, interestY: y, path: null, pathGoalX: 0, pathGoalY: 0, pathT: 0, route: [], routeI: 0, homeX: x, homeY: y, homeFacing: 0, squad: 0, weapon: wpn, mag: weapon(wpn).mag, fireCd: 0, reloadT: 0, burstLeft: 0, stateT: 0, thinkT: 0, coverX, coverY, hasCover: !!hasCover, flankSide: 1, flashT, stunT: 0, pushing: false, barkT: 0, deadT: 0, anim: 0, shotT, seenBy: 0, spawnWave: false } as Enemy;
+        e = { id, type, elite: !!elite, x, y, facing, vx: 0, vy: 0, hp, maxHp, armor: 0, state, prevState: state, aware: 0, target, lastKnownX: x, lastKnownY: y, lastSeenT: 0, interestX: x, interestY: y, path: null, pathGoalX: 0, pathGoalY: 0, pathT: 0, route: [], routeI: 0, homeX: x, homeY: y, homeFacing: 0, squad: 0, weapon: wpn, mag: weapon(wpn).mag, fireCd: 0, reloadT: 0, burstLeft: 0, stateT: 0, thinkT: 0, coverX, coverY, hasCover: !!hasCover, flankSide: 1, flashT, stunT: 0, pinT: 0, pushing: false, barkT: 0, deadT: 0, anim: 0, shotT, seenBy: 0, spawnWave: false } as Enemy;
       }
       Object.assign(e, { hp, maxHp, state, shotT, flashT, hasCover: !!hasCover, coverX, coverY, target });
       this.push('e' + id, s.t, x, y, facing);

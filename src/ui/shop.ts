@@ -1,5 +1,5 @@
 import { h, clear } from './dom';
-import { WEAPONS, WeaponDef, CATEGORY_LABEL, AMMO_NAMES } from '../config/weapons';
+import { WEAPONS, WeaponDef, CATEGORY_LABEL, CATEGORY_ROLE, AMMO_NAMES, isSuppressed } from '../config/weapons';
 import { GEAR, GEAR_BY_ID, GRENADE_MAX_TOTAL, GrenadeType, ItemType } from '../config/items';
 import { DIFF_BASE, Difficulty } from '../config/difficulty';
 import type { Loadout } from '../sim/state';
@@ -138,7 +138,9 @@ export class Shop {
     const itemsEl = h('div', { class: 'items' });
     const wcat = (w: WeaponDef) => (w.category === 'heavy_pistol' ? 'pistol' : w.category);
     if (['pistol', 'smg', 'shotgun', 'rifle', 'sniper', 'machine_gun'].includes(this.cat)) {
+      let head = '';
       for (const w of WEAPONS.filter((w) => w.droppable && wcat(w) === this.cat)) {
+        if (w.category !== head) itemsEl.append(h('div', { class: 'cat-role' }, h('b', {}, CATEGORY_LABEL[(head = w.category)]), CATEGORY_ROLE[w.category])); // role subtitle per category
         const owned = this.lo.primary === w.id || this.lo.secondary === w.id;
         const price = w.id === 'p9' ? 0 : w.price;
         const bar = (label: string, v: number) => [h('span', {}, label), h('div', { class: 'bar' }, h('i', { style: { width: `${Math.round(Math.max(0.04, Math.min(1, v)) * 100)}%` } }))];
@@ -157,7 +159,7 @@ export class Shop {
           h('div', { class: 'ds' }, g.desc), h('div', { class: 'hint' }, g.kind === 'grenade' ? `×${count} · ${gTot}/${GRENADE_MAX_TOTAL} grenades carried · right-click to remove` : `${count}/${g.max}${g.kind === 'item' ? ' · right-click to remove' : ''}`)));
       }
     }
-    const nameOf = (id: string) => WEAPONS.find((w) => w.id === id)!.name;
+    const nameOf = (id: string) => { const w = WEAPONS.find((w) => w.id === id)!; return w.name + (isSuppressed(w, this.lo.mods) ? ' (suppressed)' : ''); };
     // ammo you'll actually carry: the same kit builder the game uses (so the pouch bonus and caps are exact)
     const kit = createPlayer(0, 0, '', this.lo);
     const plain = this.lo.mods.pouch ? createPlayer(0, 0, '', { ...this.lo, mods: { ...this.lo.mods, pouch: false } }) : kit;

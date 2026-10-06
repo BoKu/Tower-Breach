@@ -9,6 +9,8 @@ import type { Sim } from './sim';
 import type { Enemy, FloorState, PlayerState } from './state';
 
 const THINK = 0.1;
+/** Pinned (machine-gun suppression): aim cone and time between shots multipliers. */
+export const PINNED_SPREAD = 2.5, PINNED_FIRE_DELAY = 1.6;
 
 export class AI {
   constructor(private sim: Sim) {}
@@ -140,6 +142,7 @@ export class AI {
       e.stateT += dt; e.thinkT -= dt; e.barkT -= dt; e.fireCd -= dt; e.shotT += dt;
       if (e.flashT > 0) e.flashT -= dt;
       if (e.stunT > 0) e.stunT -= dt;
+      if (e.pinT > 0) e.pinT -= dt;
       if (e.reloadT > 0) { e.reloadT -= dt; if (e.reloadT <= 0) e.mag = weapon(e.weapon).mag; }
       if (e.mag === 0 && e.reloadT <= 0 && e.shotT === 9) e.mag = weapon(e.weapon).mag;
       if (e.thinkT <= 0) {
@@ -273,7 +276,7 @@ export class AI {
             const a = angleTo(tp.x, tp.y, e.x, e.y) + e.flankSide * 0.7;
             goalX = tp.x + Math.cos(a) * 2.5; goalY = tp.y + Math.sin(a) * 2.5;
           } else { goalX = tx; goalY = ty; }
-          if (d < (e.type === 'warden' ? 1.9 : 1.35) && e.fireCd <= 0 && seen) this.bite(fs, e, tp); // ogres reach further
+          if (d < (e.type === 'warden' ? 1.9 : 1.35) && e.fireCd <= 0 && e.stunT <= 0 && seen) this.bite(fs, e, tp); // ogres reach further
           break;
         }
         const w = weapon(e.weapon);
@@ -291,7 +294,7 @@ export class AI {
               goalX = e.lastKnownX + Math.cos(a) * 4; goalY = e.lastKnownY + Math.sin(a) * 4;
             } else { goalX = e.lastKnownX; goalY = e.lastKnownY; }
             e.hasCover = false;
-          } else if (e.pushing && d > 3.5) {
+          } else if (e.pushing && d > 3.5 && e.pinT <= 0) {
             goalX = tp.x; goalY = tp.y; speed = st.run * 0.8;
           } else {
             if (!e.hasCover || e.stateT > 5 + (e.id % 4)) {
@@ -300,7 +303,7 @@ export class AI {
               if (sim.rng.chance(0.12 * sim.pressure(fs.floor).aggression)) e.pushing = true;
             }
             if (e.hasCover) { goalX = e.coverX; goalY = e.coverY; }
-            else if (d > wantRange) { goalX = tp.x; goalY = tp.y; }
+            else if (d > wantRange && e.pinT <= 0) { goalX = tp.x; goalY = tp.y; } // pinned: holds where it is
           }
         }
         // shooting
@@ -308,6 +311,7 @@ export class AI {
         break;
       }
     }
+    if (e.pinT > 0) speed *= e.type === 'warden' ? 0.5 : 0.75; // pinned by MG fire: keeps its head down (mechs slow right down)
     if (e.flashT > 0) { // blinded: stumble
       speed *= 0.3;
       faceTo = e.facing + Math.sin(sim.t * 5 + e.id) * dt * 3;
@@ -387,7 +391,7 @@ export class AI {
   private shoot(fs: FloorState, e: Enemy, tp: PlayerState, dt: number) {
     const sim = this.sim;
     const w = weapon(e.weapon);
-    if (e.reloadT > 0 || e.fireCd > 0) return;
+    if (e.reloadT > 0 || e.fireCd > 0 || e.stunT > 0) return; // staggered by a shotgun blast
     const aimAng = angleTo(e.x, e.y, tp.x, tp.y);
     if (Math.abs(wrapAngle(aimAng - e.facing)) > 0.3) return;
     if (e.mag <= 0) { e.reloadT = w.reload * 1.15; return; }
@@ -399,7 +403,7 @@ export class AI {
     const acc = clamp(st.accuracy * pr.accuracy * (e.elite ? 1.2 : 1), 0.1, 0.97);
     const moveErr = tp.moving ? (tp.sprinting ? 0.09 : 0.05) : 0;
     const d = dist(e.x, e.y, tp.x, tp.y);
-    const spread = (w.spread * 0.6 + (1 - acc) * 0.16 + moveErr + (tp.crouch ? 0.02 : 0)) * (e.state === 'alert' && sim.t - e.lastSeenT > 0.2 ? 1.5 : 1);
+    const spread = (w.spread * 0.6 + (1 - acc) * 0.16 + moveErr + (tp.crouch ? 0.02 : 0)) * (e.state === 'alert' && sim.t - e.lastSeenT > 0.2 ? 1.5 : 1) * (e.pinT > 0 ? PINNED_SPREAD : 1);
     for (let k = 0; k < w.pellets; k++) {
       const a = aimAng + (sim.rng.next() - 0.5) * 2 * spread;
       const ox = e.x + Math.cos(e.facing) * 0.4, oy = e.y + Math.sin(e.facing) * 0.4;
@@ -414,7 +418,7 @@ export class AI {
     e.shotT = 0;
     e.burstLeft--;
     sim.noise(fs, e.x, e.y, w.noise, null, true);
-    e.fireCd = e.burstLeft > 0 ? 1 / w.rps : 0.45 + sim.rng.next() * 0.9 / pr.aggression;
+    e.fireCd = (e.burstLeft > 0 ? 1 / w.rps : 0.45 + sim.rng.next() * 0.9 / pr.aggression) * (e.pinT > 0 ? PINNED_FIRE_DELAY : 1);
   }
 
   private bite(fs: FloorState, e: Enemy, tp: PlayerState) {

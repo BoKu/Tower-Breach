@@ -48,7 +48,7 @@ export interface Loadout {
   armor: 'none' | 'vest' | 'vesthelm';
   grenades: Partial<Record<GrenadeType, number>>;
   items: Partial<Record<ItemType, number>>;
-  mods: { bypass: boolean; torchmod: boolean; pouch: boolean };
+  mods: { bypass: boolean; torchmod: boolean; pouch: boolean; suppressor?: boolean };
 }
 
 export interface PlayerState {
@@ -75,7 +75,7 @@ export interface PlayerState {
   itemSel: ItemType;
   /** coins for the vending machines (cap 99), and the floors whose master key this player holds */
   coins: number; keys: number[];
-  mods: { bypass: boolean; torchmod: boolean; pouch: boolean };
+  mods: { bypass: boolean; torchmod: boolean; pouch: boolean; suppressor?: boolean };
   torchOn: boolean; battery: number;
   boostT: number;
   fireCd: number; reloadT: number; /** length of the current reload (auto-reload is shorter than the weapon's) */ reloadDur?: number; burstLeft: number; bloom: number; meleeCd: number; triggerHeld: boolean;
@@ -125,7 +125,9 @@ export interface Enemy {
   stateT: number; thinkT: number;
   coverX: number; coverY: number; hasCover: boolean;
   flankSide: number;
-  flashT: number; stunT: number;
+  flashT: number; stunT: number; // stunT: shotgun stagger (can't shoot)
+  /** machine-gun suppression: seconds left pinned (poor aim, slower, holds cover) */
+  pinT: number;
   pushing: boolean;
   barkT: number;
   deadT: number;
@@ -184,7 +186,7 @@ export interface FloorState {
 }
 
 export type SimEvent =
-  | { e: 'shot'; f: number; x: number; y: number; x2: number; y2: number; z?: number; z2?: number; w: string; src: 'p' | 'e'; id: number; hit: 'wall' | 'flesh' | 'metal' | 'none' | 'glass' | 'floor' }
+  | { e: 'shot'; f: number; x: number; y: number; x2: number; y2: number; z?: number; z2?: number; w: string; src: 'p' | 'e'; id: number; hit: 'wall' | 'flesh' | 'metal' | 'none' | 'glass' | 'floor'; sup?: boolean }
   | { e: 'explode'; f: number; x: number; y: number; r: number; kind: string }
   | { e: 'die'; f: number; id: number; t: string; x: number; y: number }
   | { e: 'hurt'; f: number; pid: number; dmg: number; armor: boolean }
@@ -220,6 +222,6 @@ export function makeEnemy(id: number, s: SpawnSpec, floor: number, statsFor: (s:
     path: null, pathGoalX: 0, pathGoalY: 0, pathT: 0, route: s.route, routeI: 0,
     homeX: s.x, homeY: s.y, homeFacing: 0, squad: s.squad, weapon: s.weapon, mag: 0,
     fireCd: 0, reloadT: 0, burstLeft: 0, stateT: 0, thinkT: (id % 10) * 0.05, coverX: 0, coverY: 0, hasCover: false,
-    flankSide: id % 2 ? 1 : -1, flashT: 0, stunT: 0, pushing: false, barkT: 0, deadT: 0, anim: 0, shotT: 9, seenBy: 0, spawnWave: false,
+    flankSide: id % 2 ? 1 : -1, flashT: 0, stunT: 0, pinT: 0, pushing: false, barkT: 0, deadT: 0, anim: 0, shotT: 9, seenBy: 0, spawnWave: false,
   };
 }

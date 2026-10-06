@@ -110,6 +110,9 @@ click ✕ or − next to an entry to remove it. Press **Confirm loadout** when y
   - **Bypass Kit** ($400): disarm traps 3× faster and safely.
   - **High-Lumen Torch Mod** ($600): a wider, longer torch beam and 50% more battery.
   - **Ammo Pouch** ($300): carry 50% more ammo.
+  - **Suppressor** ($350): fits 9mm pistols (including the AP-18 machine pistol) and SMGs. Pistol shots carry about
+    4 m and SMG shots about 6 m instead of 11–17 m, for 8% less damage. It does nothing for heavy pistols, shotguns,
+    rifles, snipers or machine guns.
 
 You always carry a combat knife, and you can't lose it. Once you are in the tower, you live on what you find.
 
@@ -252,10 +255,10 @@ moving, and how much noise you make.
 ## 6. Combat
 
 - **Weapons.** You carry a primary, a secondary and the knife. Press Q to swap weapons, or F1, F2 and F3 to pick one.
-  Guns differ in damage, fire rate, accuracy, armour penetration, mobility and noise. A suppressed rifle keeps you
+  Guns differ in damage, fire rate, accuracy, armour penetration, mobility and noise. A suppressed pistol or SMG keeps you
   quiet. A light machine gun slows you down.
 - **Aiming down sights** (right mouse button) tightens your spread, reduces recoil and pushes the camera further
-  ahead, with a laser sight. You move slower and can't sprint while you aim.
+  ahead, with a laser sight. You can't sprint while you aim, and you move slower unless you hold a pistol or an SMG.
 - **Reloading.** Press R to reload. When a magazine runs dry, the gun reloads itself quickly as long as you have
   reserve ammo.
 - **Picking up guns.** Dead enemies leave a body you can search. Tap E to take everything. If you have an empty
@@ -263,6 +266,18 @@ moving, and how much noise you make.
   Wardens have built-in guns you can't take.
 - **Knife** (V). It is quiet and does 55 damage. A **backstab** on an enemy that hasn't noticed you, from behind, kills
   anything except a Warden in one hit.
+- **Weapon roles.** Each class has a perk (the armory shows it under each heading):
+
+  | Class | Role | Perk |
+  |---|---|---|
+  | Pistols | silent sidearm · sneak shots | Double damage on an enemy that hasn't noticed anyone yet. Swap in and out twice as fast, no slowdown while aiming. Takes the Suppressor (about 4 m). |
+  | Heavy pistols | armour-piercing backup | Full armour penetration. Still loud. |
+  | SMGs | fast, mobile close quarters | Full speed while aiming and firing, tighter hip fire on the move, fastest primary reloads, quieter subsonic rounds (11 m). Takes the Suppressor (about 6 m). |
+  | Shotguns | stopping power · stagger | 3+ pellets on one enemy within 8 m stop it shooting for 0.6 s. One-shot dogs and cameras up close. They don't open doors. |
+  | Rifles | all-rounder | No perk. The SR-4S is quieter than most (10 m) but a suppressed pistol is quieter still. |
+  | Sniper / Marksman | long range · pierces · sneak shots | Full armour penetration. A round carries through into a second enemy behind the first (70% damage); walls still stop it. Double damage on unaware enemies. Any hit kills a camera. |
+  | Machine guns | suppression · pins enemies | Rounds passing within 1.5 m pin an enemy for up to 1.5 s: it aims far worse, fires slower, holds cover and moves slower (Warden mechs at half speed). |
+
 - **Grenades.** You can carry 3 in total, in any mix. Press B to choose the type, G to throw.
 
   | Grenade | Effect |

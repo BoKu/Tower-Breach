@@ -54,7 +54,7 @@ export function canSee(fs: FloorState, x0: number, y0: number, x1: number, y1: n
  * Hitscan trace. Player shots can hit enemies, cameras, vending machines, mines.
  * Enemy shots hit players. Low cover near a crouched / covering target may absorb the round.
  */
-export function trace(sim: Sim, fs: FloorState, ox: number, oy: number, ang: number, range: number, src: 'p' | 'e', srcId: number, vert?: VerticalRay): Hit {
+export function trace(sim: Sim, fs: FloorState, ox: number, oy: number, ang: number, range: number, src: 'p' | 'e', srcId: number, vert?: VerticalRay, skip?: Enemy): Hit {
   const dx = Math.cos(ang), dy = Math.sin(ang);
   const zAt = (t: number) => (vert ? vert.z0 + vert.dz * t : 1.1);
   // a descending 3D shot stops where it reaches the floor
@@ -95,7 +95,7 @@ export function trace(sim: Sim, fs: FloorState, ox: number, oy: number, ang: num
     best = { kind, t, x: ox + dx * t, y: oy + dy * t, z: zAt(t), ref };
   };
   if (src === 'p') {
-    for (const e of fs.enemies) if (e.state !== 'dead') consider('enemy', e.x, e.y, ENEMY_STATS[e.type].radius + 0.08, e, e.hasCover && Math.hypot(e.x - e.coverX, e.y - e.coverY) < 0.6, enemyExtent(e));
+    for (const e of fs.enemies) if (e.state !== 'dead' && e !== skip) consider('enemy', e.x, e.y, ENEMY_STATS[e.type].radius + 0.08, e, e.hasCover && Math.hypot(e.x - e.coverX, e.y - e.coverY) < 0.6, enemyExtent(e));
     for (const c of fs.cameras) if (c.alive) consider('camera', c.x, c.y, 0.28, c, false, [2.05, 2.75]);
     for (const v of fs.vendings) if (!v.broken) consider('vending', v.x, v.y, 0.5, v, false, [0, 1.95]);
     for (const m of fs.traps) if (m.armed && m.kind === 'mine') consider('mine', m.x, m.y, 0.22, m, false, [0, 0.25]);
@@ -108,6 +108,9 @@ export function trace(sim: Sim, fs: FloorState, ox: number, oy: number, ang: num
   }
   return best;
 }
+
+/** Not yet aware of any player (calm, suspicious or investigating a sound): sneak shots deal double damage. */
+export const unaware = (e: Enemy) => e.state !== 'alert' && e.state !== 'search' && e.aware < 1;
 
 /** Enemy damage mitigation. Returns true if killed. */
 export function damageEnemy(sim: Sim, fs: FloorState, e: Enemy, dmg: number, pen: number, attacker: PlayerState | null, kind: 'bullet' | 'melee' | 'blast' | 'fire'): boolean {

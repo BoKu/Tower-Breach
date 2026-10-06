@@ -153,7 +153,7 @@ describe('a new single-player game starts from scratch', () => {
     expect(p.armor).toBe(0);
     expect(Object.values(p.items).every((n) => n === 0)).toBe(true);
     expect(Object.values(p.grenades).every((n) => n === 0)).toBe(true);
-    expect(p.mods).toEqual({ bypass: false, torchmod: false, pouch: false });
+    expect(p.mods).toEqual({ bypass: false, torchmod: false, pouch: false, suppressor: false });
     expect(p.checkedIn).toBe(false);
   });
 });

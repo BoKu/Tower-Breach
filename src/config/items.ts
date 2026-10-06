@@ -27,6 +27,7 @@ export const GEAR: GearDef[] = [
   { id: 'bypass', name: 'Bypass Kit', kind: 'mod', price: 400, max: 1, desc: 'Defusal-style toolkit: disarm booby traps 3x faster and safely.' },
   { id: 'torchmod', name: 'High-Lumen Torch Mod', kind: 'mod', price: 600, max: 1, desc: 'Wider, longer beam and +50% battery capacity.' },
   { id: 'pouch', name: 'Ammo Pouch', kind: 'mod', price: 300, max: 1, desc: '+50% ammo carry capacity and an extra reserve load.' },
+  { id: 'suppressor', name: 'Suppressor', kind: 'mod', price: 350, max: 1, desc: 'Fits 9mm pistols and SMGs: shots carry about 4 m (pistol) or 6 m (SMG) instead of 11-17 m. -8% damage.' },
 ];
 export const GEAR_BY_ID: Record<string, GearDef> = Object.fromEntries(GEAR.map((g) => [g.id, g]));
 

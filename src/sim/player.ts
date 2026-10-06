@@ -1,13 +1,13 @@
-import { weapon, KNIFE, AMMO_CAP } from '../config/weapons';
+import { weapon, KNIFE, AMMO_CAP, isSuppressed, shotNoise, SUPPRESSOR_DAMAGE } from '../config/weapons';
 import { DRINK_DURATION, DRINK_SPEED, FOOD_HEAL, PLATE_REPAIR, INJURY_SPEED, TORCH_DRAIN_PER_SEC, ITEM_NAMES, GRENADE_NAMES, ItemType } from '../config/items';
-import { clamp, dist, wrapAngle, angleTo } from '../core/math';
+import { clamp, dist, wrapAngle, angleTo, segPointDist } from '../core/math';
 import { moveCircle, collides, BODY_R } from './nav';
 import { idx, S_LOW, FloorLayout } from '../gen/floor';
-import { trace, damageEnemy, damagePlayer, destroyCamera, breakVending, killPanel, shootLight } from './combat';
+import { trace, unaware, damageEnemy, damagePlayer, destroyCamera, breakVending, killPanel, shootLight } from './combat';
 import { currentWeapon, nextItem, nextGrenade, ammoCap } from './inventory';
 import { FUSE } from './combat';
 import type { Sim } from './sim';
-import type { PlayerState, Loadout, PlayerInput } from './state';
+import type { PlayerState, Loadout, PlayerInput, Enemy } from './state';
 import { emptyInput } from './state';
 import { updateInteraction } from './interact';
 import { stairAt, stairElevation } from './stairs';
@@ -87,8 +87,9 @@ export function torchCapacityMul(p: PlayerState) {
 export function playerSpeed(p: PlayerState): number {
   const w = currentWeapon(p);
   let s = p.crouch ? CROUCH_SPEED : p.sprinting ? SPRINT_SPEED : WALK_SPEED;
-  if (p.aiming && !p.sprinting) s *= 0.72;
-  if (w) s *= weapon(w.id).move;
+  const wd = w && weapon(w.id);
+  if (p.aiming && !p.sprinting && wd?.category !== 'pistol' && wd?.category !== 'smg') s *= 0.72; // pistols and SMGs aim on the move
+  if (wd) s *= wd.move;
   if (p.injured) s *= INJURY_SPEED;
   if (p.boostT > 0) s *= DRINK_SPEED;
   if (p.burnT > 0) s *= 0.9;
@@ -270,13 +271,17 @@ function syncLast(p: PlayerState) {
   b.interact = a.interact;
 }
 
+/** Weapon draw time; pistols come out (and go away) twice as fast. */
+export const SWAP_TIME = 0.35;
 function selectSlot(p: PlayerState, s: PlayerState['sel']) {
   if (s === p.sel) return;
+  const pistol = (k: PlayerState['sel']) => k !== 'knife' && !!p.weapons[k] && weapon(p.weapons[k]!.id).category === 'pistol';
+  const swap = pistol(p.sel) || pistol(s) ? SWAP_TIME / 2 : SWAP_TIME;
   p.lastSel = p.sel;
   p.sel = s;
   p.reloadT = 0;
   p.burstLeft = 0;
-  p.fireCd = Math.max(p.fireCd, 0.35);
+  p.fireCd = Math.max(p.fireCd, swap);
 }
 
 /** An emptied mag reloads itself this fast; a manual [R] reload keeps the weapon's own reload time. */
@@ -291,12 +296,21 @@ function startReload(sim: Sim, p: PlayerState, dur?: number) {
   sim.emit({ e: 'reload', f: p.floor, pid: p.id, w: w.id });
 }
 
+/** Shotguns: pellets on one enemy within this range stagger it (and one-shot dogs). */
+export const STAGGER = { range: 8, pellets: 3, time: 0.6 };
+/** Snipers: a round carries through into one more enemy at this fraction of its damage. */
+export const PIERCE_DAMAGE = 0.7;
+/** Machine guns: rounds passing this close to an enemy add pin time (capped). */
+export const PIN = { radius: 1.5, add: 0.5, max: 1.5 };
+
 function fireShot(sim: Sim, p: PlayerState) {
   const fs = sim.floorState(p.floor);
   const wi = currentWeapon(p)!;
-  const w = weapon(wi.id);
+  const w = weapon(wi.id), cat = w.category;
+  const sup = isSuppressed(w, p.mods);
+  const dmg = w.damage * (sup ? SUPPRESSOR_DAMAGE : 1);
   p.sprinting = false;
-  const move = p.z > 0.05 ? 0.12 : p.moving ? (p.crouch ? 0.01 : 0.03) : 0;
+  const move = (p.z > 0.05 ? 0.12 : p.moving ? (p.crouch ? 0.01 : 0.03) : 0) * (cat === 'smg' ? 0.7 : 1); // SMGs: tighter on the move
   const spread = (p.aiming ? w.aimSpread : w.spread) + p.bloom + move;
   // hit-test from just in front of the body (not the muzzle 0.45 m out) so targets at your feet still count
   const ox = p.x + Math.cos(p.facing) * 0.12, oy = p.y + Math.sin(p.facing) * 0.12;
@@ -306,33 +320,50 @@ function fireShot(sim: Sim, p: PlayerState) {
   const flat = !Number.isFinite(p.aimZ);
   const aimDist = Math.max(0.25, Math.hypot(p.aimX - ox, p.aimY - oy));
   const baseDz = flat ? 0 : (p.aimZ - gunZ) / aimDist;
+  const pellets = new Map<Enemy, number>();
+  // damage to an enemy: sneak shots (pistols, snipers) double on the unaware; close shotgun blasts one-shot dogs
+  const hitEnemy = (e: Enemy, d: number, t: number) => {
+    if ((cat === 'pistol' || cat === 'sniper') && unaware(e)) d *= 2;
+    if (cat === 'shotgun' && t <= STAGGER.range && (e.type === 'dog' || e.type === 'dogcyborg')) d = 1e4;
+    if (cat === 'shotgun' && t <= STAGGER.range) pellets.set(e, (pellets.get(e) ?? 0) + 1);
+    damageEnemy(sim, fs, e, d, w.pen, p, 'bullet');
+  };
   for (let k = 0; k < w.pellets; k++) {
     const a = p.facing + (sim.rng.next() + sim.rng.next() - 1) * spread;
     const vdz = baseDz + (sim.rng.next() + sim.rng.next() - 1) * spread * 0.6;
-    const hit = trace(sim, fs, ox, oy, a, w.range, 'p', p.id, flat ? undefined : { z0: gunZ, dz: vdz });
+    const vert = flat ? undefined : { z0: gunZ, dz: vdz };
+    let hit = trace(sim, fs, ox, oy, a, w.range, 'p', p.id, vert);
     let hk: 'wall' | 'flesh' | 'metal' | 'none' | 'glass' | 'floor' = hit.kind === 'none' ? 'none' : hit.kind === 'floor' ? 'floor' : 'wall';
     const falloff = hit.t > w.range * 0.6 ? 0.8 : 1;
     if (hit.kind === 'enemy') {
       const e = hit.ref;
       hk = e.type === 'drone' || e.type === 'warden' ? 'metal' : 'flesh';
-      damageEnemy(sim, fs, e, w.damage * falloff, w.pen, p, 'bullet');
-    } else if (hit.kind === 'player') { hk = 'flesh'; damagePlayer(sim, hit.ref, w.damage * falloff * 0.75, w.pen, 'bullet'); } // friendly fire
+      hitEnemy(e, dmg * falloff, hit.t);
+      if (cat === 'sniper') { // pierce: the same round carries on into the next enemy behind (walls still stop it)
+        const h2 = trace(sim, fs, ox, oy, a, w.range, 'p', p.id, vert, e);
+        if (h2.kind === 'enemy') { hit = h2; hitEnemy(h2.ref, dmg * PIERCE_DAMAGE * (h2.t > w.range * 0.6 ? 0.8 : 1), h2.t); }
+      }
+    } else if (hit.kind === 'player') { hk = 'flesh'; damagePlayer(sim, hit.ref, dmg * falloff * 0.75, w.pen, 'bullet'); } // friendly fire
     else if (hit.kind === 'camera') { hk = 'metal'; destroyCamera(sim, fs, hit.ref, p); }
     else if (hit.kind === 'vending') {
       hk = 'glass';
-      hit.ref.hp -= w.damage * w.pellets > 60 ? w.damage : w.damage;
+      hit.ref.hp -= w.damage;
       if (hit.ref.hp <= 0) breakVending(sim, fs, hit.ref, p);
     } else if (hit.kind === 'light') { hk = 'glass'; shootLight(sim, fs, hit.ref, p); }
     else if (hit.kind === 'panel') { hk = 'metal'; killPanel(sim, fs, hit.ref, p); }
     else if (hit.kind === 'mine') { hit.ref.armed = false; hit.ref.fuse = 0.05; hit.ref.revealed = true; }
-    sim.emit({ e: 'shot', f: p.floor, x: mx, y: my, x2: hit.x, y2: hit.y, z: gunZ, z2: flat ? 1.0 : hit.z, w: w.id, src: 'p', id: p.id, hit: hk });
+    // machine guns: every round that cracks past (or into) an enemy pins it
+    if (cat === 'machine_gun') for (const e of fs.enemies) if (e.state !== 'dead' && segPointDist(ox, oy, hit.x, hit.y, e.x, e.y) < PIN.radius) e.pinT = Math.min(PIN.max, e.pinT + PIN.add);
+    sim.emit({ e: 'shot', f: p.floor, x: mx, y: my, x2: hit.x, y2: hit.y, z: gunZ, z2: flat ? 1.0 : hit.z, w: w.id, src: 'p', id: p.id, hit: hk, ...(sup ? { sup: true } : {}) });
   }
+  // shotgun stagger: enough pellets at close range interrupt the target's aim and fire
+  for (const [e, n] of pellets) if (n >= STAGGER.pellets && e.state !== 'dead') { e.stunT = Math.max(e.stunT, STAGGER.time); e.burstLeft = 0; }
   if (!p.cheats?.ammo) wi.mag--;
   p.bloom = Math.min(0.25, p.bloom + w.recoil * (p.crouch ? 0.7 : 1) * (p.aiming ? 0.8 : 1));
   p.fireCd = 1 / w.rps;
   if (p.burstLeft > 0) { p.burstLeft--; if (p.burstLeft === 0) p.fireCd = 0.28; }
   p.muzzleT = 0.07;
-  sim.noise(fs, p.x, p.y, w.noise, p);
+  sim.noise(fs, p.x, p.y, shotNoise(w, p.mods), p);
 }
 
 function knife(sim: Sim, p: PlayerState) {

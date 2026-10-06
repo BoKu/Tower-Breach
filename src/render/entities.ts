@@ -4,7 +4,7 @@ import { currentHoliday } from '../config/holiday';
 import { OperatorRig, GunKind } from './operator';
 import { DogRig, DroneRig, WardenRig } from './beasts';
 import { stairElevation } from '../sim/stairs';
-import { weapon } from '../config/weapons';
+import { weapon, isSuppressed } from '../config/weapons';
 import { dist, angleTo } from '../core/math';
 import { lineOfSight } from '../sim/nav';
 import { lightLevel, lightOut } from '../sim/lights';
@@ -182,7 +182,7 @@ export class Entities {
       }
       const wi = p.sel === 'knife' ? null : p.weapons[p.sel];
       const w = wi ? weapon(wi.id) : null;
-      r.rig.setGun(w ? (gunKindOf(w.category) as GunKind) : null);
+      r.rig.setGun(w ? (gunKindOf(w.category) as GunKind) : null, !!w && isSuppressed(w, p.mods));
       const d = Math.max(0.4, Math.hypot(p.aimX - p.x, p.aimY - p.y));
       const gz = (p.crouch ? 0.9 : 1.25) + p.z;
       const pitch = Number.isFinite(p.aimZ) ? Math.max(-0.9, Math.min(0.9, Math.atan2(gz - p.aimZ, d))) : 0;
