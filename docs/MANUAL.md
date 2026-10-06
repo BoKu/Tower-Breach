@@ -189,6 +189,8 @@ choose and B to back out (B disconnects from a hack or ends a conversation).
     - `BOOST` (energy drink time)
     - `TORCH ON`
     - `HELMET`
+    - `KEY` (you hold this floor's master key)
+    - `¢ n` (your coins)
     - your stealth state: `HIDDEN`, `EXPOSED n%` (how visible you are), `SUSPICION` (enemies are searching) or
       `HUNTED` (they know where you are).
 - **Bottom centre: the item belt.** Five slots: Health Kit, Battery, Armour Plate, Energy Drink and Snack, each with
@@ -201,6 +203,7 @@ choose and B to back out (B disconnects from a hack or ends a conversation).
   - stairwells, coloured by their condition
   - lifts (green if powered, red if dead)
   - hack terminals
+  - shut doors (a bar across the doorway, red when locked)
   - traps you have spotted (red ✕)
   - camera sight cones
   - pinged enemies
@@ -289,10 +292,31 @@ Select an item with 1–5 or the mouse wheel, then press **F** to use it.
   - supply crates, lockers, desk drawers, toolboxes and fridges
   - **medical cabinets** in bathrooms and kitchens, which often hold Health Kits and snacks
 - **Bodies.** Search bodies for their ammo and their guns.
-- **Executive safes** in executive offices always hold a rifle, SMG or sniper rifle. They often hold Health Kits,
-  armour plates, batteries or grenades as well.
-- **Vending machines** are in kitchens and corridors. You can break one open by holding E, shooting it, knifing it, or
-  with an explosion. It spills energy drinks and snacks. Breaking it is loud.
+- **Executive safes** in executive offices always hold a rifle, SMG or sniper rifle and a few coins. They often hold
+  Health Kits, armour plates, batteries or grenades as well.
+- **Coins.** About half of the desk drawers worth searching hold 1 to 3 coins, and safes hold 3 to 6. Your coins show
+  as `¢ n` in the status chips (up to 99). Each player has their own.
+- **Vending machines** are in kitchens and corridors. Each one has a price (2 to 5 coins) and a few drinks and snacks.
+  - **Tap E** to buy the next item. This is quiet. If you are short of coins, or it is sold out, the prompt says so.
+  - **Hold E**, shoot it, knife it, or blow it up to break it open. It spills whatever is left. Breaking it is loud.
+
+### Doors and master keys
+
+From floor 1 to floor 199, the doorways between rooms have doors. Stairwell and lift doors are always open, and so are
+the doors to the street.
+
+- A door is **open**, **shut** or **locked**. Shut and locked doors block movement, sight, cameras and bullets.
+- **Tap E** near a door to open or shut it. You can't shut a door while someone is standing in the doorway. Doors make
+  a little noise.
+- A **locked** door has a red light on it (a shut one has a green light). Each floor has one **master key**: it is in
+  the executive safe if the floor has one, otherwise in a desk drawer. Pick it up and tap E on a locked door to unlock
+  it. With the key you can also **hold E** on a door to shut and lock it behind you.
+- The key only works on its own floor, and only the player who carries it can use it. You keep your keys for the
+  whole run.
+- Locked doors never block the way to the stairs, the lifts, the hack terminals or the key. The rooms behind them are
+  optional, and often worth the trip.
+- Enemies open shut doors when they walk through them (other enemies may hear it), but they can't get through a
+  locked door, and they never shut or lock one.
 - **Cyborgs and cyber-hounds** sometimes drop a torch battery.
 
 The higher you climb, the less you find. On Hard and Insane, you also find less to begin with.
@@ -333,7 +357,7 @@ the Uplink console.
 **How to hack:**
 
 1. Your connection bounces through a few relays. Then the **trace** starts to fill.
-2. Solve **two puzzles**. Each terminal picks them at random from its own set, so no two hacks play the same.
+2. Solve **three puzzles**. Each terminal picks three of its five at random, so no two hacks play the same.
 
 **Security terminal puzzles:**
 
@@ -344,17 +368,24 @@ the Uplink console.
 - **Camera Sequence.** The wall of nine camera feeds flashes a sequence. Repeat it. Each round adds one more feed. A
   wrong feed replays the sequence from the start.
 - **Signal Jam.** Use **−** and **+** to tune the live wave (bright) until it lies on the camera carrier (dim), then
-  press **Loop Feed**. On higher floors you also tune the phase.
+  press **Loop Feed**. From about floor 50 you also tune the phase.
+- **Keypad Override.** Crack a 4-digit code with the on-screen keypad (**DEL** removes a digit, **ENTER** tries the
+  code). Each wrong code shows how many digits are in the right place (*placed*) and how many are right but in the
+  wrong place (*misplaced*). You get eight tries; run out and the trace jumps and the code changes. Digits never repeat
+  until the top floors.
 
 **Lighting terminal puzzles:**
 
 - **Wire Patch.** Click a wire on the left, then the wire of the same colour on the right.
 - **Breaker Switches.** Get every breaker ON. Each switch also flips the switches next to it.
 - **Circuit Route.** Click tiles to rotate them until power runs from the source to the bulb. Live tiles glow.
-- **Voltage Calibrate.** A needle sweeps the gauge. Press **Lock** while it is in the green band, three times.
+- **Voltage Calibrate.** A needle sweeps the gauge. Press **Lock** while it is in the green band, three or four times.
+- **Load Balance.** Switch circuits on and off until the load meter reads exactly the target wattage, then press
+  **Commit Load**. Switching is free; committing the wrong load is not.
 
-Mistakes add to the trace: a wrong password, byte, feed or splice, a missed lock, or looping a feed that does not
-match. Flipping breakers, rotating tiles and tuning are free, but the clock keeps running.
+Mistakes add to the trace: a wrong password, byte, feed, code or splice, a missed lock, looping a feed that does not
+match, or committing the wrong load. Flipping breakers or circuits, rotating tiles and tuning are free, but the clock
+keeps running.
 
 If the trace reaches 100%, the terminal locks for good, there is a loud noise, and the network is alerted. The
 higher the floor, the faster the trace fills and the harder the puzzles. You can **disconnect** (Esc) at any time

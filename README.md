@@ -47,12 +47,16 @@ You get one life. Each run is a new tower. You can go in alone or with up to fou
   where you are.
 - 🤖 **Six enemy types:** loyalists, attack dogs, patrol drones, cyborgs, cyber-hounds and Warden mechs. The machines
   share an AI network and respond to each other's alarms.
-- 💻 **Hacking.** Beat two puzzles before the trace finishes. Security terminals throw password cracking, byte
-  decrypting, camera sequences and signal jamming at you. Lighting terminals throw wiring, breakers, circuit routing and
-  voltage calibration. A security terminal kills the cameras and traps on its floor. A lighting terminal brings the
+- 💻 **Hacking.** Beat three puzzles before the trace finishes. Security terminals throw password cracking, byte
+  decrypting, camera sequences, signal jamming and keypad code-breaking at you. Lighting terminals throw wiring,
+  breakers, circuit routing, voltage calibration and load balancing. A security terminal kills the cameras and traps on its floor. A lighting terminal brings the
   lights back.
 - 🪜 **A route up.** Stairwells can be on fire, full of debris or collapsed, and only some lifts have power. Every
   floor has at least one way up.
+- 🚪 **Doors and master keys.** Doorways have doors you can open, shut and lock. Each floor hides one master key that
+  opens its locked rooms, and lets you lock a door behind you. Enemies open doors but can't pass a locked one.
+- 🪙 **Coins and vending machines.** Collect coins from desks and safes, and buy drinks and snacks quietly from
+  vending machines instead of smashing them open.
 - 🛒 **Armory.** Spend your budget on 22 guns, armour, five grenade types and gear. After that, you only have what
   you find on the way up.
 - 👥 **Co-op for up to 5.** Revive downed teammates with a Health Kit. Friendly fire is optional.
@@ -68,7 +72,7 @@ You get one life. Each run is a new tower. You can go in alone or with up to fou
     <td width="50%"><img src="docs/screenshots/dark-floor.jpg" alt="Dark floor"><br><sub><b>Floor 160.</b> A cyborg in the torch beam. Darkness here is 39%.</sub></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/hacking.jpg" alt="Hacking"><br><sub><b>Uplink.</b> Beat two puzzles before the trace reaches 100%. Here: route power to the bulb on a lighting terminal.</sub></td>
+    <td><img src="docs/screenshots/hacking.jpg" alt="Hacking"><br><sub><b>Uplink.</b> Beat three puzzles before the trace reaches 100%. Here: route power to the bulb on a lighting terminal.</sub></td>
     <td><img src="docs/screenshots/armory.jpg" alt="Armory"><br><sub><b>The armory.</b> Your budget depends on the difficulty.</sub></td>
   </tr>
   <tr>

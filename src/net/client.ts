@@ -1,10 +1,11 @@
 import { fixFloorLights } from '../sim/hack';
 import { makePanels } from '../sim/lights';
 import { Transport, RelayMsg } from './transport';
-import { decodePlayer, encodeInput, NET_VERSION } from './protocol';
+import { decodePlayer, encodeInput, NET_VERSION, DOOR_MODES } from './protocol';
+import { stockLeft, takeStock } from '../sim/inventory';
 import { unpackVoice, VOICE_UP } from './voice';
 import { BuildingPlan, StairCondition } from '../gen/building';
-import { generateFloor, setFlightBlocked } from '../gen/floor';
+import { generateFloor, setFlightBlocked, setDoorSolid } from '../gen/floor';
 import { CONTAINER_LABEL } from '../gen/loot';
 import { createPlayer, movePlayer } from '../sim/player';
 import { weapon } from '../config/weapons';
@@ -56,7 +57,8 @@ export class ClientView implements ViewSource {
       floor: f, L, enemies: [], cameras: L.cameras.map((c) => ({ id: c.id, x: c.x, y: c.y, baseAngle: c.angle, sweep: c.sweep, speed: c.speed, phase: c.phase, range: c.range, fov: c.fov, angle: c.angle, alive: true, detect: 0, alarmT: 0, hp: 1 })),
       traps: L.traps.map((t) => ({ ...t, armed: true, revealed: false, fuse: 0 })),
       containers: L.containers.map((c) => ({ id: c.id, kind: c.kind, x: c.x, y: c.y, items: c.items.map((i) => ({ ...i })), opened: false, label: CONTAINER_LABEL[c.kind] })),
-      vendings: L.vendings.map((v) => ({ id: v.id, x: v.x, y: v.y, rot: v.rot, hp: 45, broken: false, drops: v.drops })),
+      vendings: L.vendings.map((v) => ({ id: v.id, x: v.x, y: v.y, rot: v.rot, hp: 45, broken: false, drops: v.drops.map((d) => ({ ...d })), price: v.price })),
+      doors: L.doors.map((d) => { setDoorSolid(L, d, d.init); return { id: d.id, state: d.init }; }), // the cached layout is shared: (re)apply
       hazards: L.hazards.map((h) => ({ ...h })), grenades: [], zones: [], pings: [],
       lights: L.lights.map((l) => ({ broken: l.broken, burstT: 0 })), panels: makePanels(L), debris: {}, wave: null, scareT: 1e9, networkAlertT: 0,
       hacks: L.hacks.map((h) => ({ id: h.id, kind: h.kind, x: h.x, y: h.y, state: 'ready' as const })), lightsFixed: false, npcHold: {}, npcTalk: [],
@@ -119,6 +121,9 @@ export class ClientView implements ViewSource {
     for (const [id, angle, alive, detect, alarmT] of F.cam) { const c = fs.cameras.find((c) => c.id === id); if (c) Object.assign(c, { angle, alive: !!alive, detect, alarmT }); }
     for (const [id, armed, revealed, fuse, spent] of F.tr) { const t = fs.traps.find((t) => t.id === id); if (t) { Object.assign(t, { armed: !!armed, revealed: !!revealed, fuse }); (t as any).spent = !!spent; } }
     for (const v of fs.vendings) v.broken = F.vd.includes(v.id);
+    for (const [id, left] of F.vs ?? []) { const v = fs.vendings.find((q) => q.id === id); while (v && v.drops.length && stockLeft(v.drops) > left) takeStock(v.drops); }
+    // doors change collision: the local L must agree so own-movement prediction and line of sight match the host
+    for (const [id, m] of F.dr ?? []) { const i = fs.doors.findIndex((d) => d.id === id); if (i >= 0 && fs.doors[i].state !== DOOR_MODES[m]) { fs.doors[i].state = DOOR_MODES[m]; setDoorSolid(fs.L, fs.L.doors[i], DOOR_MODES[m]); } }
     fs.grenades = F.gr.map(([id, kind, x, y, z]: any) => ({ id, kind, x, y, z, vx: 0, vy: 0, vz: 0, fuse: 1, owner: 0, rest: false }));
     fs.zones = F.zn.map(([id, kind, x, y, r, t]: any) => ({ id, kind, x, y, r, t, tick: 0 }));
     fs.pings = F.pg.map(([id, enemyId, x, y, by, t]: any) => ({ id, enemyId, x, y, by, t }));

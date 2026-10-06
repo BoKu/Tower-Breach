@@ -19,7 +19,7 @@ export function arena(floor = 5, darkness = 0): FloorLayout {
   return {
     floor, seed: 1, w: FW, h: FH, theme: 'test', darkness, tiles, roomAt, solid: new Uint8Array(FW * FH), boarded: new Uint8Array(FW * FH),
     rooms: [{ id: 0, type: 'office', x: 1, y: 1, w: FW - 2, h: FH - 2, surface: 'carpet', main: true }],
-    props: [], lights: [], containers: [], vendings: [], cameras: [], traps: [], hazards: [], spawns: [], stairs: [], elevators: [], portals: [], mainframe: null, ambient: [], hacks: [],
+    props: [], lights: [], containers: [], vendings: [], cameras: [], traps: [], hazards: [], spawns: [], stairs: [], elevators: [], portals: [], mainframe: null, ambient: [], hacks: [], doors: [],
     anchors: { stair0: { x: 10, y: 10 }, start: { x: 10, y: 10 } },
   };
 }
@@ -30,7 +30,7 @@ export function setup(mode: 'single' | 'coop' = 'single', players = 1, floor = 5
   for (let i = 0; i < players; i++) ps.push(sim.addPlayer(i + 1, 'P' + (i + 1), JSON.parse(JSON.stringify(LOADOUT))));
   const fs = sim.floorState(floor);
   fs.L = arena(floor, darkness);
-  fs.enemies = []; fs.cameras = []; fs.traps = []; fs.containers = []; fs.vendings = []; fs.hazards = []; fs.lights = []; fs.panels = [];
+  fs.enemies = []; fs.cameras = []; fs.traps = []; fs.containers = []; fs.vendings = []; fs.hazards = []; fs.lights = []; fs.panels = []; fs.doors = [];
   fs.scareT = 1e9;
   for (const p of ps) { p.floor = floor; p.x = 10; p.y = 10 + p.slot; }
   return { sim, fs, ps, p: ps[0] };

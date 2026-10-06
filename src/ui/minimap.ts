@@ -26,7 +26,7 @@ export class Minimap {
         if (t === T_FLOOR || t === T_DOOR) {
           const room = L.rooms[L.roomAt[idx(x, y)]];
           g.fillStyle = room?.type === 'stair' ? '#0c4a3a' : room?.type === 'elevator' ? '#10304a' : room?.main ? '#0b3440' : '#072229';
-          if (L.solid[idx(x, y)]) g.fillStyle = '#124252';
+          if (L.solid[idx(x, y)] && t !== T_DOOR) g.fillStyle = '#124252';
           g.fillRect(x * S, y * S, S, S);
         } else if (t === T_WALL || t === T_WINDOW) {
           let edge = false;
@@ -88,6 +88,17 @@ export class Minimap {
       for (let k = 0; k < 6; k++) { const a = (k / 6) * Math.PI * 2 + Math.PI / 6; g.lineTo(P(hk.x) + Math.cos(a) * 6, P(hk.y) + Math.sin(a) * 6); }
       g.closePath(); g.stroke();
     }
+    // shut doors: a bar across the doorway, red when locked
+    fs.L.doors.forEach((d, i) => {
+      const st = fs.doors[i]?.state;
+      if (!st || st === 'open') return;
+      const t0 = d.tiles[0], t1 = d.tiles[d.tiles.length - 1];
+      g.strokeStyle = st === 'locked' ? '#ff3b30' : '#c8a060'; g.lineWidth = 2;
+      g.beginPath();
+      if (d.vertical) { g.moveTo(P(d.x), P((t0 / FW) | 0)); g.lineTo(P(d.x), P(((t1 / FW) | 0) + 1)); }
+      else { g.moveTo(P(t0 % FW), P(d.y)); g.lineTo(P((t1 % FW) + 1), P(d.y)); }
+      g.stroke();
+    });
     // known hazards
     for (const t of fs.traps) if (t.revealed && t.armed) { g.strokeStyle = '#ff3b30'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(P(t.x) - 3, P(t.y) - 3); g.lineTo(P(t.x) + 3, P(t.y) + 3); g.moveTo(P(t.x) + 3, P(t.y) - 3); g.lineTo(P(t.x) - 3, P(t.y) + 3); g.stroke(); }
     for (const c of fs.cameras) if (c.alive && Math.hypot(c.x - me.x, c.y - me.y) < 16) {

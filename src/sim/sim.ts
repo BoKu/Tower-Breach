@@ -4,7 +4,7 @@ import { Difficulty, pressure, PressureProfile, bracketInfo, bracketOf, FINAL_FL
 import { weapon } from '../config/weapons';
 import { BuildingPlan, StairCondition } from '../gen/building';
 import { perfTime } from '../core/perf';
-import { generateFloor, pointsNear, isWalkableTile, setFlightBlocked } from '../gen/floor';
+import { generateFloor, pointsNear, isWalkableTile, setFlightBlocked, setDoorSolid } from '../gen/floor';
 import { CONTAINER_LABEL } from '../gen/loot';
 import { AI } from './ai';
 import { explode, updateGrenades, updateZones, breakVending as breakV, canSee, damagePlayer } from './combat';
@@ -95,12 +95,13 @@ export class Sim {
       cameras: L.cameras.map((c) => ({ id: c.id, x: c.x, y: c.y, baseAngle: c.angle, sweep: c.sweep, speed: c.speed, phase: c.phase, range: c.range, fov: c.fov, angle: c.angle, alive: true, detect: 0, alarmT: 0, hp: 1 })),
       traps: L.traps.map((t) => ({ ...t, armed: true, revealed: false, fuse: 0 })),
       containers: L.containers.map((c) => ({ id: c.id, kind: c.kind, x: c.x, y: c.y, items: c.items.map((i) => ({ ...i })), opened: false, label: CONTAINER_LABEL[c.kind] })),
-      vendings: L.vendings.map((v) => ({ id: v.id, x: v.x, y: v.y, rot: v.rot, hp: 45, broken: false, drops: v.drops })),
+      vendings: L.vendings.map((v) => ({ id: v.id, x: v.x, y: v.y, rot: v.rot, hp: 45, broken: false, drops: v.drops.map((d) => ({ ...d })), price: v.price })),
       hazards: L.hazards.map((h) => ({ ...h })),
       grenades: [], zones: [], pings: [],
       lights: L.lights.map((l) => ({ broken: l.broken, burstT: 0 })),
       panels: makePanels(L),
       hacks: L.hacks.map((h) => ({ id: h.id, kind: h.kind, x: h.x, y: h.y, state: 'ready' as const })),
+      doors: L.doors.map((d) => { setDoorSolid(L, d, d.init); return { id: d.id, state: d.init }; }), // the cached layout is shared: (re)apply
       npcHold: {}, npcTalk: [],
       lightsFixed: false,
       debris: {}, wave: null,
@@ -513,7 +514,7 @@ export class Sim {
       player: {
         name: p.name, hp: p.hp, armor: p.armor, helmet: p.helmet, injured: p.injured, vest: (p as any).vest,
         weapons: JSON.parse(JSON.stringify(p.weapons)), sel: p.sel, ammo: { ...p.ammo }, grenades: { ...p.grenades }, items: { ...p.items },
-        mods: { ...p.mods }, battery: p.battery, kills: p.kills, checkedIn: p.checkedIn, loadout: p.loadout,
+        mods: { ...p.mods }, battery: p.battery, kills: p.kills, checkedIn: p.checkedIn, loadout: p.loadout, coins: p.coins, keys: [...p.keys],
       },
     };
   }
@@ -524,6 +525,7 @@ export class Sim {
     (p as any).vest = s.player.vest;
     p.checkedIn = (s.player as any).checkedIn ?? true; // saves from before check-in existed were already kitted
     p.loadout = (s.player as any).loadout;
+    p.coins = s.player.coins ?? 0; p.keys = s.player.keys ?? []; // older saves had neither
     for (const c of s.cleared) sim.clearedFlights.add(c);
     sim.stats = { ...s.stats };
     sim.t = s.t;

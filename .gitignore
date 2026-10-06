@@ -5,3 +5,5 @@ dist
 release
 .publish-guard
 dist-server
+.claude/worktrees/
+.claude/settings.local.json

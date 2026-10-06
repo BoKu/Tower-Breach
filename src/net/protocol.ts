@@ -1,10 +1,14 @@
 import type { PlayerState, FloorState, SimEvent, Enemy, PlayerInput } from '../sim/state';
 import { emptyInput } from '../sim/state';
 import type { Sim } from '../sim/sim';
+import { stockLeft } from '../sim/inventory';
+import type { DoorMode } from '../gen/floor';
+
+export const DOOR_MODES: DoorMode[] = ['open', 'closed', 'locked'];
 
 export const SNAP_HZ = 15;
 /** Wire protocol version: bump on any incompatible message change. Clients send it on join; servers refuse a mismatch. */
-export const NET_VERSION = 3; // v3 (1.2.0): late join window, proximity voice (binary frames, {k:"vc"})
+export const NET_VERSION = 4; // v4: doors (they change collision), coins + keys; v3 (1.2.0): late join window, proximity voice
 export const versionMismatch = (theirs: unknown) =>
   `Version mismatch: this server speaks co-op protocol v${NET_VERSION}, your game speaks v${Number(theirs) || 1}. Update the game (or the server) so both run the same release.`;
 
@@ -23,7 +27,7 @@ export function encodePlayer(p: PlayerState, full: boolean) {
   if (full) {
     Object.assign(base, {
       ammo: p.ammo, gr: p.grenades, gs: p.grenadeSel, it: p.items, is: p.itemSel, boost: r2(p.boostT), rl: r2(p.reloadT), rd: r2(p.reloadDur ?? 0), hold: p.hold,
-      exp: r2(p.exposure), pr: p.prompt, panel: (p as any).panel, vest: (p as any).vest, fl: r2(p.flashT), burn: r2(p.burnT),
+      exp: r2(p.exposure), pr: p.prompt, panel: (p as any).panel, vest: (p as any).vest, fl: r2(p.flashT), burn: r2(p.burnT), co: p.coins, ky: p.keys,
     });
   }
   return base;
@@ -38,7 +42,7 @@ export function decodePlayer(p: PlayerState, o: any, isLocal: boolean) {
   p.life = o.life; p.downT = o.dt; p.sel = o.sel; p.weapons = o.w; p.torchOn = o.torch; p.battery = o.bat; p.mods = o.mods; p.hurtT = o.hurt; p.kills = o.k; p.ride = o.ride; p.checkedIn = !!o.ci; // co-op HUD street objective
   if (o.ammo) {
     p.ammo = o.ammo; p.grenades = o.gr; p.grenadeSel = o.gs; p.items = o.it; p.itemSel = o.is; p.boostT = o.boost; p.reloadT = o.rl; p.reloadDur = o.rd; p.hold = o.hold;
-    p.exposure = o.exp; p.prompt = o.pr; (p as any).panel = o.panel; (p as any).vest = o.vest; p.flashT = o.fl; p.burnT = o.burn;
+    p.exposure = o.exp; p.prompt = o.pr; (p as any).panel = o.panel; (p as any).vest = o.vest; p.flashT = o.fl; p.burnT = o.burn; p.coins = o.co ?? 0; p.keys = o.ky ?? [];
   }
 }
 
@@ -51,6 +55,8 @@ export function encodeFloor(fs: FloorState, withContainers: boolean) {
     cam: fs.cameras.map((c) => [c.id, r2(c.angle), c.alive ? 1 : 0, r2(c.detect), r2(c.alarmT)]),
     tr: fs.traps.map((t) => [t.id, t.armed ? 1 : 0, t.revealed ? 1 : 0, r2(t.fuse), (t as any).spent ? 1 : 0]),
     vd: fs.vendings.filter((v) => v.broken).map((v) => v.id),
+    vs: fs.vendings.map((v) => [v.id, stockLeft(v.drops)]),
+    dr: fs.doors.map((d) => [d.id, DOOR_MODES.indexOf(d.state)]),
     gr: fs.grenades.map((g) => [g.id, g.kind, r2(g.x), r2(g.y), r2(g.z)]),
     zn: fs.zones.map((z) => [z.id, z.kind, r2(z.x), r2(z.y), z.r, r2(z.t)]),
     pg: fs.pings.map((p) => [p.id, p.enemyId, r2(p.x), r2(p.y), p.by, r2(p.t)]),

@@ -36,6 +36,11 @@ const h01 = (a: number, b: number) => {
   return s - Math.floor(s);
 };
 
+/** Rough emitter size (1 = a ceiling panel): scales a fixture's floor light pool. */
+export function lightSize(l: LightSpec): number {
+  return l.kind === 'street' ? 2.2 : l.kind === 'fire' ? 0.8 : l.kind === 'emergency' ? 0.45 : l.kind === 'police' ? 0.5 : l.intensity < 1 ? 0.8 : 1;
+}
+
 /**
  * Deterministic light output multiplier (0..1) at time t. Shared by the simulation (stealth
  * exposure) and the renderer so what the player sees matches what enemies see.

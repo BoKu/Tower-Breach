@@ -1,14 +1,16 @@
-import { dist } from '../core/math';
+import { dist, clamp } from '../core/math';
 import { weapon } from '../config/weapons';
 import { STAIR_LABEL, stairPassable } from '../gen/building';
 import { FINAL_FLOOR } from '../config/difficulty';
-import { giveLoot, swapWeapon } from './inventory';
+import { giveLoot, swapWeapon, takeStock } from './inventory';
+import { ITEM_NAMES } from '../config/items';
+import { describeLoot } from '../gen/loot';
 import { applyHack } from './hack';
-import { officerPose, AmbientSpec } from '../gen/floor';
+import { officerPose, AmbientSpec, FW } from '../gen/floor';
 import { npcFor } from '../config/npcs';
 import type { Sim } from './sim';
 import type { FloorState, PlayerState, ContainerState } from './state';
-import { togglePanel } from './combat';
+import { togglePanel, setDoor } from './combat';
 import type { LootItem } from './types';
 
 interface Target {
@@ -145,11 +147,48 @@ function gather(sim: Sim, p: PlayerState, fs: FloorState): Target[] {
     if (pn.dead || !near(pn.x, pn.y, 1.5)) continue;
     out.push({ key: 'pn' + pn.id, label: pn.off ? 'Switch lights on' : 'Switch lights off', hold: 0, x: pn.x, y: pn.y, act: () => togglePanel(sim, fs, pn, p) });
   }
-  // vending machines
+  // vending machines: tap buys the next item quietly, holding pries it open (loud)
   for (const v of fs.vendings) {
     if (v.broken || !near(v.x, v.y, 1.5)) continue;
-    out.push({ key: 'v' + v.id, label: 'Pry open vending machine (loud)', hold: 1.8, x: v.x, y: v.y, act: () => sim.breakVending(fs, v, p) });
+    const next = v.drops[0];
+    out.push({
+      key: 'v' + v.id, label: 'Pry open vending machine (loud)', hold: 1.8, x: v.x, y: v.y, act: () => sim.breakVending(fs, v, p),
+      tapLabel: next ? `Buy ${next.k === 'item' ? ITEM_NAMES[next.item] : describeLoot(next)} (${v.price} coins)` : 'Sold out',
+      tap: () => {
+        if (!next) return sim.msg(p, 'Sold out.', 'warn');
+        if (p.coins < v.price) return sim.msg(p, `Not enough coins (need ${v.price}).`, 'warn');
+        const it = takeStock(v.drops), { left, msg } = giveLoot(p, it);
+        if (left) { v.drops.unshift(left); return sim.msg(p, "You can't carry any more of that.", 'warn'); } // ponytail: re-adds as its own stack
+        p.coins -= v.price;
+        sim.noise(fs, v.x, v.y, 1.5, p);
+        sim.msg(p, `Vending machine: ${msg} (-${v.price} coins)`, 'loot');
+        sim.emit({ e: 'use', f: p.floor, pid: p.id, item: 'loot' });
+      },
+    });
   }
+  // doors: tap opens / closes (unlocks with the floor's key); with the key, holding locks it
+  const hasKey = p.keys.includes(p.floor);
+  L.doors.forEach((d, i) => {
+    const ds = fs.doors[i];
+    if (!ds || !near(d.x, d.y)) return;
+    const key = 'dr' + d.id;
+    if (ds.state === 'locked') {
+      if (!hasKey) out.push({ key, label: '', hold: 0, x: d.x, y: d.y, act: () => {}, blocked: "Locked. The floor's master key opens it." });
+      else out.push({ key, label: 'Unlock door', hold: 0, x: d.x, y: d.y, act: () => { setDoor(sim, fs, i, 'closed', 2, p); sim.msg(p, 'Door unlocked.', 'info'); } });
+      return;
+    }
+    const occupied = () => [...sim.players.filter((o) => o.floor === p.floor && o.life !== 'out'), ...fs.enemies.filter((e) => e.state !== 'dead')]
+      .some((b) => d.tiles.some((t) => { const tx = t % FW, ty = (t / FW) | 0; return (b.x - clamp(b.x, tx, tx + 1)) ** 2 + (b.y - clamp(b.y, ty, ty + 1)) ** 2 < 0.35 ** 2; }));
+    const shut = (st: 'closed' | 'locked') => {
+      if (occupied()) return sim.msg(p, 'Something is in the doorway.', 'warn');
+      setDoor(sim, fs, i, st, st === 'locked' ? 2 : 4, p);
+      if (st === 'locked') sim.msg(p, 'Door locked.', 'info');
+    };
+    const toggle = ds.state === 'open' ? () => shut('closed') : () => setDoor(sim, fs, i, 'open', 4, p);
+    const label = ds.state === 'open' ? 'Close door' : 'Open door';
+    if (hasKey) out.push({ key, label: 'Lock door', hold: 0.8, x: d.x, y: d.y, act: () => shut('locked'), tap: toggle, tapLabel: label });
+    else out.push({ key, label, hold: 0, x: d.x, y: d.y, act: toggle });
+  });
   // stairwells
   for (const s of p.floor < 0 ? [] : L.stairs) { // sandbox stairs are display only
     if (near(s.upX, s.upY, 2.1)) {
@@ -238,6 +277,7 @@ function gather(sim: Sim, p: PlayerState, fs: FloorState): Target[] {
 
 function lootAll(sim: Sim, p: PlayerState, fs: FloorState, c: ContainerState) {
   c.opened = true;
+  const key = c.items.find((i) => i.k === 'key');
   const msgs: string[] = [];
   const keep: LootItem[] = [];
   for (const it of c.items) {
@@ -250,5 +290,6 @@ function lootAll(sim: Sim, p: PlayerState, fs: FloorState, c: ContainerState) {
   else if (keep.some((i) => i.k === 'weapon')) sim.msg(p, `${c.label}: weapon here — hold to swap.`, 'info');
   else if (keep.length) sim.msg(p, `${c.label}: you can't carry any more of that.`, 'warn');
   else sim.msg(p, `${c.label}: empty.`, 'info');
+  if (key?.k === 'key') sim.msg(p, `Master key for floor ${key.f}: it opens every locked door on this floor.`, 'loot');
   sim.emit({ e: 'use', f: p.floor, pid: p.id, item: 'loot' });
 }

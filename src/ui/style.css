@@ -373,6 +373,15 @@ input.text:focus { border-color: var(--cyan); box-shadow: inset 0 0 12px rgba(53
 .hk-scope path { fill: none; stroke-width: 2; } .hk-scope .tgt { stroke: #2e7a52; stroke-width: 4; } .hk-scope .live { stroke: #b8ffd8; }
 .hk-knobs { display: flex; gap: 22px; }
 .hk-knob { display: flex; align-items: center; gap: 6px; } .hk-knob span { letter-spacing: 0.2em; color: #3fbf7f; font-size: 11px; }
+.hk-kp { display: flex; gap: 24px; } .hk-kpad { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.hk-keys { display: grid; grid-template-columns: repeat(3, 64px); gap: 5px; } .hk-cell.hk-key { height: 38px; font-size: 16px; }
+.hk-kp .hk-log { min-width: 250px; }
+.hk-meter { position: relative; width: 460px; max-width: 80vw; height: 18px; border: 1px solid #1fe07a; }
+.hk-meter i { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(31, 224, 122, 0.45); } .hk-meter i.over { background: rgba(255, 59, 78, 0.6); }
+.hk-meter b { position: absolute; top: -5px; bottom: -5px; width: 3px; margin-left: -1px; background: #ffd84a; box-shadow: 0 0 8px #ffd84a; }
+.hk-cell.hk-load { width: 58px; height: 74px; display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 6px 0; color: #3fbf7f; }
+.hk-load em { font-style: normal; font-size: 10px; letter-spacing: 0.15em; } .hk-load b { font-size: 14px; } .hk-load small { font-size: 10px; color: #2e7a52; }
+.hk-cell.hk-load.on { background: rgba(31, 224, 122, 0.3); color: #e8fff2; border-color: #1fe07a; box-shadow: 0 0 8px rgba(31, 224, 122, 0.4); }
 .hk-knob b { width: 18px; text-align: center; color: #fff; } .hk-knob small { color: #2e7a52; font-size: 10px; }
 
 /* ---- NPC conversation ---- */

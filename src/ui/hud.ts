@@ -188,6 +188,8 @@ export class HUD {
     if (me.cheats?.god) chips.push(`<span class="chip" style="color:#ffc24a;border-color:#7a5a1a">GOD</span>`);
     if (me.cheats?.ammo) chips.push(`<span class="chip" style="color:#ffc24a;border-color:#7a5a1a">∞ AMMO</span>`);
     if (me.helmet) chips.push(`<span class="chip" style="color:#9ab;border-color:#456">HELMET</span>`);
+    if (me.keys.includes(me.floor)) chips.push(`<span class="chip" style="color:#ffd23d;border-color:#7a6a1a" title="Master key: opens every locked door on this floor">⚿ KEY</span>`);
+    chips.push(`<span class="chip" style="color:#e8c860;border-color:#6a5a2a" title="Coins: buy from vending machines">¢ ${me.coins}</span>`);
     this.set(this.status, 'chips', chips.join(''), true);
     // belt
     const beltKey = `${me.itemSel}:${Object.values(me.items).join(',')}`;

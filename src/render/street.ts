@@ -897,7 +897,10 @@ export function buildFacade(applyCut: <T extends THREE.Material>(m: T, keep?: nu
   const tile = (t: THREE.Texture, rx: number, ry: number) => { const c = t.clone(); c.repeat.set(rx, ry); c.needsUpdate = true; return c; };
   // podium mass
   const podFront = applyCut(new THREE.MeshStandardMaterial({ map: tile(stoneMap, 64 / 8, PODIUM / 4), roughness: 0.85 }), 1.2);
-  add(g, new THREE.BoxGeometry(64, PODIUM, FRONT - 0.3), [stone, stone, darkStone, darkStone, podFront, stone] as any, 32, PODIUM / 2, (FRONT - 0.3) / 2);
+  // split around the entrance recess (x 29.5..34.5, up to y 5, back to z RZ) so the doors and lobby show through
+  const RX0 = 29.5, RX1 = 34.5, RH = 5, RZ = FRONT - 2.5;
+  for (const [x0, x1] of [[0, RX0], [RX1, 64]]) add(g, new THREE.BoxGeometry(x1 - x0, PODIUM, FRONT - 0.3), [stone, stone, darkStone, darkStone, podFront, stone] as any, (x0 + x1) / 2, PODIUM / 2, (FRONT - 0.3) / 2);
+  add(g, new THREE.BoxGeometry(RX1 - RX0, PODIUM - RH, FRONT - 0.3), [stone, stone, darkStone, darkStone, stone, stone] as any, 32, (PODIUM + RH) / 2, (FRONT - 0.3) / 2);
   // lobby storefront between pilasters, with lit interior
   const lobby = applyCut(new THREE.MeshStandardMaterial({ map: facadeTex.lobby(false), emissive: 0xffffff, emissiveMap: facadeTex.lobby(true), emissiveIntensity: 0.85, roughness: 0.08, metalness: 0.6 }), 1.2);
   const plinth = applyCut(new THREE.MeshStandardMaterial({ color: 0x2c2c2e, roughness: 0.6 }), 1.2);
@@ -920,18 +923,22 @@ export function buildFacade(applyCut: <T extends THREE.Material>(m: T, keep?: nu
   // ---- entrance portal
   add(g, new THREE.BoxGeometry(1.4, PODIUM - 0.5, 0.8), stone, 28.9, (PODIUM - 0.5) / 2, FRONT + 0.1);
   add(g, new THREE.BoxGeometry(1.4, PODIUM - 0.5, 0.8), stone, 35.1, (PODIUM - 0.5) / 2, FRONT + 0.1);
-  add(g, new THREE.PlaneGeometry(5, 6.9), darkStone, 32, 3.45, FRONT - 0.4); // recess back wall
+  // pseudo lobby behind the glass: lit back wall and sides, warm ceiling panel, polished floor
+  add(g, new THREE.PlaneGeometry(RX1 - RX0, RH), lobby, 32, RH / 2, RZ);
+  for (const [x, ry] of [[RX0, Math.PI / 2], [RX1, -Math.PI / 2]]) add(g, new THREE.PlaneGeometry(FRONT - 0.3 - RZ, RH), lobby, x, RH / 2, (RZ + FRONT - 0.3) / 2, 0, ry);
+  add(g, new THREE.PlaneGeometry(RX1 - RX0, FRONT - 0.3 - RZ), new THREE.MeshBasicMaterial({ color: 0xfff0d8, toneMapped: false }), 32, RH - 0.01, (RZ + FRONT - 0.3) / 2, Math.PI / 2);
+  add(g, new THREE.PlaneGeometry(RX1 - RX0, FRONT - 0.3 - RZ), applyCut(new THREE.MeshStandardMaterial({ color: 0x5a524a, roughness: 0.2, metalness: 0.2 }), 1.2), 32, 0.01, (RZ + FRONT - 0.3) / 2, -Math.PI / 2);
   const sign = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 0.88), new THREE.MeshBasicMaterial({ map: facadeTex.sign(), toneMapped: false }));
   sign.position.set(32, 6.3, FRONT + 0.52); g.add(sign);
   // glass doors either side of the revolving door
   const doorGlass = applyCut(new THREE.MeshPhysicalMaterial({ color: 0x0f1a20, roughness: 0.05, metalness: 0.6, transparent: true, opacity: 0.55 }), 1.2);
   for (const x of [30.1, 33.9]) { add(g, new THREE.BoxGeometry(1.1, 2.7, 0.05), doorGlass, x, 1.35, FRONT - 0.35); add(g, new THREE.BoxGeometry(0.04, 0.6, 0.04), steel, x + (x < 32 ? 0.45 : -0.45), 1.2, FRONT - 0.3); }
-  add(g, new THREE.PlaneGeometry(5, 2.2), lobby, 32, 3.9, FRONT - 0.38); // transom glass above the doors
+  add(g, new THREE.BoxGeometry(5, 2.2, 0.04), doorGlass, 32, 3.9, FRONT - 0.38); // transom glass above the doors
   // revolving door: drum, canopy disc and four glass wings
   const drum = new THREE.CylinderGeometry(1.0, 1.0, 2.7, 24, 1, true, Math.PI * 0.15, Math.PI * 0.7);
   add(g, drum, doorGlass, 32, 1.35, FRONT - 0.35, 0, Math.PI, 0);
   add(g, new THREE.CylinderGeometry(1.05, 1.05, 0.2, 24), steel, 32, 2.8, FRONT - 0.35);
-  const wings = new THREE.Group(); wings.position.set(32, 1.35, FRONT - 0.35); wings.rotation.y = 0.4;
+  const wings = new THREE.Group(); wings.position.set(32, 1.35, FRONT - 0.35); wings.rotation.y = 0.4; wings.userData.spin = 0.25; // turns slowly (FloorView spinners)
   for (let k = 0; k < 4; k++) { const w = add(wings, new THREE.BoxGeometry(0.95, 2.5, 0.03), doorGlass, 0, 0, 0); w.geometry.translate(0.48, 0, 0); w.rotation.y = (k * Math.PI) / 2; }
   add(wings, new THREE.CylinderGeometry(0.05, 0.05, 2.7, 8), steel, 0, 0, 0);
   g.add(wings);

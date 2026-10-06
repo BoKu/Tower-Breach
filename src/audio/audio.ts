@@ -333,6 +333,7 @@ export class GameAudio {
     else if (item === 'food') for (let i = 0; i < 3; i++) s.noise(o, t + i * 0.18, 0.08, { freq: 1500, q: 1, peak: 0.3 });
     else if (item === 'plate') { s.noise(o, t, 0.1, { freq: 1200, peak: 0.3 }); s.tone(o, t + 0.15, 0.2, { type: 'triangle', freq: 900, peak: 0.08 }); }
     else if (item === 'loot') s.noise(o, t, 0.25, { freq: 1800, q: 0.6, peak: 0.15 });
+    else if (item === 'door') s.noise(o, t, 0.15, { type: 'lowpass', freq: 500, peak: 0.3, buf: 'brown' });
   }
 
   private scare(k: string, p: Pos) {

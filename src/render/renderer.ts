@@ -43,6 +43,35 @@ export const QUALITY: Record<Quality, { ratio: number; lights: number; bloom: bo
 };
 
 const CAM_OFFSET = new THREE.Vector3(12, 22, 12);
+/** layer of the aim marker, drawn on top after reflections and bloom (never in mirrors or SSR) */
+const OVERLAY = 1;
+/** layer of the aim laser: in the main pass so walls hide it, but reflection cameras (layer 0 only) skip it */
+const LASER = 2;
+
+/**
+ * Live mirror seen from eye level: the steep top-down camera's true reflection only shows the floor by the wall, so
+ * the reflection is rendered for a virtual viewer standing in front of the mirror at 1.5 m (following the main camera
+ * sideways), looking straight in. People in front of the mirror then show up in it.
+ */
+function eyeLevelMirror(main: THREE.Camera): Reflector {
+  const r = new Reflector(new THREE.PlaneGeometry(1, 1), { textureWidth: 512, textureHeight: 512, clipBias: 0.003, color: 0xf4f7fa });
+  const eye = new THREE.PerspectiveCamera(60, 1, 0.1, 60);
+  const n = new THREE.Vector3(), side = new THREE.Vector3(), p = new THREE.Vector3(), d = new THREE.Vector3();
+  const draw = r.onBeforeRender;
+  r.onBeforeRender = function (renderer, scene, camera, ...rest) {
+    if (camera !== main) return; // only for the game camera (warm-up renders)
+    p.setFromMatrixPosition(r.matrixWorld);
+    n.set(0, 0, 1).transformDirection(r.matrixWorld); n.y = 0; n.normalize();
+    if (d.setFromMatrixPosition(main.matrixWorld).sub(p).dot(n) < 0) return; // seen from behind
+    side.set(-n.z, 0, n.x);
+    const off = clamp(d.dot(side) * 0.15, -0.8, 0.8); // a little parallax as the camera moves along the wall
+    eye.position.copy(p).addScaledVector(n, 2.4).addScaledVector(side, off); eye.position.y = 1.5;
+    eye.lookAt(eye.position.x - n.x, 1.5, eye.position.z - n.z);
+    eye.updateMatrixWorld(); eye.updateProjectionMatrix();
+    draw.call(this, renderer, scene, eye, ...rest);
+  };
+  return r;
+}
 
 export class GameRenderer {
   renderer: THREE.WebGLRenderer;
@@ -50,6 +79,7 @@ export class GameRenderer {
   camera: THREE.PerspectiveCamera;
   private composer: EffectComposer | null = null;
   private bloom: UnrealBloomPass | null = null;
+  private ssr: SSRPass | null = null;
   private floorView: FloorView | null = null;
   private ambient: Ambient | null = null;
   private roaches: Roaches | null = null;
@@ -94,6 +124,7 @@ export class GameRenderer {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.camera = new THREE.PerspectiveCamera(35, 1, 0.5, 200);
+    this.camera.layers.enable(LASER);
     this.scene.fog = new THREE.FogExp2(0x040506, 0.012);
     this.scene.add(this.hemi, this.moon, this.moon.target, this.presence, this.entities.group, this.fx.group);
     for (let i = 0; i < 10; i++) { const l = new THREE.PointLight(0xffffff, 0, 8, 1.6); this.pool.push(l); this.scene.add(l); }
@@ -111,8 +142,11 @@ export class GameRenderer {
     // 3D aim indicator: diamond on the aimed surface + laser from the muzzle while aiming
     this.aimMark = new THREE.Mesh(new THREE.RingGeometry(0.07, 0.11, 4), new THREE.MeshBasicMaterial({ color: 0x5fe3ff, transparent: true, opacity: 0.9, depthTest: false, toneMapped: false }));
     this.aimMark.renderOrder = 20;
+    (this.aimMark.material as THREE.Material).depthWrite = false;
     const lg = new THREE.CylinderGeometry(0.008, 0.008, 1, 6); lg.translate(0, 0.5, 0); lg.rotateX(Math.PI / 2);
     this.laser = new THREE.Mesh(lg, new THREE.MeshBasicMaterial({ color: 0x3dffb0, transparent: true, opacity: 0.55, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending }));
+    // overlay layer: drawn after post-processing, so mirrors and ray-traced reflections never pick them up
+    this.aimMark.layers.set(OVERLAY); this.laser.layers.set(LASER);
     this.scene.add(this.aimMark, this.laser);
     this.applyQuality();
     this.resize();
@@ -142,11 +176,12 @@ export class GameRenderer {
       const target = new THREE.WebGLRenderTarget(size.x, size.y, rt ? { type: THREE.HalfFloatType, depthTexture: new THREE.DepthTexture(size.x, size.y) } : { type: THREE.HalfFloatType });
       this.composer = new EffectComposer(this.renderer, target);
       this.composer.addPass(new RenderPass(this.scene, this.camera));
-      if (rt) this.composer.addPass(new SSRPass(this.camera));
+      this.ssr = rt ? new SSRPass(this.camera) : null;
+      if (this.ssr) this.composer.addPass(this.ssr);
       this.bloom = q.bloom ? new UnrealBloomPass(new THREE.Vector2(512, 512), 0.55, 0.45, 1.0) : null;
       if (this.bloom) this.composer.addPass(this.bloom);
       this.composer.addPass(new OutputPass());
-    } else { this.composer = null; this.bloom = null; }
+    } else { this.composer = null; this.bloom = null; this.ssr = null; }
     // force shader recompile for shadow toggles
     this.scene.traverse((o) => { const m = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined; if (m) (Array.isArray(m) ? m : [m]).forEach((x) => (x.needsUpdate = true)); });
   }
@@ -259,7 +294,7 @@ export class GameRenderer {
     const pool = this.reflections === 'off' ? 0 : this.reflections === 'raytraced' ? 4 : 2;
     const near = this.floorView!.mirrors.map((m) => ({ m, d: (m.pos.x - focus.x) ** 2 + (m.pos.z - focus.y) ** 2 })).filter((o) => o.d < 144).sort((a, b) => a.d - b.d).slice(0, pool);
     while (this.reflectors.length < near.length) {
-      const r = new Reflector(new THREE.PlaneGeometry(1, 1), { textureWidth: 512, textureHeight: 512, clipBias: 0.003, color: 0xf4f7fa });
+      const r = eyeLevelMirror(this.camera);
       this.scene.add(r);
       this.reflectors.push(r);
     }
@@ -432,7 +467,18 @@ export class GameRenderer {
         this.laser.scale.set(1, 1, from.distanceTo(to));
       }
     }
-    perfTime(switched ? 'render (1st, shaders)' : '', () => { if (this.composer) this.composer.render(); else this.renderer.render(this.scene, this.camera); });
+    if (this.ssr) this.ssr.gloss = fs.floor === 0 ? 0.35 : 1; // street asphalt: a faint wet sheen, not a mirror
+    perfTime(switched ? 'render (1st, shaders)' : '', () => {
+      if (this.composer) this.composer.render(); else this.renderer.render(this.scene, this.camera);
+      // aim marker and laser on top, after reflections and bloom
+      const ac = this.renderer.autoClear, su = this.renderer.shadowMap.autoUpdate;
+      this.renderer.autoClear = false; this.renderer.shadowMap.autoUpdate = false;
+      if (this.composer) this.renderer.clearDepth(); // the composer's depth is not on the canvas
+      this.camera.layers.set(OVERLAY);
+      this.renderer.render(this.scene, this.camera);
+      this.camera.layers.set(0); this.camera.layers.enable(LASER);
+      this.renderer.autoClear = ac; this.renderer.shadowMap.autoUpdate = su;
+    });
     // retired views are disposed only after the new floor has rendered: their materials keep the shader programs
     // alive (three releases a program with its last material, and the new floor would have to relink it)
     for (const v of retired) v.dispose();

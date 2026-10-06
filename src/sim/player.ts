@@ -28,7 +28,7 @@ export function createPlayer(id: number, slot: number, name: string, lo: Loadout
     weapons: { primary: null, secondary: null }, sel: 'secondary', lastSel: 'knife',
     ammo: { pistol: 0, heavy: 0, smg: 0, rifle: 0, sniper: 0, shell: 0, internal: 0 },
     grenades: { frag: 0, flash: 0, smoke: 0, incendiary: 0, decoy: 0 }, grenadeSel: 'frag',
-    items: { medkit: 0, battery: 0, plate: 0, drink: 0, food: 0 }, itemSel: 'medkit',
+    items: { medkit: 0, battery: 0, plate: 0, drink: 0, food: 0 }, itemSel: 'medkit', coins: 0, keys: [],
     mods: { ...lo.mods }, torchOn: false, battery: 1, boostT: 0,
     fireCd: 0, reloadT: 0, burstLeft: 0, bloom: 0, meleeCd: 0, triggerHeld: false, muzzleT: -9, stepT: 0,
     burnT: 0, flashT: 0, hurtT: 0, hold: null, ride: null, exposure: 0.5, kills: 0,

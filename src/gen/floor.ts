@@ -10,6 +10,8 @@ export const FW = 64;
 export const FH = 48;
 export const T_VOID = 0, T_FLOOR = 1, T_WALL = 2, T_DOOR = 3, T_WINDOW = 4;
 export const S_NONE = 0, S_LOW = 1, S_TALL = 2;
+/** a shut door leaf (enemies open it) and a locked one (needs the floor's master key): both block walking and sight */
+export const S_DOOR = 3, S_LOCKED = 4;
 
 export type RoomType =
   | 'corridor' | 'open' | 'office' | 'kitchen' | 'bathroom' | 'server' | 'security' | 'storage'
@@ -20,7 +22,11 @@ export interface Room { id: number; type: RoomType; x: number; y: number; w: num
 export interface Prop { id: number; kind: string; x: number; y: number; w: number; h: number; rot: number; solid: number; room: number }
 export interface LightSpec { id: number; x: number; y: number; color: number; intensity: number; range: number; flicker: number; broken: boolean; room: number; kind: 'ceiling' | 'fire' | 'street' | 'emergency' | 'police'; z?: number; phase?: number }
 export interface ContainerSpec { id: number; kind: ContainerKind; x: number; y: number; items: LootItem[]; room: number }
-export interface VendingSpec { id: number; x: number; y: number; rot: number; drops: LootItem[] }
+/** drops = the stock, sold one unit at a time for `price` coins (prying the machine open spills what is left) */
+export interface VendingSpec { id: number; x: number; y: number; rot: number; drops: LootItem[]; price: number }
+export type DoorMode = 'open' | 'closed' | 'locked';
+/** A swinging door in a 1-2 tile doorway between two rooms. vertical = the wall runs north-south. */
+export interface DoorSpec { id: number; tiles: number[]; vertical: boolean; x: number; y: number; init: DoorMode }
 export interface CameraSpec { id: number; x: number; y: number; angle: number; sweep: number; speed: number; phase: number; range: number; fov: number }
 export interface TrapSpec { id: number; kind: 'tripwire' | 'mine'; x: number; y: number; x2: number; y2: number }
 /** A computer that can be hacked (Uplink-style minigame). x,y = the computer; standing reach is 1.6 m. */
@@ -66,6 +72,8 @@ export interface FloorLayout {
   ambient: AmbientSpec[];
   /** hackable computers: security (CCTV, mines, tripwires off) and lighting (flicker fixed, full brightness) */
   hacks: HackSpec[];
+  /** real doors (floors 1..FINAL_FLOOR-1); their live state is FloorState.doors (same order) */
+  doors: DoorSpec[];
   /** arrival anchors keyed by tag: 'stair0'..'stair2', 'elev0','elev1', 'entrance', 'street', 'start' */
   anchors: Record<string, { x: number; y: number }>;
 }
@@ -85,6 +93,10 @@ export function flightTiles(s: StairSpec, dir: 1 | -1): [number, number][] {
 /** Blocked flights (debris, collapse) are physically impassable; clearing debris reopens them. */
 export function setFlightBlocked(L: FloorLayout, s: StairSpec, dir: 1 | -1, blocked: boolean) {
   for (const [x, y] of flightTiles(s, dir)) L.solid[idx(x, y)] = blocked ? S_TALL : S_NONE;
+}
+/** Write a door's state into the collision/sight grid. */
+export function setDoorSolid(L: FloorLayout, d: DoorSpec, st: DoorMode) {
+  for (const i of d.tiles) L.solid[i] = st === 'open' ? S_NONE : st === 'closed' ? S_DOOR : S_LOCKED;
 }
 export const inBounds = (x: number, y: number) => x >= 0 && y >= 0 && x < FW && y < FH;
 
@@ -111,7 +123,7 @@ export function blocksSight(L: FloorLayout, tx: number, ty: number): boolean {
   if (!inBounds(tx, ty)) return true;
   const t = L.tiles[idx(tx, ty)];
   if (t === T_WALL || t === T_WINDOW || t === T_VOID) return true;
-  return L.solid[idx(tx, ty)] === S_TALL;
+  return L.solid[idx(tx, ty)] >= S_TALL; // tall props and shut doors
 }
 
 const SURFACE: Record<RoomType, Surface> = {
@@ -350,7 +362,7 @@ function makeLayout(floor: number, seed: number, darkness: number): FloorLayout 
     roomAt: new Int16Array(FW * FH).fill(-1),
     solid: new Uint8Array(FW * FH),
     boarded: new Uint8Array(FW * FH),
-    rooms: [], props: [], lights: [], containers: [], vendings: [], cameras: [], traps: [], hazards: [], spawns: [], hacks: [],
+    rooms: [], props: [], lights: [], containers: [], vendings: [], cameras: [], traps: [], hazards: [], spawns: [], hacks: [], doors: [],
     stairs: [], elevators: [], portals: [], mainframe: null, ambient: [], anchors: {},
   };
 }
@@ -783,7 +795,7 @@ function furnish(B: Builder, floor: number) {
 function addVending(B: Builder, s: { x: number; y: number; rot: number }, room: number, floor: number): boolean {
   const p = B.place('vending', s.x, s.y, 1, 1, 2, room, s.rot);
   if (!p) return false;
-  B.L.vendings.push({ id: p.id, x: p.x, y: p.y, rot: s.rot, drops: vendingLoot(new Rng(hash(B.L.seed, p.id, 0x7e)), B.lootMult) });
+  B.L.vendings.push({ id: p.id, x: p.x, y: p.y, rot: s.rot, drops: vendingLoot(new Rng(hash(B.L.seed, p.id, 0x7e)), B.lootMult), price: new Rng(hash(B.L.seed, p.id, 0x7f)).int(2, 5) });
   return true;
 }
 
@@ -1148,7 +1160,7 @@ function genSandbox(B: Builder) {
   L.hazards.push({ id: B.id(), kind: 'shock', x: X, y: 28, r: 1.1 });
   for (const [y, rot] of [[31, 0], [34, 0]] as [number, number][]) {
     const p = B.place('vending', Math.floor(X), y, 1, 1, 2, -1, rot);
-    if (p) B.L.vendings.push({ id: p.id, x: p.x, y: p.y, rot, drops: [] });
+    if (p) B.L.vendings.push({ id: p.id, x: p.x, y: p.y, rot, drops: [], price: 2 });
   }
   L.lights.push({ id: B.id(), x: X, y: 37, color: 0xff3322, intensity: 0.8, range: 6, flicker: 0, broken: false, room: hall.id, kind: 'emergency' });
   L.lights.push({ id: B.id(), x: X - 0.3, y: 40, z: 1.5, phase: 0.2, color: 0xff2020, intensity: 1, range: 6, flicker: 0, broken: false, room: hall.id, kind: 'police' });
@@ -1218,6 +1230,7 @@ export function generateFloor(plan: BuildingPlan, floor: number): FloorLayout {
     addHazardsAndCameras(B, floor, plan.difficulty);
     addSpawns(B, floor, plan.difficulty);
     addHackTerminals(B, floor);
+    if (floor < FINAL_FLOOR) addRealDoors(B, floor);
     // debris / collapsed flights physically block the steps
     const pass = (c: string) => c === 'clear' || c === 'damaged' || c === 'fire';
     for (const s of L.stairs) {
@@ -1245,6 +1258,90 @@ function addHackTerminals(B: Builder, floor: number) {
     if (!(kind === 'security' ? hasSecurity : hasBadLights) || !rng.chance(HACK_CHANCE[kind])) continue;
     const host = hosts.find((q) => !L.hacks.some((h) => Math.hypot(h.x - q.x, h.y - q.y) < 6));
     if (host) L.hacks.push({ id: B.id(), kind, x: host.x, y: host.y, propKind: host.kind });
+  }
+}
+
+/** Share of eligible doorways that get a door leaf. */
+const DOOR_SHARE = 0.3;
+/** Doorway tiles that never get a door leaf: stairwell and lift doors (the street entrance is on the outer wall). */
+const FEATURE_DOORS = new Set([...STAIR_RECTS, ...ELEV_RECTS].map((r) => idx(r.door[0], r.door[1])));
+
+/**
+ * Real doors: some (DOOR_SHARE) of the 1-2 tile doorways in straight walls between two ordinary rooms get a door, seeded open / closed /
+ * locked, and the floor gets one master key (the safe, else a desk). Locked doors never cut the arrivals off from the
+ * stairs, lifts, hack terminals, the key or the street exit, nor an enemy from its patrol route: rooms behind them are optional.
+ */
+function addRealDoors(B: Builder, floor: number) {
+  const L = B.L, rng = new Rng(hash(L.seed, 0xd00));
+  const T = (x: number, y: number) => L.tiles[idx(x, y)];
+  const wallish = (v: number) => v === T_WALL || v === T_WINDOW;
+  const done = new Uint8Array(FW * FH);
+  const sides: number[][] = []; // per door: the floor tiles either side
+  for (let y = 1; y < FH - 1; y++)
+    for (let x = 1; x < FW - 1; x++) {
+      const i = idx(x, y);
+      if (T(x, y) !== T_DOOR || done[i] || FEATURE_DOORS.has(i)) continue;
+      const ns = doorRunsNS(L, x, y), ax = ns ? 0 : 1, ay = ns ? 1 : 0; // (ax,ay) = along the wall
+      const tiles: number[] = [];
+      let k = 0;
+      for (; T(x + ax * k, y + ay * k) === T_DOOR; k++) { const j = idx(x + ax * k, y + ay * k); done[j] = 1; tiles.push(j); }
+      if (tiles.length > 2 || !wallish(T(x - ax, y - ay)) || !wallish(T(x + ax * k, y + ay * k))) continue;
+      const side: number[] = [], rooms = new Set<number>();
+      for (const t of tiles) for (const n of ns ? [t - 1, t + 1] : [t - FW, t + FW]) { side.push(n); rooms.add(L.tiles[n] === T_FLOOR ? L.roomAt[n] : -1); }
+      if (rooms.size !== 2 || rooms.has(-1) || [...rooms].some((r) => ['stair', 'elevator', 'street'].includes(L.rooms[r].type))) continue;
+      if (!rng.chance(DOOR_SHARE)) continue; // only some doorways get a door: a door on every opening is a maze of leaves
+      let init = rng.weighted<DoorMode>([['open', 45], ['closed', 35], ['locked', 20]]);
+      if (L.spawns.some((s) => tiles.includes(idx(Math.floor(s.x), Math.floor(s.y))))) init = 'open'; // nobody starts inside a door leaf
+      const cx = tiles.reduce((a, t) => a + (t % FW), 0) / tiles.length + 0.5, cy = tiles.reduce((a, t) => a + ((t / FW) | 0), 0) / tiles.length + 0.5;
+      L.doors.push({ id: B.id(), tiles, vertical: ns, x: cx, y: cy, init });
+      sides.push(side);
+    }
+  if (!L.doors.length) return;
+  // connected walkable areas (label per tile, -1 = blocked): one labelling answers every reachability question below
+  const comps = () => {
+    const lab = new Int16Array(FW * FH).fill(-1);
+    for (let i = 0, n = 0; i < FW * FH; i++) {
+      if (lab[i] >= 0 || !B.walkable(i % FW, (i / FW) | 0)) continue;
+      const { seen } = B.flood(i % FW, (i / FW) | 0);
+      for (let j = 0; j < FW * FH; j++) if (seen[j]) lab[j] = n;
+      n++;
+    }
+    return lab;
+  };
+  const tileOf = (p: { x: number; y: number }) => idx(Math.floor(p.x), Math.floor(p.y));
+  const reached = (lab: Int16Array, c: number, p: { x: number; y: number }) => {
+    if (c < 0) return false;
+    for (let ty = Math.floor(p.y) - 2; ty <= Math.floor(p.y) + 2; ty++)
+      for (let tx = Math.floor(p.x) - 2; tx <= Math.floor(p.x) + 2; tx++) if (inBounds(tx, ty) && lab[idx(tx, ty)] === c && Math.hypot(tx + 0.5 - p.x, ty + 0.5 - p.y) < 1.6) return true; // interaction reach
+    return false;
+  };
+  const start = L.anchors.stair0 ?? Object.values(L.anchors)[0];
+  const open = comps(), home = open[tileOf(start)];
+  // the master key: the safe if the floor has one, else a desk drawer (a plain desk gets a drawer if none is lootable)
+  const pool = (k?: string) => L.containers.filter((c) => (!k || c.kind === k) && reached(open, home, c)); // never a boxed-in one
+  if (!pool('safe').length && !pool('desk').length) {
+    const hacked = new Set(L.hacks.map((h) => `${h.x},${h.y}`));
+    const desks = L.props.filter((q) => (q.kind === 'desk' || q.kind === 'cubicle') && !hacked.has(`${q.x},${q.y}`) && !L.containers.some((c) => c.id === q.id) && reached(open, home, q));
+    if (desks.length) B.container('desk', rng.pick(desks));
+  }
+  const hosts = pool('safe').length ? pool('safe') : pool('desk').length ? pool('desk') : pool();
+  const kc = hosts.length ? rng.pick(hosts) : null;
+  kc?.items.push({ k: 'key', f: floor });
+  // demote locked doors (one on the frontier of what is reachable) until everything required is reachable without the key
+  const need = [...Object.values(L.anchors), ...L.stairs.map((s) => ({ x: s.doorX, y: s.doorY })), ...L.elevators.map((e) => ({ x: e.doorX, y: e.doorY })), ...L.hacks, ...(kc ? [kc] : []), ...L.portals];
+  const groups = [{ from: start, need }, ...L.spawns.map((s) => ({ from: s, need: s.route }))]
+    .map((g) => ({ src: tileOf(g.from), need: g.need.filter((p) => reached(open, open[tileOf(g.from)], p)) })); // only what all-open doors reach
+  if (!kc) for (const d of L.doors) if (d.init === 'locked') d.init = 'closed';
+  for (;;) {
+    const locked = L.doors.filter((d) => d.init === 'locked');
+    if (!locked.length) break;
+    for (const d of locked) setDoorSolid(L, d, 'locked');
+    const lab = comps();
+    for (const d of locked) setDoorSolid(L, d, 'open'); // the layout keeps every door open: FloorState applies the live state
+    const bad = groups.find((g) => !g.need.every((p) => reached(lab, lab[g.src], p)));
+    if (!bad) break;
+    const c = lab[bad.src];
+    (locked.find((d) => { const s = sides[L.doors.indexOf(d)]; return s.some((n) => lab[n] === c) && s.some((n) => lab[n] !== c); }) ?? locked[0]).init = 'closed';
   }
 }
 

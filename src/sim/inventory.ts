@@ -39,6 +39,15 @@ export function giveLoot(p: PlayerState, it: LootItem): { left: LootItem | null;
       p.grenades[it.g] += take;
       return { left: take < it.n ? { ...it, n: it.n - take } : null, msg: `+${take} ${GRENADE_NAMES[it.g]}` };
     }
+    case 'key':
+      if (!p.keys.includes(it.f)) p.keys.push(it.f);
+      return { left: null, msg: `Master key (floor ${it.f})` };
+    case 'coin': {
+      const take = Math.min(it.n, 99 - p.coins);
+      if (take <= 0) return { left: it, msg: null };
+      p.coins += take;
+      return { left: take < it.n ? { ...it, n: it.n - take } : null, msg: `+${take} coin${take > 1 ? 's' : ''}` };
+    }
     case 'weapon': {
       const w = weapon(it.id);
       if (p.weapons[w.slot]) {
@@ -54,6 +63,15 @@ export function giveLoot(p: PlayerState, it: LootItem): { left: LootItem | null;
       return { left: null, msg: `Picked up ${w.name}` };
     }
   }
+}
+
+/** Units left in a vending machine's stock, and taking the next one. */
+export const stockLeft = (drops: LootItem[]) => drops.reduce((a, d) => a + ('n' in d ? d.n : 1), 0);
+export function takeStock(drops: LootItem[]): LootItem {
+  const d = drops[0];
+  if ('n' in d && d.n > 1) { d.n--; return { ...d, n: 1 } as LootItem; }
+  drops.shift();
+  return d;
 }
 
 /** Swap the held gun in `slot` for a weapon item. Returns the dropped weapon as loot. */

@@ -1,6 +1,6 @@
 import { makeScreenMaterial, screenUniforms, reseedScreen } from './screens';
 import * as THREE from 'three';
-import { FloorLayout, CameraSpec, TrapSpec, VendingSpec, FW, FH, idx, T_WALL, T_WINDOW, T_DOOR, T_FLOOR, Surface, doorRunsNS } from '../gen/floor';
+import { FloorLayout, CameraSpec, TrapSpec, VendingSpec, DoorSpec, FW, FH, idx, T_WALL, T_WINDOW, T_DOOR, T_FLOOR, Surface, doorRunsNS } from '../gen/floor';
 import type { StairCondition } from '../gen/building';
 import { tex } from './textures';
 import { applyCutaway } from './cutaway';
@@ -11,7 +11,7 @@ import { christmasSnow } from './christmas';
 import { currentHoliday } from '../config/holiday';
 import { raycastWalls } from '../sim/nav';
 import type { FloorState } from '../sim/state';
-import { lightLevel, lightOut } from '../sim/lights';
+import { lightLevel, lightOut, lightSize } from '../sim/lights';
 import { perfTime } from '../core/perf';
 
 export const WALL_H = 2.6;
@@ -20,10 +20,21 @@ const ROT_Y = [0, -Math.PI / 2, Math.PI, Math.PI / 2];
 const propSolidMat = applyCutaway(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0.1, side: THREE.DoubleSide }), 0.95);
 /** Stair flights stand up to a storey tall: the cutaway only trims what rises above the top landing (its rails). */
 const stairMat = applyCutaway(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0.1, side: THREE.DoubleSide }), WALL_H + 0.1);
-const emitMat = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false });
+const emitMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.4, 1.4, 1.4), vertexColors: true, toneMapped: false }); // >1: lit parts reach the bloom threshold
 const screenMat = makeScreenMaterial(0.95);
 const mirrorMat = applyCutaway(new THREE.MeshStandardMaterial({ color: 0x9aa4ac, metalness: 0.85, roughness: 0.14 }), 0.95);
 const glassMat = new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, opacity: 0.35, roughness: 0.1, metalness: 0.6, depthWrite: false });
+
+/** soft radial falloff for floor light pools (shared by every floor) */
+let poolMap: THREE.Texture | null = null;
+function poolTex(): THREE.Texture {
+  if (poolMap) return poolMap;
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d')!, gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, '#fff'); gr.addColorStop(0.35, '#999'); gr.addColorStop(0.7, '#2a2a2a'); gr.addColorStop(1, '#000');
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+  return (poolMap = new THREE.CanvasTexture(c));
+}
 
 /**
  * Built models, shared by every floor: one merged geometry per material bucket for each prop (kind, footprint,
@@ -96,6 +107,10 @@ export class FloorView {
   group = new THREE.Group();
   L: FloorLayout;
   fixtures: THREE.InstancedMesh | null = null;
+  /** per-light fixture gain (dim-coloured lamps get more so every lit fixture blooms) and its floor light pool */
+  private fixGain: number[] = [];
+  private pools: THREE.InstancedMesh | null = null;
+  private poolGain: number[] = [];
   private spinners: THREE.Object3D[] = [];
   private cams = new Map<number, CamVis>();
   private traps = new Map<number, THREE.Object3D>();
@@ -134,6 +149,7 @@ export class FloorView {
     for (const c of L.cameras) this.makeCam(c);
     for (const t of L.traps) this.makeTrap(t);
     for (const v of L.vendings) this.makeVend(v);
+    for (const d of L.doors) this.makeDoor(d);
     trimKits();
   }
 
@@ -226,7 +242,7 @@ export class FloorView {
     walls.forEach(([x, y], i) => { m.makeTranslation(x + 0.5, 0.41, y + 0.5); caps.setMatrixAt(i, m); });
     caps.count = walls.length;
     this.group.add(caps);
-    if (facade.length) this.group.add(buildFacade(applyCutaway));
+    if (facade.length) { const f = buildFacade(applyCutaway); this.group.add(f); f.traverse((c) => { if (c.userData.spin) this.spinners.push(c); }); }
     // windows: sill + glass/boards + lintel
     for (const [x, y, boarded] of windows) {
       const vertical = x === 0 || x === FW - 1;
@@ -575,14 +591,36 @@ export class FloorView {
     const mat = this.track(new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }));
     const inst = new THREE.InstancedMesh(geo, mat, n);
     const m = new THREE.Matrix4();
+    const c = new THREE.Color();
     L.lights.forEach((l, i) => {
       const y = l.kind === 'ceiling' || l.kind === 'emergency' ? 2.5 : -5;
       m.makeTranslation(l.x, y, l.y);
       inst.setMatrixAt(i, m);
-      inst.setColorAt(i, new THREE.Color(l.color));
+      inst.setColorAt(i, c.set(l.color));
+      this.fixGain[i] = Math.max(1.5, 1.8 / Math.max(0.05, c.r * 0.2126 + c.g * 0.7152 + c.b * 0.0722)); // luminance 1.8 when fully lit
     });
     this.fixtures = inst;
     this.group.add(inst);
+    // cheap light pools: a soft additive disc on the floor under every lamp, so lamps beyond the PointLight budget
+    // still tint their surroundings. Indoor pools are clipped to the lamp's room (no bleeding through walls)
+    // ponytail: flat disc at y 0, ignores props/stairs; a light-index buffer if it must wrap geometry
+    const night = L.floor === 0 && currentHoliday() === 'halloween';
+    const pg = this.track(new THREE.PlaneGeometry(2, 2)); pg.rotateX(-Math.PI / 2);
+    const pools = new THREE.InstancedMesh(pg, this.track(new THREE.MeshBasicMaterial({ map: poolTex(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })), n);
+    const q = new THREE.Quaternion(), sc = new THREE.Vector3(), pos = new THREE.Vector3();
+    L.lights.forEach((l, i) => {
+      const size = lightSize(l), r = 1 + 2 * size, room = L.rooms[l.room];
+      const on = l.kind !== 'police' && (l.kind !== 'street' || night);
+      const indoor = (l.kind === 'ceiling' || l.kind === 'emergency') && room;
+      const rx = indoor ? Math.min(r, l.x - room.x + 0.2, room.x + room.w - l.x + 0.2) : r, rz = indoor ? Math.min(r, l.y - room.y + 0.2, room.y + room.h - l.y + 0.2) : r;
+      pools.setMatrixAt(i, m.compose(pos.set(l.x, 0.02, l.y), q, sc.set(on ? rx : 0, 1, on ? rz : 0)));
+      pools.setColorAt(i, c.setRGB(0, 0, 0));
+      this.poolGain[i] = 0.16 * (0.6 + 0.4 * Math.min(size, 2));
+    });
+    pools.frustumCulled = false; // instances span the floor
+    pools.renderOrder = 1;
+    this.pools = pools;
+    this.group.add(pools);
   }
 
   /** Police light-bar lenses: real meshes that strobe in sync with their point lights. */
@@ -615,17 +653,19 @@ export class FloorView {
       // rotating beacons: slow turn, glow swells as the reflector comes round
       s.rotation.y += s.userData.spin * dt;
       const k = 0.5 + 0.5 * Math.sin(s.rotation.y);
-      for (const m of s.userData.pulse as { m: THREE.Material; lo: number; hi: number; key: string }[]) (m.m as any)[m.key] = m.lo + (m.hi - m.lo) * k * k;
+      for (const m of (s.userData.pulse ?? []) as { m: THREE.Material; lo: number; hi: number; key: string }[]) (m.m as any)[m.key] = m.lo + (m.hi - m.lo) * k * k;
     }
     const L = fs.L; // (a hacked lighting grid swaps in a repaired layout copy)
     // fixtures follow the shared flicker function
     if (this.fixtures) {
       L.lights.forEach((l, i) => {
         const lv = lightLevel(l, lightOut(fs.lights[i], l), t);
-        this.fixColor.set(l.color).multiplyScalar(0.1 + lv * 1.5); // >1 so lamps still bloom above the 1.0 threshold
+        this.fixColor.set(l.color).multiplyScalar(0.1 + lv * this.fixGain[i]); // >1 so lamps still bloom above the 1.0 threshold
         this.fixtures!.setColorAt(i, this.fixColor);
+        this.pools!.setColorAt(i, this.fixColor.set(l.color).multiplyScalar(lv * this.poolGain[i]));
       });
       this.fixtures.instanceColor!.needsUpdate = true;
+      this.pools!.instanceColor!.needsUpdate = true;
     }
     for (const ln of this.lenses) {
       const lv = lightLevel(L.lights[ln.li], false, t);
@@ -684,6 +724,14 @@ export class FloorView {
         (led.material as THREE.MeshBasicMaterial).color.setHex(!tr.armed || Math.sin(t * 8) > 0.6 ? 0xff2020 : 0x300000);
       }
     }
+    // doors swing toward their state in ~0.25 s; LED: red locked, green shut, dark open
+    this.L.doors.forEach((d, i) => {
+      const o = this.doorVis[i], st = fs.doors[i]?.state ?? d.init;
+      if (!o) return;
+      o.open = Math.max(0, Math.min(1, o.open + (st === 'open' ? 4 : -4) * dt));
+      for (const p of o.pivots) p.g.rotation.y = p.base + p.swing * o.open * 1.66;
+      o.led.color.setHex(st === 'locked' ? 0xff2020 : st === 'closed' ? 0x20e040 : 0x111111);
+    });
     // vending machines
     for (const v of fs.vendings) {
       const o = this.vends.get(v.id) ?? this.makeVend(v);
@@ -706,6 +754,37 @@ export class FloorView {
     const o = { g, broken: false };
     this.vends.set(v.id, o);
     return o;
+  }
+
+  /** door leaves (same order as L.doors): hinge pivots with their closed angle and swing, the status LED, openness 0..1 */
+  private doorVis: { pivots: { g: THREE.Group; base: number; swing: number }[]; led: THREE.MeshBasicMaterial; open: number }[] = [];
+  private static leafGeo: THREE.BufferGeometry | null = null;
+  private makeDoor(d: DoorSpec) {
+    const L = this.L;
+    // a 0.9 m leaf along its local +x from the hinge, handle at the far end
+    const geo = (FloorView.leafGeo ??= (() => { const g = merge(new Builder().box(0.9, 2.15, 0.05, 0.45, 1.075, 0, 0x6e5a46).box(0.05, 0.04, 0.14, 0.8, 1.0, 0, 0xb8b8b0).p.solid)!; g.userData.shared = true; return g; })());
+    const led = this.track(new THREE.MeshBasicMaterial({ color: 0x111111, toneMapped: false }));
+    // swing into the room, not the corridor
+    const t0 = d.tiles[0], step = d.vertical ? 1 : FW;
+    const pos = L.rooms[L.roomAt[t0 + step]]?.type === 'corridor' ? -1 : 1;
+    const px = d.vertical ? pos : 0, pz = d.vertical ? 0 : pos;
+    const vis = { pivots: [] as { g: THREE.Group; base: number; swing: number }[], led, open: d.init === 'open' ? 1 : 0 };
+    d.tiles.forEach((t, k) => {
+      const tx = t % FW, ty = (t / FW) | 0;
+      const a = k === 0 ? 1 : -1; // double doors hinge on their outer posts
+      const dx = d.vertical ? 0 : a, dz = d.vertical ? a : 0; // closed leaf direction (world x,z)
+      const g = new THREE.Group();
+      g.position.set(d.vertical ? tx + 0.5 : tx + 0.5 - a * 0.46, 0, d.vertical ? ty + 0.5 - a * 0.46 : ty + 0.5);
+      const base = Math.atan2(-dz, dx); // rotation.y that points local +x along (dx,dz)
+      const swing = dz * px - dx * pz > 0 ? 1 : -1; // +y rotation turns (dx,dz) into (dz,-dx)
+      const m = new THREE.Mesh(geo, propSolidMat);
+      m.castShadow = true;
+      g.add(m);
+      if (k === 0) { const l = new THREE.Mesh(this.track(new THREE.BoxGeometry(0.05, 0.05, 0.07)), led); l.position.set(0.8, 1.2, 0); g.add(l); }
+      this.group.add(g);
+      vis.pivots.push({ g, base, swing });
+    });
+    this.doorVis.push(vis);
   }
 
   private makeCam(c: CameraSpec): CamVis {

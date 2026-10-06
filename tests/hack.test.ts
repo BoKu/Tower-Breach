@@ -3,7 +3,7 @@ import { Sim } from '../src/sim/sim';
 import { emptyLoadout } from '../src/ui/shop';
 import { BuildingPlan } from '../src/gen/building';
 import { generateFloor, HACK_MAX_FLOOR } from '../src/gen/floor';
-import { HackGame, GUESS_PENALTY, WRONG_PENALTY, POOLS, Circuit, likeness, type PuzzleId } from '../src/ui/hackgame';
+import { HackGame, GUESS_PENALTY, WRONG_PENALTY, KEY_PENALTY, LOCKOUT_PENALTY, POOLS, Circuit, Keypad, likeness, type PuzzleId } from '../src/ui/hackgame';
 import { lightLevel } from '../src/sim/lights';
 
 function sim() {
@@ -108,35 +108,38 @@ describe('hackable computers', () => {
     expect(g.trace).toBeCloseTo(before + GUESS_PENALTY, 5);
     // idle: the trace still gets you
     const idle = new HackGame(1, 'lights', 3, ['wires']);
-    for (let i = 0; i < 60 * 60; i++) idle.tick(1 / 60);
+    for (let i = 0; i < 80 * 60; i++) idle.tick(1 / 60);
     expect(idle.stage).toBe('traced');
   });
 
-  it('each terminal draws two different puzzles from its own pool, fixed by the seed', () => {
+  it('each terminal draws three different puzzles from its own pool of five, fixed by the seed', () => {
     for (const kind of ['security', 'lights'] as const) {
+      expect(POOLS[kind].length).toBe(5);
       const seen = new Set<PuzzleId>();
       for (let seed = 1; seed < 60; seed++) {
         const g = new HackGame(50, kind, seed);
-        expect(g.stages.length).toBe(2);
-        expect(new Set(g.stages).size).toBe(2);
+        expect(g.stages.length).toBe(3);
+        expect(new Set(g.stages).size).toBe(3);
         for (const id of g.stages) { expect(POOLS[kind]).toContain(id); seen.add(id); }
         expect(new HackGame(50, kind, seed).stages).toEqual(g.stages);
       }
-      expect(seen.size).toBe(4);
+      expect(seen.size).toBe(5);
     }
   });
 
-  it('every new puzzle is solvable at floor 1 and 190, and both stages chain to granted', () => {
-    for (const floor of [1, 190]) for (const seed of [2, 17, 44]) {
-      for (const pair of [['wires', 'breakers'], ['circuit', 'voltage'], ['cameras', 'signal']] as PuzzleId[][]) {
-        const g = new HackGame(floor, pair[0] === 'cameras' ? 'security' : 'lights', seed, pair);
+  it('every puzzle is solvable at floor 1 and 190, and a full 3-puzzle hack ends granted with trace to spare', () => {
+    const sets = [['wires', 'breakers', 'circuit'], ['voltage', 'load', 'wires'], ['cameras', 'signal', 'keypad'], ['password', 'decrypt', 'keypad']] as PuzzleId[][];
+    for (const floor of [1, 190]) for (const seed of [2, 17, 44, 91]) {
+      const runs: [HackGame, string][] = sets.map((s) => [new HackGame(floor, POOLS.security.includes(s[0]) ? 'security' : 'lights', seed, s), String(s)]);
+      for (const kind of ['security', 'lights'] as const) runs.push([new HackGame(floor, kind, seed), kind]);
+      for (const [g, name] of runs) {
         let t = 0;
-        while (!g.done && t < 60) { g.tick(1 / 60); t += 1 / 60; solveStep(g); }
-        expect(g.stage, `${pair} floor ${floor} seed ${seed}`).toBe('granted');
-        expect(g.trace).toBeLessThan(0.5);
+        while (!g.done && t < 90) { g.tick(1 / 60); t += 1 / 60; solveStep(g); }
+        expect(g.stage, `${name} floor ${floor} seed ${seed}`).toBe('granted');
+        expect(g.trace, `${name} floor ${floor} seed ${seed}`).toBeLessThan(0.75);
       }
     }
-  });
+  }, 30000);
 
   it('puzzle mistakes cost trace', () => {
     const at = (id: PuzzleId) => { const g = new HackGame(1, 'lights', 9, [id]); while (g.stage !== id) g.tick(1 / 60); return g; };
@@ -156,6 +159,28 @@ describe('hackable computers', () => {
     const s = at('signal');
     expect(s.act('signal', (p) => p.loop())).toBe(false);
     expect(s.stage).toBe('signal');
+    const k = at('keypad'), kp = k.p.keypad!, code = kp.code;
+    const enter = (c: string) => { for (const d of c) k.act('keypad', (p) => p.press(+d)); return k.act('keypad', (p) => p.enter()); };
+    const wrong = [...Array(10000).keys()].map((i) => String(i).padStart(4, '0')).filter((c) => c !== code);
+    let tr = k.trace;
+    expect(enter(wrong[0])).toBe(false);
+    expect(k.trace - tr).toBeCloseTo(KEY_PENALTY, 5);
+    expect(kp.log[0]).toEqual({ g: wrong[0], ...Keypad.score(wrong[0], code) });
+    for (let i = 1; i < Keypad.MAX - 1; i++) enter(wrong[i]);
+    tr = k.trace;
+    expect(enter(wrong[Keypad.MAX - 1])).toBe(false); // out of attempts: big penalty, fresh code
+    expect(k.trace - tr).toBeCloseTo(LOCKOUT_PENALTY, 5);
+    expect(kp.log.length).toBe(0);
+    expect(kp.resets).toBe(1);
+    expect(Keypad.score('1123', '3111')).toEqual({ hit: 1, near: 2 });
+    const l = at('load'), lp = l.p.load!;
+    l.act('load', (p) => p.toggle(0)); // toggling is free
+    expect(l.trace).toBeLessThan(0.05);
+    if (lp.total === lp.target) l.act('load', (p) => p.toggle(1));
+    tr = l.trace;
+    expect(l.act('load', (p) => p.commit())).toBe(false);
+    expect(l.trace - tr).toBeCloseTo(WRONG_PENALTY, 5);
+    expect(l.stage).toBe('load');
     // neutral moves are free
     const b = at('breakers'), before = b.trace;
     b.act('breakers', (p) => p.flip(0));
@@ -163,10 +188,35 @@ describe('hackable computers', () => {
   });
 });
 
-/** One move of a perfect player in whichever new puzzle is up. */
+/** One move of a perfect player in whichever puzzle is up. */
 function solveStep(g: HackGame) {
   const p = g.p;
   switch (g.stage) {
+    case 'password': g.guess(g.words.find((w) => !g.tried.some((x) => x.word === w) && g.tried.every((x) => likeness(w, x.word) === x.like))!); break;
+    case 'decrypt': g.pick(g.grid.indexOf(g.target[g.seqI])); break;
+    case 'keypad': {
+      // Mastermind by elimination: of the codes consistent with every report so far, enter one that splits the rest
+      // into the most feedback groups (sampled, so it stays quick)
+      const k = p.keypad!;
+      const cand = [...Array(10000).keys()].map((i) => String(i).padStart(4, '0'))
+        .filter((c) => (k.repeats || new Set(c).size === 4) && k.log.every((l) => { const s = Keypad.score(l.g, c); return s.hit === l.hit && s.near === l.near; }));
+      const sample = (n: number) => cand.filter((_, i) => i % Math.ceil(cand.length / n) === 0), rest = sample(300);
+      const parts = (g: string) => new Set(rest.map((c) => { const s = Keypad.score(g, c); return s.hit * 5 + s.near; })).size;
+      const c = k.log.length ? sample(30).map((g) => [parts(g), g] as const).reduce((a, b) => (b[0] > a[0] ? b : a))[1] : '0123';
+      for (const d of c) g.act('keypad', (x) => x.press(+d));
+      g.act('keypad', (x) => x.enter());
+      break;
+    }
+    case 'load': {
+      // brute-force the subset (at most 2^7)
+      const l = p.load!, n = l.watts.length;
+      for (let mask = 0; mask < 1 << n; mask++) if (l.watts.reduce((s, w, i) => s + (mask & (1 << i) ? w : 0), 0) === l.target) {
+        for (let i = 0; i < n; i++) if (l.on[i] !== !!(mask & (1 << i))) g.act('load', (x) => x.toggle(i));
+        break;
+      }
+      g.act('load', (x) => x.commit());
+      break;
+    }
     case 'wires': { const w = p.wires!, i = w.left.findIndex((c) => !w.done.has(c)); g.act('wires', (x) => x.pick('L', i)); g.act('wires', (x) => x.pick('R', w.right.indexOf(w.left[i]))); break; }
     case 'breakers': {
       // brute-force the set of flips (at most 2^7)

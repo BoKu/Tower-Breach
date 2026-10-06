@@ -3,22 +3,25 @@ import { hackDifficulty } from '../sim/hack';
 /**
  * Uplink-style intrusion minigame, pure logic (the DOM view is ui/hack.ts).
  * The connection first bounces through a chain of proxies (flavour; the trace clock starts when it lands), then the
- * hacker clears two puzzles drawn from the terminal's pool, like Among Us tasks:
- *  - security (CCTV): Password Breaker, Decrypter, Camera Sequence, Signal Jam
- *  - lights (facilities): Wire Patch, Breaker Switches, Circuit Route, Voltage Calibrate
+ * hacker clears three puzzles drawn from the terminal's pool, like Among Us tasks:
+ *  - security (CCTV): Password Breaker, Decrypter, Camera Sequence, Signal Jam, Keypad Override
+ *  - lights (facilities): Wire Patch, Breaker Switches, Circuit Route, Voltage Calibrate, Load Balance
  * Mistakes add trace. The trace hitting 100% fails the hack; DISCONNECT aborts with no penalty.
  */
 export type HackKind = 'security' | 'lights';
-export type PuzzleId = 'password' | 'decrypt' | 'cameras' | 'signal' | 'wires' | 'breakers' | 'circuit' | 'voltage';
+export type PuzzleId = 'password' | 'decrypt' | 'cameras' | 'signal' | 'keypad' | 'wires' | 'breakers' | 'circuit' | 'voltage' | 'load';
 export type HackStage = 'bounce' | PuzzleId | 'granted' | 'traced' | 'aborted';
 export const POOLS: Record<HackKind, PuzzleId[]> = {
-  security: ['password', 'decrypt', 'cameras', 'signal'],
-  lights: ['wires', 'breakers', 'circuit', 'voltage'],
+  security: ['password', 'decrypt', 'cameras', 'signal', 'keypad'],
+  lights: ['wires', 'breakers', 'circuit', 'voltage', 'load'],
 };
 export const PUZZLE_IDS = [...POOLS.security, ...POOLS.lights];
 export const WRONG_PENALTY = 0.07;
 /** a wrong password pick costs more trace than a wrong decrypter byte */
 export const GUESS_PENALTY = 0.1;
+/** keypad: each wrong code is cheap (it's how you learn), running out of attempts is not */
+export const KEY_PENALTY = 0.03;
+export const LOCKOUT_PENALTY = 0.25;
 const WORDS: Record<number, string[]> = {
   5: ['GHOST', 'PROXY', 'ROUTE', 'TOKEN', 'VAULT', 'NEXUS', 'RELAY', 'SHARD', 'PULSE', 'OMEGA', 'DELTA', 'SIGMA', 'VIPER', 'RAVEN', 'LASER', 'NODES', 'PIXEL', 'CRYPT', 'ORBIT', 'STEEL', 'TOWER', 'AXIOM', 'CABLE', 'DRONE'],
   6: ['CIPHER', 'KERNEL', 'SERVER', 'ACCESS', 'BINARY', 'PACKET', 'SIGNAL', 'MATRIX', 'VECTOR', 'SYSTEM', 'DAEMON', 'SOCKET', 'BUFFER', 'MIRROR', 'SHADOW', 'CARBON', 'CORTEX', 'FALCON', 'TUNNEL', 'ORACLE', 'PHOTON', 'ROCKET'],
@@ -35,18 +38,18 @@ function shuffle<T>(rnd: Rnd, a: T[]): T[] {
   return b;
 }
 
-/** Puzzle moves return true (good), false (mistake: adds trace) or null (neutral, e.g. rotating a tile). */
-type Move = boolean | null;
+/** Puzzle moves return true (good), false (mistake: adds trace), a number (mistake costing that much trace) or null (neutral, e.g. rotating a tile). */
+type Move = boolean | number | null;
 
 /** Among Us wiring: click a left wire end, then the matching colour on the right. */
 export class WirePatch {
-  static COLORS = ['red', 'blue', 'yellow', 'pink', 'cyan'];
+  static COLORS = ['red', 'blue', 'yellow', 'pink', 'cyan', 'green', 'orange'];
   readonly left: string[];
   readonly right: string[];
   sel: number | null = null;
   done = new Set<string>();
   constructor(rnd: Rnd, k: number) {
-    const cols = shuffle(rnd, WirePatch.COLORS).slice(0, 4 + Math.round(k));
+    const cols = shuffle(rnd, WirePatch.COLORS).slice(0, 5 + Math.round(k));
     this.left = cols;
     this.right = shuffle(rnd, cols);
   }
@@ -65,7 +68,7 @@ export class WirePatch {
 export class Breakers {
   on: boolean[];
   constructor(rnd: Rnd, k: number) {
-    const n = 5 + Math.round(k * 2);
+    const n = 6 + Math.round(k * 3);
     this.on = Array(n).fill(true);
     // scramble by applying real flips from the solved state, so it is always solvable
     while (this.solved) for (let i = 0; i < n; i++) if (rnd() < 0.5) this.toggle(i);
@@ -83,12 +86,12 @@ export class Circuit {
   readonly bulbRow: number;
   tiles: number[];
   constructor(rnd: Rnd, k: number) {
-    const n = (this.n = 4 + Math.round(k));
+    const n = (this.n = 5 + Math.round(k));
     this.srcRow = pickInt(rnd, n);
     this.bulbRow = pickInt(rnd, n);
-    // randomised DFS from the source cell finds a path to the bulb cell
-    const path: number[] = [];
-    const seen = new Set<number>();
+    // randomised DFS from the source cell finds a path to the bulb cell; best of 3 tries, so the route runs long
+    let path: number[] = [], best: number[] = [];
+    let seen = new Set<number>();
     const goal = this.bulbRow * n + n - 1;
     const dfs = (c: number): boolean => {
       seen.add(c); path.push(c);
@@ -101,7 +104,8 @@ export class Circuit {
       path.pop();
       return false;
     };
-    dfs(this.srcRow * n);
+    for (let i = 0; i < 3; i++) { path = []; seen = new Set(); dfs(this.srcRow * n); if (path.length > best.length) best = path; }
+    path = best;
     const dirTo = (a: number, b: number) => Circuit.DIRS.findIndex(([dx, dy]) => (a % n) + dx === b % n && Math.floor(a / n) + dy === Math.floor(b / n));
     // decoys: random straights, corners and tees
     const decoys = [0b0101, 0b1010, 0b0011, 0b0110, 0b1100, 0b1001, 0b0111, 0b1011];
@@ -136,9 +140,9 @@ export class Circuit {
   rotate(i: number): Move { this.tiles[i] = Circuit.rot(this.tiles[i]); return null; }
 }
 
-/** A needle sweeps the gauge; LOCK it inside the green band three times. */
+/** A needle sweeps the gauge; LOCK it inside the green band 3-4 times. */
 export class Voltage {
-  static LOCKS = 3;
+  readonly locks: number;
   x = 0;
   private dir = 1;
   readonly speed: number;
@@ -146,12 +150,13 @@ export class Voltage {
   center: number;
   hits = 0;
   constructor(private rnd: Rnd, k: number) {
-    this.speed = 0.45 + k * 0.5;
-    this.width = 0.16 - k * 0.07;
+    this.locks = 3 + Math.round(k);
+    this.speed = 0.55 + k * 0.6;
+    this.width = 0.13 - k * 0.06;
     this.center = this.newCenter();
   }
   private newCenter() { return 0.2 + this.rnd() * 0.6; }
-  get solved() { return this.hits >= Voltage.LOCKS; }
+  get solved() { return this.hits >= this.locks; }
   tick(dt: number) {
     this.x += this.dir * this.speed * dt;
     if (this.x > 1) { this.x = 2 - this.x; this.dir = -1; }
@@ -165,18 +170,19 @@ export class Voltage {
   }
 }
 
-/** Simon: a 3x3 wall of camera feeds flashes a sequence; repeat it. Each round adds a step. */
+/** Simon: a 3x3 wall of camera feeds flashes a sequence; repeat it. Each round adds a step, 4 up to 5-6. */
 export class Cameras {
+  static START = 4;
   static STEP = 0.55;
   static ON = 0.4;
   static LEAD = 0.6;
   readonly seq: number[] = [];
-  len = 3;
+  len = Cameras.START;
   idx = 0;
   /** playback clock; < 0 is the pause before playback, null once the player may answer */
   showT: number | null = -Cameras.LEAD;
   constructor(rnd: Rnd, k: number) {
-    const max = 4 + Math.round(k);
+    const max = 5 + Math.round(k);
     while (this.seq.length < max) { const c = pickInt(rnd, 9); if (c !== this.seq[this.seq.length - 1]) this.seq.push(c); }
   }
   get solved() { return this.len > this.seq.length; }
@@ -201,13 +207,14 @@ export class Cameras {
 
 /** Tune the live wave until it matches the camera feed's carrier, then LOOP FEED. */
 export class Signal {
-  static RANGE = { FREQ: [1, 6], AMP: [1, 5], PHASE: [0, 3] } as const;
+  /** PHASE is in eighths of a turn */
+  static RANGE = { FREQ: [1, 8], AMP: [1, 6], PHASE: [0, 7] } as const;
   readonly params: (keyof typeof Signal.RANGE)[];
   val: Record<string, number> = {};
   readonly target: Record<string, number> = {};
   solved = false;
   constructor(rnd: Rnd, k: number) {
-    this.params = k >= 0.5 ? ['FREQ', 'AMP', 'PHASE'] : ['FREQ', 'AMP'];
+    this.params = k >= 0.25 ? ['FREQ', 'AMP', 'PHASE'] : ['FREQ', 'AMP'];
     const roll = (p: keyof typeof Signal.RANGE) => { const [a, b] = Signal.RANGE[p]; return a + pickInt(rnd, b - a + 1); };
     for (const p of this.params) this.target[p] = roll(p);
     do for (const p of this.params) this.val[p] = roll(p);
@@ -222,7 +229,61 @@ export class Signal {
   loop(): Move { if (!this.matched) return false; this.solved = true; return true; }
 }
 
-type Puzzles = { cameras: Cameras; signal: Signal; wires: WirePatch; breakers: Breakers; circuit: Circuit; voltage: Voltage };
+/** Mastermind on a 4-digit keypad: each wrong code reports digits placed right and digits right but misplaced. */
+export class Keypad {
+  static MAX = 8;
+  /** digits may repeat on the top floors */
+  readonly repeats: boolean;
+  code = '';
+  entry = '';
+  log: { g: string; hit: number; near: number }[] = [];
+  /** lockouts so far (each one rolls a new code) */
+  resets = 0;
+  solved = false;
+  constructor(private rnd: Rnd, k: number) { this.repeats = k >= 0.75; this.roll(); }
+  private roll() { this.code = ''; while (this.code.length < 4) { const d = String(pickInt(this.rnd, 10)); if (this.repeats || !this.code.includes(d)) this.code += d; } }
+  static score(g: string, code: string) {
+    let hit = 0;
+    const a = Array(10).fill(0), b = Array(10).fill(0);
+    for (let i = 0; i < 4; i++) { if (g[i] === code[i]) hit++; a[+g[i]]++; b[+code[i]]++; }
+    return { hit, near: a.reduce((s, n, d) => s + Math.min(n, b[d]), 0) - hit };
+  }
+  press(d: number): Move { if (this.entry.length < 4) this.entry += d; return null; }
+  del(): Move { this.entry = this.entry.slice(0, -1); return null; }
+  enter(): Move {
+    if (this.entry.length < 4) return null;
+    const g = this.entry;
+    this.entry = '';
+    if (g === this.code) { this.solved = true; return true; }
+    this.log.push({ g, ...Keypad.score(g, this.code) });
+    if (this.log.length < Keypad.MAX) return KEY_PENALTY;
+    this.log = []; this.resets++; this.roll();
+    return LOCKOUT_PENALTY;
+  }
+}
+
+/** Subset sum: switch circuits on until the load meter reads exactly the target, then COMMIT. */
+export class Load {
+  readonly watts: number[];
+  on: boolean[];
+  readonly target: number;
+  solved = false;
+  constructor(rnd: Rnd, k: number) {
+    const n = 5 + Math.round(k * 2), step = k >= 0.5 ? 5 : 10;
+    this.watts = Array.from({ length: n }, () => step * (2 + pickInt(rnd, 240 / step - 1)));
+    // the target is a real subset, so there is always an answer
+    let pick: boolean[];
+    do pick = this.watts.map(() => rnd() < 0.5);
+    while (pick.filter(Boolean).length < 2 || pick.filter(Boolean).length > n - 2);
+    this.target = this.watts.reduce((s, w, i) => s + (pick[i] ? w : 0), 0);
+    this.on = Array(n).fill(false);
+  }
+  get total() { return this.watts.reduce((s, w, i) => s + (this.on[i] ? w : 0), 0); }
+  toggle(i: number): Move { this.on[i] = !this.on[i]; return null; }
+  commit(): Move { if (this.total !== this.target) return false; this.solved = true; return true; }
+}
+
+type Puzzles = { cameras: Cameras; signal: Signal; keypad: Keypad; wires: WirePatch; breakers: Breakers; circuit: Circuit; voltage: Voltage; load: Load };
 
 export class HackGame {
   stage: HackStage = 'bounce';
@@ -244,6 +305,8 @@ export class HackGame {
   readonly target: string[];
   seqI = 0;
   private shuffleT = 0;
+  /** decrypter reshuffle period (s) */
+  private readonly shuffleEvery: number;
   flashWrong = 0;
   private rnd: () => number;
 
@@ -253,7 +316,8 @@ export class HackGame {
     for (let i = 0; i < 4; i++) this.rnd(); // small seeds give tiny first draws
     const d = hackDifficulty(floor);
     this.traceTime = d.trace;
-    this.stages = force?.length ? force : this.shuffled(POOLS[kind]).slice(0, 2);
+    this.stages = force?.length ? force : this.shuffled(POOLS[kind]).slice(0, 3);
+    this.shuffleEvery = 3.5 - d.k;
     const pool = this.shuffled([...new Set(WORDS[d.wordLen])]);
     this.password = pool[0];
     // candidates that share letters with the password first, so every wrong pick tells you something
@@ -271,7 +335,7 @@ export class HackGame {
     this.grid = this.shuffled(fill);
     const nodes = ['InterNIC', 'Uplink PAS', 'Rostock Grid', 'Osaka Relay 7', 'NeoTokyo Exch.', 'Axiom Proxy 3', 'Lagos Mesh', 'Helsinki Node'];
     this.route = [...this.shuffled(nodes).slice(0, 3 + Math.round(floor / 90)), kind === 'security' ? `AXIOM SEC-NET F${floor}` : `AXIOM FACILITIES F${floor}`];
-    const make = { cameras: Cameras, signal: Signal, wires: WirePatch, breakers: Breakers, circuit: Circuit, voltage: Voltage };
+    const make = { cameras: Cameras, signal: Signal, keypad: Keypad, wires: WirePatch, breakers: Breakers, circuit: Circuit, voltage: Voltage, load: Load };
     for (const id of this.stages) if (id in make) (this.p as any)[id] = new make[id as keyof Puzzles](this.rnd, d.k);
   }
 
@@ -292,7 +356,7 @@ export class HackGame {
     if (this.trace >= 1) { this.trace = 1; this.stage = 'traced'; return; }
     if (this.stage === 'decrypt') {
       this.shuffleT += dt;
-      if (this.shuffleT > 4.5) { this.shuffleT = 0; this.grid = this.shuffled(this.grid); }
+      if (this.shuffleT > this.shuffleEvery) { this.shuffleT = 0; this.grid = this.shuffled(this.grid); }
     }
     if (this.stage === 'voltage' || this.stage === 'cameras') this.p[this.stage]!.tick(dt);
   }
@@ -325,9 +389,10 @@ export class HackGame {
     const p = this.p[id];
     if (this.stage !== id || !p) return false;
     const r = move(p);
-    if (r === false) this.wrong();
+    const bad = r === false || typeof r === 'number';
+    if (bad) this.wrong(typeof r === 'number' ? r : WRONG_PENALTY);
     else if (p.solved) this.next();
-    return r !== false;
+    return !bad;
   }
 
   abort() { if (!this.done) this.stage = 'aborted'; }

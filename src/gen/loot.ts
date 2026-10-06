@@ -63,6 +63,7 @@ export function containerLoot(kind: ContainerKind, rng: Rng, loot: number): Loot
       if (c(0.18)) out.push({ k: 'item', item: 'battery', n: 1 });
       if (c(0.22)) out.push({ k: 'ammo', ammo: 'pistol', n: ammoAmount(rng, 'pistol', 0.7) });
       if (c(0.08)) out.push({ k: 'item', item: 'drink', n: 1 });
+      if (rng.chance(0.5)) out.push({ k: 'coin', n: rng.int(1, 3) }); // loose change for the vending machines
       break;
     case 'safe':
       out.push(weaponLoot(rng, rng.pick(SAFE_GUNS), 0.8));
@@ -70,6 +71,7 @@ export function containerLoot(kind: ContainerKind, rng: Rng, loot: number): Loot
       if (c(0.6)) out.push({ k: 'item', item: 'plate', n: 1 });
       if (c(0.5)) out.push({ k: 'item', item: 'battery', n: 1 });
       if (c(0.4)) out.push({ k: 'grenade', g: rng.pick(['frag', 'flash', 'incendiary'] as const), n: 1 });
+      out.push({ k: 'coin', n: rng.int(3, 6) });
       break;
     case 'toolbox':
       if (c(0.35)) out.push({ k: 'item', item: 'battery', n: 1 });
@@ -103,5 +105,7 @@ export function describeLoot(it: LootItem): string {
     case 'item': return `${it.n}x ${it.item}`;
     case 'grenade': return `${it.n}x ${it.g}`;
     case 'weapon': return weapon(it.id).name;
+    case 'key': return `Master key (floor ${it.f})`;
+    case 'coin': return `${it.n} coin${it.n > 1 ? 's' : ''}`;
   }
 }

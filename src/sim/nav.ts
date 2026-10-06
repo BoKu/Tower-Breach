@@ -1,4 +1,4 @@
-import { FloorLayout, FW, FH, idx, isWalkableTile, blocksSight, S_LOW, T_FLOOR, T_DOOR } from '../gen/floor';
+import { FloorLayout, FW, FH, idx, isWalkableTile, blocksSight, inBounds, S_LOW, S_DOOR, T_FLOOR, T_DOOR } from '../gen/floor';
 
 /** Grid DDA line-of-sight. Returns true when nothing blocks sight between the points. */
 export function lineOfSight(L: FloorLayout, x0: number, y0: number, x1: number, y1: number): boolean {
@@ -111,9 +111,11 @@ export type CostFn = (tx: number, ty: number) => number;
 
 /**
  * A* over walkable tiles (8-way, no corner cutting). Returns world-space waypoints (tile centres)
- * excluding the start, or null if unreachable within the expansion budget.
+ * excluding the start, or null if unreachable within the expansion budget. `doors`: shut (unlocked) doors are passable
+ * (the walker opens them on the way); locked ones never are.
  */
-export function findPath(L: FloorLayout, sx: number, sy: number, gx: number, gy: number, extraCost?: CostFn, budget = 3000): { x: number; y: number }[] | null {
+export function findPath(L: FloorLayout, sx: number, sy: number, gx: number, gy: number, extraCost?: CostFn, budget = 3000, doors = false): { x: number; y: number }[] | null {
+  const ok = (x: number, y: number) => isWalkableTile(L, x, y) || (doors && inBounds(x, y) && L.solid[idx(x, y)] === S_DOOR);
   let stx = Math.floor(sx), sty = Math.floor(sy);
   let gtx = Math.floor(gx), gty = Math.floor(gy);
   if (!isWalkableTile(L, gtx, gty)) {
@@ -147,8 +149,8 @@ export function findPath(L: FloorLayout, sx: number, sy: number, gx: number, gy:
     const cx = c % FW, cy = (c / FW) | 0;
     for (const [ox, oy, w] of DIRS) {
       const nx = cx + ox, ny = cy + oy;
-      if (!isWalkableTile(L, nx, ny)) continue;
-      if (ox && oy && (!isWalkableTile(L, cx + ox, cy) || !isWalkableTile(L, cx, cy + oy))) continue;
+      if (!ok(nx, ny)) continue;
+      if (ox && oy && (!ok(cx + ox, cy) || !ok(cx, cy + oy))) continue;
       const ni = idx(nx, ny);
       const cost = gScore[c] + w + (extraCost ? extraCost(nx, ny) : 0);
       if (stamp[ni] !== curStamp || cost < gScore[ni]) {

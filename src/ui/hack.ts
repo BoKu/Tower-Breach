@@ -1,15 +1,15 @@
 import { h } from './dom';
-import { HackGame, PUZZLE_IDS, Signal, Voltage, type HackKind, type PuzzleId } from './hackgame';
+import { HackGame, Keypad, PUZZLE_IDS, Signal, type HackKind, type PuzzleId } from './hackgame';
 
 const TITLES: Record<PuzzleId, string> = {
-  password: 'PASSWORD BREAKER · MEMORY DUMP', decrypt: 'DECRYPTER · ENCRYPTION KEY', cameras: 'CAMERA SEQUENCE · FEED HANDSHAKE', signal: 'SIGNAL JAM · CARRIER LOOP',
-  wires: 'WIRE PATCH · LIGHTING BUS', breakers: 'BREAKER SWITCHES · DISTRIBUTION BOARD', circuit: 'CIRCUIT ROUTE · POWER FEED', voltage: 'VOLTAGE CALIBRATE · BALLAST',
+  password: 'PASSWORD BREAKER · MEMORY DUMP', decrypt: 'DECRYPTER · ENCRYPTION KEY', cameras: 'CAMERA SEQUENCE · FEED HANDSHAKE', signal: 'SIGNAL JAM · CARRIER LOOP', keypad: 'KEYPAD OVERRIDE · DOOR CONTROLLER',
+  wires: 'WIRE PATCH · LIGHTING BUS', breakers: 'BREAKER SWITCHES · DISTRIBUTION BOARD', circuit: 'CIRCUIT ROUTE · POWER FEED', voltage: 'VOLTAGE CALIBRATE · BALLAST', load: 'LOAD BALANCE · SUBSTATION',
 };
 const HINTS: Record<PuzzleId, string> = {
-  password: 'click a password', decrypt: 'click key bytes in order', cameras: 'watch, then repeat the feeds', signal: 'tune, then loop the feed',
-  wires: 'click a wire, then its colour', breakers: 'a breaker flips its neighbours too', circuit: 'click tiles to rotate', voltage: 'lock in the green band',
+  password: 'click a password', decrypt: 'click key bytes in order', cameras: 'watch, then repeat the feeds', signal: 'tune, then loop the feed', keypad: 'deduce the 4-digit code',
+  wires: 'click a wire, then its colour', breakers: 'a breaker flips its neighbours too', circuit: 'click tiles to rotate', voltage: 'lock in the green band', load: 'switch circuits to hit the target',
 };
-const WIRE_HEX: Record<string, string> = { red: '#ff3b4e', blue: '#3a8bff', yellow: '#ffd84a', pink: '#ff6ad5', cyan: '#35d8ff' };
+const WIRE_HEX: Record<string, string> = { red: '#ff3b4e', blue: '#3a8bff', yellow: '#ffd84a', pink: '#ff6ad5', cyan: '#35d8ff', green: '#5cff3a', orange: '#ff8c1a' };
 const WIRE_ROW = 38;
 
 /** `?dev=1&hack=wires,signal` forces the puzzles for testing. */
@@ -122,6 +122,8 @@ export class HackUI {
       case 'voltage': return `${p.voltage!.hits}|${p.voltage!.center}`;
       case 'cameras': { const c = p.cameras!; return `${c.lit}|${c.showT === null}|${c.idx}|${c.len}`; }
       case 'signal': return JSON.stringify(p.signal!.val);
+      case 'keypad': { const k = p.keypad!; return `${k.entry}|${k.log.length}|${k.resets}`; }
+      case 'load': return p.load!.on.join();
     }
   }
 
@@ -195,16 +197,16 @@ export class HackUI {
         this.animate = () => { needle.style.left = `${v.x * 100}%`; };
         return [[
           h('div', { class: 'hk-gauge' }, h('span', { class: 'hk-band', style: `left:${(v.center - v.width / 2) * 100}%;width:${v.width * 100}%` }), needle),
-          h('div', { class: 'hk-pips' }, ...Array.from({ length: Voltage.LOCKS }, (_, i) => h('span', { class: i < v.hits ? 'ok' : '' }))),
+          h('div', { class: 'hk-pips' }, ...Array.from({ length: v.locks }, (_, i) => h('span', { class: i < v.hits ? 'ok' : '' }))),
           this.btn('hk-act', () => g.act('voltage', (p) => p.lock()), 'LOCK')],
-          `Lock the needle inside the green band ${Voltage.LOCKS} times. A miss adds trace.`];
+          `Lock the needle inside the green band ${v.locks} times. A miss adds trace.`];
       }
       case 'cameras': {
         const c = g.p.cameras!, watching = c.showT !== null;
         const feeds = Array.from({ length: 9 }, (_, i) => this.btn(`hk-cam ${c.lit === i ? 'lit' : ''}`, () => g.act('cameras', (p) => p.pick(i)),
           h('small', {}, `CAM ${String(i + 1).padStart(2, '0')}`), h('i')));
         return [[h('div', { class: `hk-cams ${watching ? 'watch' : ''}` }, ...feeds),
-          h('div', { class: 'hk-pips' }, ...Array.from({ length: c.seq.length - 2 }, (_, i) => h('span', { class: i < c.len - 3 ? 'ok' : '' })))],
+          h('div', { class: 'hk-pips' }, ...Array.from({ length: c.seq.length - 3 }, (_, i) => h('span', { class: i < c.len - 4 ? 'ok' : '' })))],
           watching ? `WATCH: the handshake flashes ${c.len} feeds.` : `REPEAT the ${c.len} feeds in order  ·  ${c.idx}/${c.len}. A wrong feed adds trace and replays.`];
       }
       case 'signal': {
@@ -216,7 +218,7 @@ export class HackUI {
         const [tgt, live] = [...svg.querySelectorAll('path')];
         const wave = (v: Record<string, number>, t: number) => {
           let d = '';
-          for (let x = 0; x <= 360; x += 4) d += `${x ? 'L' : 'M'}${x},${(45 - v.AMP * 8 * Math.sin((v.FREQ * x * 2 * Math.PI) / 360 + ((v.PHASE ?? 0) * Math.PI) / 2 + t * 3)).toFixed(1)}`;
+          for (let x = 0; x <= 360; x += 4) d += `${x ? 'L' : 'M'}${x},${(45 - v.AMP * 6.5 * Math.sin((v.FREQ * x * 2 * Math.PI) / 360 + ((v.PHASE ?? 0) * Math.PI) / 4 + t * 3)).toFixed(1)}`;
           return d;
         };
         this.animate = (t) => { tgt.setAttribute('d', wave(s.target, t)); live.setAttribute('d', wave(s.val, t)); };
@@ -227,6 +229,28 @@ export class HackUI {
           h('small', {}, `${Signal.RANGE[p][0]}–${Signal.RANGE[p][1]}`)));
         return [[svg, h('div', { class: 'hk-knobs' }, ...rows), this.btn('hk-act', () => g.act('signal', (x) => x.loop()), 'LOOP FEED')],
           'Tune the live wave (bright) onto the camera carrier (dim), then loop the feed. A bad loop adds trace.'];
+      }
+      case 'keypad': {
+        const k = g.p.keypad!;
+        const slots = Array.from({ length: 4 }, (_, i) => h('span', { class: `hk-b ${i === k.entry.length ? 'next' : k.entry[i] ? 'ok' : ''}` }, k.entry[i] ?? '_'));
+        const keys = [1, 2, 3, 4, 5, 6, 7, 8, 9].map((d) => this.btn('hk-key', () => g.act('keypad', (p) => p.press(d)), String(d)));
+        keys.push(this.btn('hk-key', () => g.act('keypad', (p) => p.del()), 'DEL'), this.btn('hk-key', () => g.act('keypad', (p) => p.press(0)), '0'),
+          this.btn('hk-key', () => g.act('keypad', (p) => p.enter()), 'ENTER'));
+        const log = k.log.map((l) => h('div', { class: 'hk-log-l' }, `> ${l.g}`, h('span', {}, `  ${l.hit} PLACED · ${l.near} MISPLACED`)));
+        return [[h('div', { class: 'hk-kp' },
+          h('div', { class: 'hk-kpad' }, h('div', { class: 'hk-seq' }, ...slots), h('div', { class: 'hk-keys' }, ...keys)),
+          h('div', { class: 'hk-log' }, h('div', { class: 'hk-log-h' }, `ATTEMPTS ${k.log.length}/${Keypad.MAX}`), ...(log.length ? log : [h('div', { class: 'hk-log-l dim' }, 'no attempts yet')])))],
+          k.resets && !k.log.length ? 'LOCKOUT: the controller rolled a new code. Start again.'
+            : `Enter a 4-digit code${k.repeats ? ' (digits may repeat)' : ' (no repeated digits)'}. PLACED = right digit, right place; MISPLACED = right digit, wrong place. Each wrong code adds trace.`];
+      }
+      case 'load': {
+        const l = g.p.load!, max = l.watts.reduce((a, b) => a + b, 0), tot = l.total;
+        return [[h('div', { class: 'hk-meter' }, h('i', { class: tot > l.target ? 'over' : '', style: `width:${(tot / max) * 100}%` }), h('b', { style: `left:${(l.target / max) * 100}%` })),
+          h('div', { class: 'hk-title' }, `LOAD ${tot} W  /  TARGET ${l.target} W`),
+          h('div', { class: 'hk-brks' }, ...l.watts.map((w, i) => this.btn(`hk-load ${l.on[i] ? 'on' : ''}`, () => g.act('load', (p) => p.toggle(i)),
+            h('em', {}, l.on[i] ? 'ON' : 'OFF'), h('b', {}, `${w}W`), h('small', {}, `L${i + 1}`)))),
+          this.btn('hk-act', () => g.act('load', (p) => p.commit()), 'COMMIT LOAD')],
+          'Switch circuits until the load matches the target exactly, then commit. A wrong commit adds trace.'];
       }
     }
   }

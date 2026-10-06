@@ -278,7 +278,7 @@ describe('items, torch, vending', () => {
   });
   it('vending machine breaks into drinks/snacks; drink boosts speed 60s; food heals', () => {
     const { sim, fs, p } = setup();
-    fs.vendings.push({ id: 77, x: p.x + 1.2, y: p.y, rot: 1, hp: 45, broken: false, drops: [{ k: 'item', item: 'drink', n: 1 }, { k: 'item', item: 'food', n: 1 }] });
+    fs.vendings.push({ id: 77, x: p.x + 1.2, y: p.y, rot: 1, hp: 45, broken: false, drops: [{ k: 'item', item: 'drink', n: 1 }, { k: 'item', item: 'food', n: 1 }], price: 3 });
     fs.L.solid[idx(11, 10)] = S_TALL;
     p.input.ax = p.x + 3; p.input.ay = p.y;
     p.input.interact = true; run(sim, 2.2); p.input.interact = false; sim.tick(1 / 30);

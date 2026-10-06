@@ -59,7 +59,7 @@ export function surfaceHeight(L: FloorLayout, x: number, z: number, cut: CutInfo
     if (inCut(cut, x, z)) h = 0.4;
   } else {
     const s = L.solid[idx(tx, ty)];
-    if (s === S_TALL) h = Math.max(ground, inCut(cut, x, z) ? 0.95 : 1.9);
+    if (s >= S_TALL) h = Math.max(ground, inCut(cut, x, z) ? 0.95 : 1.9);
     else if (s === S_LOW) h = Math.max(ground, 0.85);
   }
   return h;

@@ -2,7 +2,7 @@ import { weapon, WeaponDef } from '../config/weapons';
 import { INJURY_THRESHOLD } from '../config/items';
 import { rayCircle, clamp, dist } from '../core/math';
 import { raycastWalls, lineOfSight } from './nav';
-import { S_LOW, idx, isWalkableTile, blocksSight } from '../gen/floor';
+import { S_LOW, idx, isWalkableTile, blocksSight, setDoorSolid, DoorMode } from '../gen/floor';
 import type { Sim } from './sim';
 import type { Enemy, FloorState, PlayerState, Grenade, Zone, PanelState } from './state';
 import { panelLights } from './lights';
@@ -255,6 +255,15 @@ export function togglePanel(sim: Sim, fs: FloorState, pn: PanelState, by: Player
   pn.off = !pn.off;
   for (const i of panelLights(fs.L, pn)) fs.lights[i].off = pn.off;
   sim.msg(by, pn.off ? 'Lights off.' : 'Lights on.', 'info');
+}
+
+/** Open, close, lock or unlock door i. r = how far the sound carries; `skip` (an enemy opening it) doesn't hear itself. */
+export function setDoor(sim: Sim, fs: FloorState, i: number, st: DoorMode, r: number, by: PlayerState | null, skip?: Enemy) {
+  const d = fs.L.doors[i];
+  fs.doors[i].state = st;
+  setDoorSolid(fs.L, d, st);
+  sim.ai.hear(fs, d.x, d.y, r, by, skip);
+  if (by) sim.emit({ e: 'use', f: fs.floor, pid: by.id, item: 'door' });
 }
 
 export function breakVending(sim: Sim, fs: FloorState, v: FloorState['vendings'][number], by: PlayerState | null) {

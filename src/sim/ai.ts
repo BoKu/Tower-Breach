@@ -1,7 +1,7 @@
 import { clamp, dist, wrapAngle, turnToward, angleTo } from '../core/math';
 import { findPath, moveCircle, nearestWalkable } from './nav';
-import { isWalkableTile, idx, S_LOW, S_TALL, T_WALL, T_WINDOW, FW, FH } from '../gen/floor';
-import { canSee, trace, damagePlayer, damageEnemy, destroyCamera, breakVending } from './combat';
+import { isWalkableTile, idx, S_LOW, S_TALL, S_DOOR, T_WALL, T_WINDOW, FW, FH } from '../gen/floor';
+import { canSee, trace, damagePlayer, damageEnemy, destroyCamera, breakVending, setDoor } from './combat';
 import { ENEMY_STATS } from './stats';
 import { NETWORKED } from './types';
 import { weapon } from '../config/weapons';
@@ -77,9 +77,9 @@ export class AI {
   }
 
   /** Sound propagation. Everyone hears; walls muffle. */
-  hear(fs: FloorState, x: number, y: number, r: number, src: PlayerState | null) {
+  hear(fs: FloorState, x: number, y: number, r: number, src: PlayerState | null, skip?: Enemy) {
     for (const e of fs.enemies) {
-      if (e.state === 'dead' || e.flashT > 0.5) continue;
+      if (e.state === 'dead' || e.flashT > 0.5 || e === skip) continue;
       const st = ENEMY_STATS[e.type];
       const d = dist(x, y, e.x, e.y);
       const reach = r * st.hearing * (canSee(fs, e.x, e.y, x, y) ? 1 : 0.6);
@@ -315,14 +315,20 @@ export class AI {
     // path following
     const moving = dist(e.x, e.y, goalX, goalY) > 0.35 && speed > 0;
     if (moving) {
-      if (!e.path || dist(goalX, goalY, e.pathGoalX, e.pathGoalY) > 1.5 || sim.t - e.pathT > 1.2) {
+      // an unreachable goal (behind a locked door) is retried twice a second, not every frame
+      const stuck = !e.path && (e as any).noPath && sim.t - e.pathT < 0.5 && dist(goalX, goalY, e.pathGoalX, e.pathGoalY) <= 1.5;
+      if (!stuck && (!e.path || dist(goalX, goalY, e.pathGoalX, e.pathGoalY) > 1.5 || sim.t - e.pathT > 1.2)) {
         const fireZones = fs.zones.filter((z) => z.kind === 'fire');
-        e.path = findPath(L, e.x, e.y, goalX, goalY, fireZones.length ? (tx, ty) => (fireZones.some((z) => dist(tx + 0.5, ty + 0.5, z.x, z.y) < z.r + 0.5) ? 25 : 0) : undefined, 2200);
+        e.path = findPath(L, e.x, e.y, goalX, goalY, fireZones.length ? (tx, ty) => (fireZones.some((z) => dist(tx + 0.5, ty + 0.5, z.x, z.y) < z.r + 0.5) ? 25 : 0) : undefined, 2200, true);
+        (e as any).noPath = !e.path;
         e.pathGoalX = goalX; e.pathGoalY = goalY; e.pathT = sim.t;
         if (!e.path && e.state === 'investigate') this.setState(e, 'patrol');
       }
       if (e.path && e.path.length) {
         const wp = e.path[0];
+        // a shut door next on the route: open it (never closes or locks one)
+        const wi = idx(Math.floor(wp.x), Math.floor(wp.y));
+        if (L.solid[wi] === S_DOOR && dist(e.x, e.y, wp.x, wp.y) < 1.3) { const di = L.doors.findIndex((d) => d.tiles.includes(wi)); if (di >= 0) setDoor(sim, fs, di, 'open', 6, null, e); }
         const dx = wp.x - e.x, dy = wp.y - e.y;
         const dd = Math.hypot(dx, dy);
         if (dd < 0.3) e.path.shift();

@@ -1,6 +1,6 @@
 import type { AmmoType } from '../config/weapons';
 import type { GrenadeType, ItemType } from '../config/items';
-import type { FloorLayout, SpawnSpec } from '../gen/floor';
+import type { FloorLayout, SpawnSpec, DoorMode } from '../gen/floor';
 import type { ContainerKind } from '../gen/loot';
 import type { EnemyType, LootItem } from './types';
 
@@ -72,6 +72,8 @@ export interface PlayerState {
   grenadeSel: GrenadeType;
   items: Record<ItemType, number>;
   itemSel: ItemType;
+  /** coins for the vending machines (cap 99), and the floors whose master key this player holds */
+  coins: number; keys: number[];
   mods: { bypass: boolean; torchmod: boolean; pouch: boolean };
   torchOn: boolean; battery: number;
   boostT: number;
@@ -136,7 +138,10 @@ export interface CameraState {
 }
 export interface TrapState { id: number; kind: 'tripwire' | 'mine'; x: number; y: number; x2: number; y2: number; armed: boolean; revealed: boolean; fuse: number }
 export interface ContainerState { id: number; kind: ContainerKind; x: number; y: number; items: LootItem[]; opened: boolean; label: string }
-export interface VendingState { id: number; x: number; y: number; rot: number; hp: number; broken: boolean; drops: LootItem[] }
+/** drops = the remaining stock (bought one unit at a time for `price` coins; prying it open spills the rest) */
+export interface VendingState { id: number; x: number; y: number; rot: number; hp: number; broken: boolean; drops: LootItem[]; price: number }
+/** Live state of L.doors[i] (same order). Closed and locked doors block walking and sight (see setDoorSolid). */
+export interface DoorState { id: number; state: DoorMode }
 export interface HazardState { id: number; kind: 'fire' | 'shock'; x: number; y: number; r: number }
 export interface Grenade { id: number; kind: GrenadeType; x: number; y: number; z: number; vx: number; vy: number; vz: number; fuse: number; owner: number; rest: boolean }
 export interface Zone { id: number; kind: 'smoke' | 'fire' | 'decoy'; x: number; y: number; r: number; t: number; tick: number }
@@ -162,6 +167,7 @@ export interface FloorState {
   lights: LightState[];
   panels: PanelState[];
   hacks: HackState[];
+  doors: DoorState[];
   /** lighting computer hacked: no flicker, no dead bulbs, no darkness */
   lightsFixed: boolean;
   /** street NPCs: seconds each officer (by npc index) has spent paused in conversation, and who is talking now */

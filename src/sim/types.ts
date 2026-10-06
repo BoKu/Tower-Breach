@@ -17,6 +17,9 @@ export type LootItem =
   | { k: 'ammo'; ammo: AmmoType; n: number }
   | { k: 'item'; item: ItemType; n: number }
   | { k: 'grenade'; g: GrenadeType; n: number }
-  | { k: 'weapon'; id: string; mag: number; reserve: number };
+  | { k: 'weapon'; id: string; mag: number; reserve: number }
+  /** the master key for floor f: opens (and locks) every locked door on that floor */
+  | { k: 'key'; f: number }
+  | { k: 'coin'; n: number };
 
 export type Vec2 = { x: number; y: number };
