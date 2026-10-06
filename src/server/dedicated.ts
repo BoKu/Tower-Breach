@@ -11,6 +11,7 @@ import { parseArgs } from 'node:util';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { SquadAuthority } from '../net/authority';
 import { NET_VERSION, versionMismatch, cleanName } from '../net/protocol';
+import { startTunnel, type Tunnel } from './tunnel';
 import { DEDICATED_PORT } from '../net/transport';
 import { VOICE, VOICE_UP, packVoice } from '../net/voice';
 import { DIFFICULTIES, type Difficulty } from '../config/difficulty';
@@ -34,11 +35,15 @@ export interface ServerConfig {
   /** PEM certificate + private key files: serve https/wss (browser voice chat needs a secure page). '' = plain http */
   tlsCert: string;
   tlsKey: string;
+  /** open a Cloudflare quick tunnel (https://….trycloudflare.com): no port forwarding, https for browser voice */
+  tunnel: boolean;
+  /** cloudflared to use for the tunnel ('' = PATH, else downloaded to ~/.towerbreach) */
+  tunnelBin: string;
 }
 
 export const DEFAULTS: ServerConfig = {
   port: DEDICATED_PORT, difficulty: 'normal', maxPlayers: 5, friendlyFire: false, password: '', name: 'Tower Breach server', motd: '',
-  holiday: 'auto', readyTimeout: 90, webRoot: '', tlsCert: '', tlsKey: '',
+  holiday: 'auto', readyTimeout: 90, webRoot: '', tlsCert: '', tlsKey: '', tunnel: false, tunnelBin: '',
 };
 
 /** Internet-facing limits. */
@@ -92,12 +97,21 @@ Options (flags beat environment variables, which beat the config file):
       --web-root <dir>      serve the game from this folder instead of the built-in copy (TB_WEB_ROOT)
       --tls-cert <file>     PEM certificate (e.g. Let's Encrypt fullchain.pem): serve https + wss, which
       --tls-key <file>      browser players need for voice chat       (TB_TLS_CERT, TB_TLS_KEY)
+      --tunnel              free public https address through a Cloudflare quick tunnel: no port forwarding,
+                            browser voice works; a new address each start (TB_TUNNEL=1)
+      --tunnel-bin <file>   cloudflared to use (default: the PATH, else downloaded once to ~/.towerbreach)
   -c, --config <file>       JSON config file (default: ./${CONFIG_FILE} if present)
   -v, --version             print the server version
   -h, --help                this text
 
-Config file keys: port, difficulty, maxPlayers, friendlyFire, password, name, motd, holiday, readyTimeout, webRoot, tlsCert, tlsKey.
+Config file keys: port, difficulty, maxPlayers, friendlyFire, password, name, motd, holiday, readyTimeout, webRoot, tlsCert, tlsKey, tunnel, tunnelBin.
 `;
+
+const OPTIONS = {
+  port: { type: 'string', short: 'p' }, difficulty: { type: 'string', short: 'd' }, 'max-players': { type: 'string' }, 'friendly-fire': { type: 'boolean' },
+  password: { type: 'string' }, name: { type: 'string' }, motd: { type: 'string' }, holiday: { type: 'string' }, 'ready-timeout': { type: 'string' },
+  'web-root': { type: 'string' }, 'tls-cert': { type: 'string' }, 'tls-key': { type: 'string' }, tunnel: { type: 'boolean' }, 'tunnel-bin': { type: 'string' }, config: { type: 'string', short: 'c' }, help: { type: 'boolean', short: 'h' },
+} as const;
 
 /**
  * `npm run server --holiday xmas` (without "--") never reaches us as flags: npm keeps --options for itself and exports
@@ -105,14 +119,15 @@ Config file keys: port, difficulty, maxPlayers, friendlyFire, password, name, mo
  * flags; when the split-off values can't be paired up unambiguously, say how to run it instead.
  */
 function npmFlags(argv: string[], env: Record<string, string | undefined>): string[] {
-  const VALUE = ['port', 'difficulty', 'max-players', 'password', 'name', 'motd', 'holiday', 'ready-timeout', 'web-root', 'tls-cert', 'tls-key', 'config'];
+  const VALUE = ['port', 'difficulty', 'max-players', 'password', 'name', 'motd', 'holiday', 'ready-timeout', 'web-root', 'tls-cert', 'tls-key', 'tunnel-bin', 'config'];
   const flags: string[] = [], split: string[] = [];
-  for (const o of [...VALUE, 'friendly-fire']) {
+  for (const o of [...VALUE, 'friendly-fire', 'tunnel']) {
     const v = env['npm_config_' + o.replace(/-/g, '_')];
     if (!v) continue;
-    if (o === 'friendly-fire') { if (v !== 'false') flags.push('--friendly-fire'); } else if (v === 'true') split.push(o); else flags.push(`--${o}`, v);
+    if (o === 'friendly-fire' || o === 'tunnel') { if (v !== 'false') flags.push('--' + o); } else if (v === 'true') split.push(o); else flags.push(`--${o}`, v);
   }
-  const bare = argv.filter((a) => !a.startsWith('-')), rest = argv.filter((a) => a.startsWith('-') || !bare.includes(a));
+  const bare = parseArgs({ args: argv, strict: false, allowPositionals: true, options: OPTIONS }).positionals;
+  const rest = argv.filter((a) => !bare.includes(a));
   if (split.length === 1 && bare.length === 1) return [...flags, `--${split[0]}`, bare[0], ...rest];
   if (split.length || bare.length) {
     // npm doesn't say which value belonged to which option, so don't guess
@@ -125,14 +140,7 @@ function npmFlags(argv: string[], env: Record<string, string | undefined>): stri
 /** Merge defaults < config file < environment < flags. Returns null for --help; throws a readable Error on bad input. */
 export function parseConfig(argv: string[], env: Record<string, string | undefined> = {}): ServerConfig | null {
   if (env.npm_lifecycle_event) argv = npmFlags(argv, env);
-  const { values: f } = parseArgs({
-    args: argv, strict: true, allowPositionals: false,
-    options: {
-      port: { type: 'string', short: 'p' }, difficulty: { type: 'string', short: 'd' }, 'max-players': { type: 'string' }, 'friendly-fire': { type: 'boolean' },
-      password: { type: 'string' }, name: { type: 'string' }, motd: { type: 'string' }, holiday: { type: 'string' }, 'ready-timeout': { type: 'string' },
-      'web-root': { type: 'string' }, 'tls-cert': { type: 'string' }, 'tls-key': { type: 'string' }, config: { type: 'string', short: 'c' }, help: { type: 'boolean', short: 'h' },
-    },
-  });
+  const { values: f } = parseArgs({ args: argv, strict: true, allowPositionals: false, options: OPTIONS });
   if (f.help) return null;
   const file = f.config ?? env.TB_CONFIG ?? (existsSync(CONFIG_FILE) ? CONFIG_FILE : '');
   let j: any = {};
@@ -159,6 +167,8 @@ export function parseConfig(argv: string[], env: Record<string, string | undefin
     webRoot: String(pick(f['web-root'], 'TB_WEB_ROOT', 'webRoot')),
     tlsCert: String(pick(f['tls-cert'], 'TB_TLS_CERT', 'tlsCert')),
     tlsKey: String(pick(f['tls-key'], 'TB_TLS_KEY', 'tlsKey')),
+    tunnel: bool(f.tunnel ?? env.TB_TUNNEL ?? j.tunnel),
+    tunnelBin: String(pick(f['tunnel-bin'], 'TB_TUNNEL_BIN', 'tunnelBin')),
   };
   if (!cfg.tlsCert !== !cfg.tlsKey) throw new Error('--tls-cert and --tls-key go together');
   if (!DIFFICULTIES.includes(cfg.difficulty)) throw new Error(`difficulty must be one of ${DIFFICULTIES.join(', ')}`);
@@ -300,7 +310,10 @@ export async function startDedicated(cfg: ServerConfig, assets: AssetReader, log
   const alive = new WeakSet<WebSocket>();
 
   wss.on('connection', (ws, req) => {
-    const ip = req.socket.remoteAddress ?? '?';
+    // through the Cloudflare tunnel every player arrives from localhost: use the address Cloudflare saw, so the
+    // per-address limits and the password lockout don't lump the whole squad together (trusted from loopback only)
+    const peer = req.socket.remoteAddress ?? '?', cf = req.headers['cf-connecting-ip'];
+    const ip = cfg.tunnel && typeof cf === 'string' && cf && /^(127\.|::1$|::ffff:127\.)/.test(peer) ? cf : peer;
     const refuse = (msg: string) => { send(ws, { t: 'error', msg }); ws.close(); };
     perIp.set(ip, (perIp.get(ip) ?? 0) + 1);
     ws.on('error', () => ws.terminate()); // oversized frame, bad UTF-8...: drop the socket, never crash the server
@@ -427,14 +440,30 @@ export async function cli(embedded?: AssetReader) {
   stamp(`listening on TCP port ${srv.port}. Players join with:`);
   const web = cfg.tlsCert ? 'https' : 'http';
   for (const a of ['localhost', ...lanAddresses()]) stamp(`   ${a}:${srv.port}   (browser: ${web}://${a}:${srv.port})`);
-  if (!cfg.tlsCert) stamp('   browser players get voice chat only over https: see --tls-cert in docs/HOSTING.md');
-  stamp(`   <your public IP>:${srv.port} from the internet once the port is forwarded (see docs/HOSTING.md)`);
+  let tunnel: Tunnel | null = null;
+  if (cfg.tunnel) {
+    stamp('opening a Cloudflare quick tunnel…');
+    try {
+      tunnel = await startTunnel(srv.port, !!cfg.tlsCert, cfg.tunnelBin, stamp);
+      const host = new URL(tunnel.url).host;
+      stamp('');
+      stamp(`   FROM ANYWHERE:  ${tunnel.url}   (browser, voice chat works)`);
+      stamp(`                   ${host}   (desktop app: Co-op → server address)`);
+      stamp('   (a new address each time the server starts; no port forwarding needed. A brand-new address can take');
+      stamp('    about 30 s to work everywhere: if it says "not found", wait a moment and try again)');
+      stamp('');
+    } catch (e) { stamp(`tunnel failed: ${(e as Error).message}. The server still runs on the addresses above.`); }
+  } else {
+    if (!cfg.tlsCert) stamp('   browser players get voice chat only over https: use --tunnel, or see --tls-cert in docs/HOSTING.md');
+    stamp(`   <your public IP>:${srv.port} from the internet once the port is forwarded, or start with --tunnel (see docs/HOSTING.md)`);
+  }
   stamp('Ctrl+C to stop.');
   let stopping = false;
   const stop = async (sig: string) => {
     if (stopping) process.exit(1); // second Ctrl+C: don't wait
     stopping = true;
     stamp(`${sig}: shutting down, disconnecting ${srv.squad.sockets.size} player(s)…`);
+    tunnel?.stop();
     await srv.close();
     stamp('Stopped.');
     process.exit(0);

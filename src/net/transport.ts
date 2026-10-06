@@ -19,10 +19,12 @@ export const DEDICATED_PORT = 8787;
 
 /**
  * What a player types ("1.2.3.4", "myhost:8787", "ws://...", "https://...") -> a WebSocket URL.
- * No scheme = plain ws:// on the default port; the /ws path is added when missing.
+ * No scheme = plain ws:// on the default port (a bare *.trycloudflare.com tunnel address is wss://); the /ws path is
+ * added when missing.
  */
 export function normalizeServerAddress(addr: string): string {
   let a = addr.trim().replace(/^http(s?):\/\//i, 'ws$1://');
+  if (/^[a-z0-9-]+\.trycloudflare\.com(\/|$)/i.test(a)) a = 'wss://' + a; // a server's --tunnel address: https on 443
   if (!/^wss?:\/\//i.test(a)) {
     const hostPort = a.split('/')[0];
     const hasPort = /^\[.*\]:\d+$/.test(hostPort) || /^[^:\[\]]+:\d+$/.test(hostPort);

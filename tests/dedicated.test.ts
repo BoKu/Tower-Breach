@@ -54,6 +54,8 @@ describe('dedicated server', () => {
     expect(parseConfig([], { ...npm, npm_config_holiday: 'xmas', npm_config_password: 'abc', npm_config_friendly_fire: 'true', npm_config_max_players: '3' }))
       .toMatchObject({ holiday: 'xmas', password: 'abc', friendlyFire: true, maxPlayers: 3 });
     expect(parseConfig(['xmas'], { ...npm, npm_config_holiday: 'true' })).toMatchObject({ holiday: 'xmas' }); // value split off by npm
+    // with "--" the flags arrive as normal, values and all
+    expect(parseConfig(['--port', '9002', '--name', 'Tunnel test', '--tunnel'], npm)).toMatchObject({ port: 9002, name: 'Tunnel test', tunnel: true });
     expect(() => parseConfig(['xmas', '9000'], { ...npm, npm_config_holiday: 'true', npm_config_port: 'true' })).toThrow(/npm run server -- --/);
   });
 

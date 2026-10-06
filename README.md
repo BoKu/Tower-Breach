@@ -98,13 +98,15 @@ Get the latest build from **[Releases](../../releases/latest)**:
 **Co-op with cross-play.** Someone runs the **dedicated server**: a single download for Windows, macOS or Linux
 (`towerbreach-server-<os>`), or a small VPS. Friends join it from the **desktop app on any OS** (Co-op → server
 address → **Join server**), or from a **browser** by opening `http://<server>:8787` (`https://` if the server has a
-certificate). Both kinds of player can be in
-the same squad. The server runs the game itself, so the run carries on when anyone leaves, and they can rejoin with
-the same callsign. Late friends can still join while the squad is on the street; once someone enters the tower the
+certificate or a tunnel). Both kinds of player can be in the same squad. The server runs the game itself, so the run
+carries on when anyone leaves, and they can rejoin with the same callsign. Late friends can still join while the squad is on the street; once someone enters the tower the
 squad is locked. Squadmates on the same floor and close by can talk with **proximity voice chat** (push-to-talk,
 routed through the server). It works in the desktop app with no setup. Browsers only allow voice chat on `https://`
-pages, so browser players need the server to run with a certificate (`--tls-cert` / `--tls-key`). The server's
-options (password, difficulty, holiday theme, friendly fire and more) are listed in the hosting guide. How to run one, including port forwarding and firewalls:
+pages, so browser players need an https address: `--tunnel` (below) or a certificate (`--tls-cert` / `--tls-key`).
+
+**No port forwarding?** Start the server with `--tunnel` and it prints a free public `https://….trycloudflare.com`
+address through Cloudflare. Friends just open it, and browser voice chat works too. The server's options (password,
+difficulty, holiday theme, friendly fire and more), port forwarding and firewalls are all in
 **[docs/HOSTING.md](docs/HOSTING.md)**. Browser players can also still host a squad in their own browser through the
 relay (`npm start`, 5-letter codes). See the [co-op notes](docs/DEVELOPMENT.md#playing-co-op-online).
 
@@ -182,6 +184,8 @@ Third-party components:
 - [three.js](https://threejs.org) (MIT)
 - [ws](https://github.com/websockets/ws) (MIT), used by the relay and the dedicated server
 - [Bun](https://bun.sh) (MIT) compiles the standalone dedicated-server binaries and is included in them
+- [cloudflared](https://github.com/cloudflare/cloudflared) (Apache-2.0), downloaded by the server only when you use
+  `--tunnel`
 - Chakra Petch UI font (SIL Open Font License 1.1), via `@fontsource/chakra-petch`
 - Street ambience: "citystreet3" by sagetyrtle (CC0 1.0). See [public/audio/CREDITS.txt](public/audio/CREDITS.txt).
 

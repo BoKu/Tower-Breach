@@ -10,6 +10,37 @@ cheap VPS. Nobody's game has to host. The server:
 
 Everyone must run the **same release** of the game as the server. A mismatch gets a clear "Version mismatch" message.
 
+## Quick start: no port forwarding (`--tunnel`)
+
+The easiest way to play with friends over the internet. Start the server with `--tunnel`:
+
+```bash
+./towerbreach-server-linux-x64 --tunnel --password hunter2      # or the Windows / macOS file
+```
+
+The server opens a free **Cloudflare quick tunnel** and prints a public address such as
+`https://calm-blue-fox.trycloudflare.com`. Send it to your friends:
+
+- **Browser:** open the `https://…` link. Voice chat works, because the page is https.
+- **Desktop app:** Co-op → **Server address** → paste `calm-blue-fox.trycloudflare.com` → **Join server**.
+
+You don't need port forwarding, firewall rules or a certificate, and it also works where hosting is otherwise
+impossible (CGNAT, mobile hotspots, university networks). Your home IP address stays hidden from the players.
+
+Good to know:
+
+- **The address changes every time the server starts.** Send the new one each session. A fixed address needs a free
+  Cloudflare account and your own domain (a "named tunnel", see Cloudflare's docs). Point it at `http://localhost:8787`.
+- **The first time, the server downloads Cloudflare's tunnel tool** (`cloudflared`, about 35 MB, Apache-2.0) from
+  Cloudflare's GitHub releases into a `.towerbreach` folder in your home folder, and reuses it after that. If
+  `cloudflared` is already installed it uses that. To choose one yourself, pass `--tunnel-bin <path>`.
+- **A brand-new address can take about 30 seconds to work.** If a friend gets "not found" straight away, wait a moment
+  and try again.
+- **Quick tunnels are free and have no uptime guarantee.** They are fine for playing with friends; for a public server
+  that's always on, use port forwarding (section 3) or a VPS (section 7).
+- **Latency.** Traffic goes through Cloudflare's nearest data centre. That usually adds only a few milliseconds.
+- **Set a password.** Anyone with the link can reach the server.
+
 ## Contents
 
 1. [Download and run](#1-download-and-run)
@@ -101,6 +132,9 @@ start the server from. Flags beat environment variables, which beat the file. Ru
 | `--holiday` | `TB_HOLIDAY` | `holiday` | `auto` | `auto` (the server's date), `none`, `xmas`, `easter` or `halloween` |
 | `--ready-timeout` | `TB_READY_TIMEOUT` | `readyTimeout` | `90` | Seconds after the first player is READY before everyone deploys, ready or not (`0` = wait for everyone) |
 | `--web-root` | `TB_WEB_ROOT` | `webRoot` | built in | Serve the web game from this folder instead of the built-in copy |
+| `--tunnel` | `TB_TUNNEL=1` | `tunnel` | off | Public https address through a free Cloudflare quick tunnel (see the quick start) |
+| `--tunnel-bin` | `TB_TUNNEL_BIN` | `tunnelBin` | PATH, else downloaded | The `cloudflared` program to use for `--tunnel` |
+| `--tls-cert`, `--tls-key` | `TB_TLS_CERT`, `TB_TLS_KEY` | `tlsCert`, `tlsKey` | none | PEM certificate and key: serve https and wss yourself (section 7) |
 | `-c`, `--config` | `TB_CONFIG` | | `./towerbreach-server.json` | Config file to read |
 
 Example `towerbreach-server.json`:
@@ -123,7 +157,7 @@ next run.
 
 ## 3. Let your friends in: port forwarding
 
-Your router blocks connections from the internet by default. To let friends in, you **forward** one port to the
+Skip this section if you use `--tunnel` (see the quick start). Your router blocks connections from the internet by default. To let friends in, you **forward** one port to the
 computer running the server.
 
 - **Port:** `8787` (or whatever `--port` you chose)
@@ -223,7 +257,8 @@ On a VPS, also open the port in the provider's own firewall or security group if
 - **Browser:** open `http://203.0.113.7:8787`. The game loads from the server itself. Co-op → callsign → **Join
   server** (the address is already filled in).
 
-You can type the address with or without `ws://` or `http://`. Without a port, `8787` is used.
+You can type the address with or without `ws://` or `http://`. Without a port, `8787` is used. A `--tunnel` address
+(`….trycloudflare.com`) needs no port: it always uses https.
 
 ## 6. Bandwidth
 
