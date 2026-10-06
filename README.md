@@ -102,10 +102,11 @@ certificate or a tunnel). Both kinds of player can be in the same squad. The ser
 carries on when anyone leaves, and they can rejoin with the same callsign. Late friends can still join while the squad is on the street; once someone enters the tower the
 squad is locked. Squadmates on the same floor and close by can talk with **proximity voice chat** (push-to-talk,
 routed through the server). It works in the desktop app with no setup. Browsers only allow voice chat on `https://`
-pages, so browser players need an https address: `--tunnel` (below) or a certificate (`--tls-cert` / `--tls-key`).
+pages, so browser players need an https address: the Cloudflare tunnel (below) or a certificate (`--tls-cert` /
+`--tls-key`).
 
-**No port forwarding?** Start the server with `--tunnel` and it prints a free public `https://….trycloudflare.com`
-address through Cloudflare. Friends just open it, and browser voice chat works too. The server's options (password,
+**No port forwarding?** No problem. The server notices that friends can't reach it and opens a free Cloudflare
+tunnel by itself, then prints a public `https://….trycloudflare.com` address. Friends just open it, and browser voice chat works too. The server's options (password,
 difficulty, holiday theme, friendly fire and more), port forwarding and firewalls are all in
 **[docs/HOSTING.md](docs/HOSTING.md)**. Browser players can also still host a squad in their own browser through the
 relay (`npm start`, 5-letter codes). See the [co-op notes](docs/DEVELOPMENT.md#playing-co-op-online).
@@ -184,8 +185,8 @@ Third-party components:
 - [three.js](https://threejs.org) (MIT)
 - [ws](https://github.com/websockets/ws) (MIT), used by the relay and the dedicated server
 - [Bun](https://bun.sh) (MIT) compiles the standalone dedicated-server binaries and is included in them
-- [cloudflared](https://github.com/cloudflare/cloudflared) (Apache-2.0), downloaded by the server only when you use
-  `--tunnel`
+- [cloudflared](https://github.com/cloudflare/cloudflared) (Apache-2.0), downloaded by the server only when it opens
+  a tunnel
 - Chakra Petch UI font (SIL Open Font License 1.1), via `@fontsource/chakra-petch`
 - Street ambience: "citystreet3" by sagetyrtle (CC0 1.0). See [public/audio/CREDITS.txt](public/audio/CREDITS.txt).
 

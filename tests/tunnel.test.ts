@@ -3,8 +3,8 @@ import WebSocket from 'ws';
 import { mkdtempSync, writeFileSync, chmodSync, readFileSync, existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { startTunnel, cloudflaredAsset } from '../src/server/tunnel';
-import { startDedicated, diskAssets, DEFAULTS, LIMITS } from '../src/server/dedicated';
+import { startTunnel, cloudflaredAsset, reachesUs } from '../src/server/tunnel';
+import { startDedicated, diskAssets, parseConfig, DEFAULTS, LIMITS } from '../src/server/dedicated';
 import { normalizeServerAddress } from '../src/net/transport';
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -59,4 +59,24 @@ it("through the tunnel, per-address limits use Cloudflare's client address (trus
     for (const x of socks) x.ws.close();
     await s.close();
   }
+});
+
+it('tunnel is automatic by default: on/off flags, env and npm forms', () => {
+  expect(parseConfig([])!.tunnel).toBe('auto');
+  expect(parseConfig(['--tunnel'])!.tunnel).toBe(true);
+  expect(parseConfig(['--no-tunnel'])!.tunnel).toBe(false);
+  expect(parseConfig([], { TB_TUNNEL: '0' })!.tunnel).toBe(false);
+  expect(parseConfig([], { TB_TUNNEL: 'auto' })!.tunnel).toBe('auto');
+  expect(parseConfig(['--no-tunnel'], { TB_TUNNEL: '1' })!.tunnel).toBe(false); // flags beat the environment
+  expect(parseConfig([], { npm_lifecycle_event: 'server', npm_config_tunnel: 'false' })!.tunnel).toBe(false); // npm run server --no-tunnel
+});
+
+it('the reachability probe recognises this very server run only', async () => {
+  const a = await startDedicated({ ...DEFAULTS, port: 0 }, diskAssets('dist'), () => {});
+  const b = await startDedicated({ ...DEFAULTS, port: 0 }, diskAssets('dist'), () => {});
+  try {
+    expect(await reachesUs('127.0.0.1', a.port, a.run)).toBe(true);
+    expect(await reachesUs('127.0.0.1', b.port, a.run)).toBe(false); // something else answers on that address
+    expect(await reachesUs('127.0.0.1', 1, a.run)).toBe(false); // nothing there
+  } finally { await a.close(); await b.close(); }
 });

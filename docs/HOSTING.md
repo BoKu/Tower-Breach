@@ -12,14 +12,26 @@ Everyone must run the **same release** of the game as the server. A mismatch get
 
 ## Quick start: no port forwarding (`--tunnel`)
 
-The easiest way to play with friends over the internet. Start the server with `--tunnel`:
+The easiest way to play with friends over the internet: just start the server.
 
 ```bash
-./towerbreach-server-linux-x64 --tunnel --password hunter2      # or the Windows / macOS file
+./towerbreach-server-linux-x64 --password hunter2      # or the Windows / macOS file
 ```
 
-The server opens a free **Cloudflare quick tunnel** and prints a public address such as
-`https://calm-blue-fox.trycloudflare.com`. Send it to your friends:
+On start, the server checks whether its port can be reached from the internet. It asks Cloudflare for your public IP
+address, then tries to reach itself there.
+
+- **Reachable** (the port is forwarded, or it's a VPS): it prints `yes: friends can join at <IP>:8787` and opens no
+  tunnel.
+- **Not reachable** (no port forwarding, CGNAT, a firewall): it opens a free **Cloudflare quick tunnel** automatically
+  and prints a public address such as `https://calm-blue-fox.trycloudflare.com`.
+
+`--tunnel` always opens a tunnel. `--no-tunnel` never does: use it for LAN-only games or when you've set up your own
+https. A server with `--tls-cert` never opens one on its own. Some routers can't reach their own public address from
+inside the network, so the check says "no" even though the port is forwarded. You get a tunnel you didn't need, but
+direct connections still work.
+
+Send the tunnel address to your friends:
 
 - **Browser:** open the `https://…` link. Voice chat works, because the page is https.
 - **Desktop app:** Co-op → **Server address** → paste `calm-blue-fox.trycloudflare.com` → **Join server**.
@@ -132,7 +144,7 @@ start the server from. Flags beat environment variables, which beat the file. Ru
 | `--holiday` | `TB_HOLIDAY` | `holiday` | `auto` | `auto` (the server's date), `none`, `xmas`, `easter` or `halloween` |
 | `--ready-timeout` | `TB_READY_TIMEOUT` | `readyTimeout` | `90` | Seconds after the first player is READY before everyone deploys, ready or not (`0` = wait for everyone) |
 | `--web-root` | `TB_WEB_ROOT` | `webRoot` | built in | Serve the web game from this folder instead of the built-in copy |
-| `--tunnel` | `TB_TUNNEL=1` | `tunnel` | off | Public https address through a free Cloudflare quick tunnel (see the quick start) |
+| `--tunnel`, `--no-tunnel` | `TB_TUNNEL` (`1`, `0`, `auto`) | `tunnel` (`true`, `false`, `"auto"`) | auto | Public https address through a free Cloudflare quick tunnel. By default, only when the port isn't reachable from the internet (see the quick start) |
 | `--tunnel-bin` | `TB_TUNNEL_BIN` | `tunnelBin` | PATH, else downloaded | The `cloudflared` program to use for `--tunnel` |
 | `--tls-cert`, `--tls-key` | `TB_TLS_CERT`, `TB_TLS_KEY` | `tlsCert`, `tlsKey` | none | PEM certificate and key: serve https and wss yourself (section 7) |
 | `-c`, `--config` | `TB_CONFIG` | | `./towerbreach-server.json` | Config file to read |
@@ -157,7 +169,8 @@ next run.
 
 ## 3. Let your friends in: port forwarding
 
-Skip this section if you use `--tunnel` (see the quick start). Your router blocks connections from the internet by default. To let friends in, you **forward** one port to the
+You can skip this section: without port forwarding the server opens a Cloudflare tunnel by itself (see the quick
+start). Forward the port if you want a fixed address or the lowest latency. Your router blocks connections from the internet by default. To let friends in, you **forward** one port to the
 computer running the server.
 
 - **Port:** `8787` (or whatever `--port` you chose)

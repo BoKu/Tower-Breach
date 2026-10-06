@@ -11,7 +11,7 @@ import { parseArgs } from 'node:util';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { SquadAuthority } from '../net/authority';
 import { NET_VERSION, versionMismatch, cleanName } from '../net/protocol';
-import { startTunnel, type Tunnel } from './tunnel';
+import { startTunnel, publicIp, reachesUs, type Tunnel } from './tunnel';
 import { DEDICATED_PORT } from '../net/transport';
 import { VOICE, VOICE_UP, packVoice } from '../net/voice';
 import { DIFFICULTIES, type Difficulty } from '../config/difficulty';
@@ -35,15 +35,18 @@ export interface ServerConfig {
   /** PEM certificate + private key files: serve https/wss (browser voice chat needs a secure page). '' = plain http */
   tlsCert: string;
   tlsKey: string;
-  /** open a Cloudflare quick tunnel (https://….trycloudflare.com): no port forwarding, https for browser voice */
-  tunnel: boolean;
+  /**
+   * Cloudflare quick tunnel (https://….trycloudflare.com): no port forwarding, https for browser voice. 'auto' opens
+   * one when the port turns out not to be reachable from the internet; the cli sets true/false once decided.
+   */
+  tunnel: 'auto' | boolean;
   /** cloudflared to use for the tunnel ('' = PATH, else downloaded to ~/.towerbreach) */
   tunnelBin: string;
 }
 
 export const DEFAULTS: ServerConfig = {
   port: DEDICATED_PORT, difficulty: 'normal', maxPlayers: 5, friendlyFire: false, password: '', name: 'Tower Breach server', motd: '',
-  holiday: 'auto', readyTimeout: 90, webRoot: '', tlsCert: '', tlsKey: '', tunnel: false, tunnelBin: '',
+  holiday: 'auto', readyTimeout: 90, webRoot: '', tlsCert: '', tlsKey: '', tunnel: 'auto', tunnelBin: '',
 };
 
 /** Internet-facing limits. */
@@ -97,8 +100,10 @@ Options (flags beat environment variables, which beat the config file):
       --web-root <dir>      serve the game from this folder instead of the built-in copy (TB_WEB_ROOT)
       --tls-cert <file>     PEM certificate (e.g. Let's Encrypt fullchain.pem): serve https + wss, which
       --tls-key <file>      browser players need for voice chat       (TB_TLS_CERT, TB_TLS_KEY)
-      --tunnel              free public https address through a Cloudflare quick tunnel: no port forwarding,
-                            browser voice works; a new address each start (TB_TUNNEL=1)
+      --tunnel              always open a free public https address through a Cloudflare quick tunnel: no port
+                            forwarding, browser voice works; a new address each start (TB_TUNNEL=1)
+      --no-tunnel           never open one (TB_TUNNEL=0). Default: open one only when the port isn't reachable
+                            from the internet (not forwarded, CGNAT, firewall)
       --tunnel-bin <file>   cloudflared to use (default: the PATH, else downloaded once to ~/.towerbreach)
   -c, --config <file>       JSON config file (default: ./${CONFIG_FILE} if present)
   -v, --version             print the server version
@@ -110,7 +115,7 @@ Config file keys: port, difficulty, maxPlayers, friendlyFire, password, name, mo
 const OPTIONS = {
   port: { type: 'string', short: 'p' }, difficulty: { type: 'string', short: 'd' }, 'max-players': { type: 'string' }, 'friendly-fire': { type: 'boolean' },
   password: { type: 'string' }, name: { type: 'string' }, motd: { type: 'string' }, holiday: { type: 'string' }, 'ready-timeout': { type: 'string' },
-  'web-root': { type: 'string' }, 'tls-cert': { type: 'string' }, 'tls-key': { type: 'string' }, tunnel: { type: 'boolean' }, 'tunnel-bin': { type: 'string' }, config: { type: 'string', short: 'c' }, help: { type: 'boolean', short: 'h' },
+  'web-root': { type: 'string' }, 'tls-cert': { type: 'string' }, 'tls-key': { type: 'string' }, tunnel: { type: 'boolean' }, 'no-tunnel': { type: 'boolean' }, 'tunnel-bin': { type: 'string' }, config: { type: 'string', short: 'c' }, help: { type: 'boolean', short: 'h' },
 } as const;
 
 /**
@@ -124,7 +129,9 @@ function npmFlags(argv: string[], env: Record<string, string | undefined>): stri
   for (const o of [...VALUE, 'friendly-fire', 'tunnel']) {
     const v = env['npm_config_' + o.replace(/-/g, '_')];
     if (!v) continue;
-    if (o === 'friendly-fire' || o === 'tunnel') { if (v !== 'false') flags.push('--' + o); } else if (v === 'true') split.push(o); else flags.push(`--${o}`, v);
+    // npm turns --no-tunnel into tunnel=false
+    if (o === 'friendly-fire') { if (v !== 'false') flags.push('--' + o); } else if (o === 'tunnel') flags.push(v === 'false' ? '--no-tunnel' : '--tunnel');
+    else if (v === 'true') split.push(o); else flags.push(`--${o}`, v);
   }
   const bare = parseArgs({ args: argv, strict: false, allowPositionals: true, options: OPTIONS }).positionals;
   const rest = argv.filter((a) => !bare.includes(a));
@@ -153,6 +160,7 @@ export function parseConfig(argv: string[], env: Record<string, string | undefin
     if (!Number.isInteger(n) || n < lo || n > hi) throw new Error(`${what} must be a whole number from ${lo} to ${hi} (got "${v}")`);
     return n;
   };
+  const tri = (v: unknown): 'auto' | boolean => (v === undefined || v === null || String(v).toLowerCase() === 'auto' ? 'auto' : bool(v));
   const bool = (v: unknown) => v === true || /^(1|true|yes|on)$/i.test(String(v ?? ''));
   const cfg: ServerConfig = {
     port: int(f.port ?? env.TB_PORT ?? env.PORT ?? j.port ?? DEFAULTS.port, 'port', 1, 65535),
@@ -167,7 +175,7 @@ export function parseConfig(argv: string[], env: Record<string, string | undefin
     webRoot: String(pick(f['web-root'], 'TB_WEB_ROOT', 'webRoot')),
     tlsCert: String(pick(f['tls-cert'], 'TB_TLS_CERT', 'tlsCert')),
     tlsKey: String(pick(f['tls-key'], 'TB_TLS_KEY', 'tlsKey')),
-    tunnel: bool(f.tunnel ?? env.TB_TUNNEL ?? j.tunnel),
+    tunnel: f.tunnel ? true : f['no-tunnel'] ? false : tri(env.TB_TUNNEL ?? j.tunnel),
     tunnelBin: String(pick(f['tunnel-bin'], 'TB_TUNNEL_BIN', 'tunnelBin')),
   };
   if (!cfg.tlsCert !== !cfg.tlsKey) throw new Error('--tls-cert and --tls-key go together');
@@ -272,10 +280,11 @@ class DedicatedSquad extends SquadAuthority {
   }
 }
 
-export interface RunningServer { port: number; squad: DedicatedSquad; close(): Promise<void> }
+export interface RunningServer { port: number; squad: DedicatedSquad; close(): Promise<void>; /** random id of this run, in /server-info */ run: string }
 
 export async function startDedicated(cfg: ServerConfig, assets: AssetReader, log: (s: string) => void = stamp): Promise<RunningServer> {
   const squad = new DedicatedSquad(cfg, log);
+  const run = crypto.randomBytes(8).toString('hex');
   const pwHash = (s: string) => crypto.createHash('sha256').update(s).digest();
   const pwOk = (given: unknown) => !cfg.password || crypto.timingSafeEqual(pwHash(String(given ?? '')), pwHash(cfg.password));
   const pwFails = new Map<string, number[]>(); // ip -> failure times in the last minute
@@ -291,7 +300,7 @@ export async function startDedicated(cfg: ServerConfig, assets: AssetReader, log
     const head = { 'x-content-type-options': 'nosniff' };
     if (url === '/server-info') {
       res.writeHead(200, { ...head, 'content-type': 'application/json', 'cache-control': 'no-store' });
-      res.end(JSON.stringify({ dedicated: true, name: cfg.name, motd: cfg.motd, players: squad.sockets.size, maxPlayers: cfg.maxPlayers, password: !!cfg.password, stage: squad.stage, difficulty: cfg.difficulty, version: NET_VERSION }));
+      res.end(JSON.stringify({ dedicated: true, name: cfg.name, motd: cfg.motd, players: squad.sockets.size, maxPlayers: cfg.maxPlayers, password: !!cfg.password, stage: squad.stage, difficulty: cfg.difficulty, version: NET_VERSION, run }));
       return;
     }
     if (url === '/') url = '/index.html';
@@ -313,7 +322,7 @@ export async function startDedicated(cfg: ServerConfig, assets: AssetReader, log
     // through the Cloudflare tunnel every player arrives from localhost: use the address Cloudflare saw, so the
     // per-address limits and the password lockout don't lump the whole squad together (trusted from loopback only)
     const peer = req.socket.remoteAddress ?? '?', cf = req.headers['cf-connecting-ip'];
-    const ip = cfg.tunnel && typeof cf === 'string' && cf && /^(127\.|::1$|::ffff:127\.)/.test(peer) ? cf : peer;
+    const ip = cfg.tunnel === true && typeof cf === 'string' && cf && /^(127\.|::1$|::ffff:127\.)/.test(peer) ? cf : peer;
     const refuse = (msg: string) => { send(ws, { t: 'error', msg }); ws.close(); };
     perIp.set(ip, (perIp.get(ip) ?? 0) + 1);
     ws.on('error', () => ws.terminate()); // oversized frame, bad UTF-8...: drop the socket, never crash the server
@@ -402,7 +411,7 @@ export async function startDedicated(cfg: ServerConfig, assets: AssetReader, log
   const port = (server.address() as { port: number }).port;
 
   return {
-    port, squad,
+    port, squad, run,
     close: () => new Promise<void>((resolve) => {
       clearInterval(loop); clearInterval(heartbeat);
       for (const ws of wss.clients) { send(ws, { t: 'error', msg: 'The server is shutting down.' }); ws.close(); }
@@ -440,7 +449,18 @@ export async function cli(embedded?: AssetReader) {
   stamp(`listening on TCP port ${srv.port}. Players join with:`);
   const web = cfg.tlsCert ? 'https' : 'http';
   for (const a of ['localhost', ...lanAddresses()]) stamp(`   ${a}:${srv.port}   (browser: ${web}://${a}:${srv.port})`);
-  let tunnel: Tunnel | null = null;
+  let tunnel: Tunnel | null = null, direct = false;
+  if (cfg.tunnel === 'auto') {
+    // reachable from the internet already (forwarded port, VPS, own certificate)? then no tunnel
+    if (cfg.tlsCert) cfg.tunnel = false;
+    else {
+      stamp(`checking whether port ${srv.port} is reachable from the internet…`);
+      const ip = await publicIp();
+      if (!ip) { stamp('   no internet connection found: LAN only (start with --tunnel to force a tunnel)'); cfg.tunnel = false; }
+      else if (await reachesUs(ip, srv.port, srv.run)) { stamp(`   yes: friends can join at ${ip}:${srv.port} (browser: http://${ip}:${srv.port})`); cfg.tunnel = false; direct = true; }
+      else { stamp(`   no (port not forwarded, CGNAT or a firewall): opening a Cloudflare tunnel instead. --no-tunnel turns this off.`); cfg.tunnel = true; }
+    }
+  }
   if (cfg.tunnel) {
     stamp('opening a Cloudflare quick tunnel…');
     try {
@@ -452,10 +472,10 @@ export async function cli(embedded?: AssetReader) {
       stamp('   (a new address each time the server starts; no port forwarding needed. A brand-new address can take');
       stamp('    about 30 s to work everywhere: if it says "not found", wait a moment and try again)');
       stamp('');
-    } catch (e) { stamp(`tunnel failed: ${(e as Error).message}. The server still runs on the addresses above.`); }
+    } catch (e) { cfg.tunnel = false; stamp(`tunnel failed: ${(e as Error).message}. The server still runs on the addresses above.`); }
   } else {
-    if (!cfg.tlsCert) stamp('   browser players get voice chat only over https: use --tunnel, or see --tls-cert in docs/HOSTING.md');
-    stamp(`   <your public IP>:${srv.port} from the internet once the port is forwarded, or start with --tunnel (see docs/HOSTING.md)`);
+    if (!cfg.tlsCert) stamp('   browser players get voice chat only over https: start with --tunnel, or see --tls-cert in docs/HOSTING.md');
+    if (!direct) stamp(`   from the internet: <your public IP>:${srv.port} once the port is forwarded, or start with --tunnel (see docs/HOSTING.md)`);
   }
   stamp('Ctrl+C to stop.');
   let stopping = false;

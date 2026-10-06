@@ -65,3 +65,21 @@ export async function startTunnel(port: number, tls: boolean, bin: string, log: 
     p.on('exit', (code) => { if (up) { log(`the Cloudflare tunnel closed (${code}): restart the server for a new address`); return; } clearTimeout(timer); reject(new Error(`cloudflared exited (${code}): ${out.trim().split('\n').slice(-3).join(' | ')}`)); });
   });
 }
+
+/** This machine's public IP as the internet sees it (Cloudflare's trace endpoint), or null when offline. */
+export async function publicIp(): Promise<string | null> {
+  try {
+    const t = await (await fetch('https://cloudflare.com/cdn-cgi/trace', { signal: AbortSignal.timeout(5000) })).text();
+    return /^ip=(.+)$/m.exec(t)?.[1].trim() || null;
+  } catch { return null; }
+}
+
+/**
+ * Does http://host:port/server-info answer as THIS server run (`run` id)? Asked of our own public IP, a yes means the
+ * router forwards the port. A no can also be a router that can't loop back to its own public address (then a tunnel is
+ * opened that wasn't strictly needed; direct connections still work).
+ */
+export async function reachesUs(host: string, port: number, run: string): Promise<boolean> {
+  const h = host.includes(':') ? `[${host}]` : host;
+  try { return (await (await fetch(`http://${h}:${port}/server-info`, { signal: AbortSignal.timeout(4000) })).json())?.run === run; } catch { return false; }
+}
