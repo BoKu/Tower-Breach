@@ -26,8 +26,9 @@
 > [!WARNING]
 > **Tower Breach is in BETA.** It's playable from the street to the crown, but expect bugs, balance changes and the
 > odd rough edge, especially in online co-op and voice chat, which are new. Saves and settings may not carry over
-> between beta versions, and co-op players and the server must all run the **same version**. Found a problem?
-> Please [open an issue](../../issues) with your OS, the version shown on the main menu, and what happened.
+> between beta versions, and co-op players and the server must all run **exactly the same version** (the server
+> refuses any other release and says which versions don't match). Found a problem? Please
+> [open an issue](../../issues) with your OS, the version shown on the main menu, and what happened.
 
 Three years ago an AI called **SOVEREIGN** took the grid. It runs the country from the top of a 200-floor tower.
 You carry **LULLABY**, a kill-switch virus on a USB drive. Fight, sneak and hack your way up, floor by floor, then
@@ -53,8 +54,9 @@ You get one life. Each run is a new tower. You can go in alone or with up to fou
   on its floor. A lighting terminal brings the lights back.
 - 🪜 **A route up.** Stairwells can be on fire, full of debris or collapsed, and only some lifts have power. Every
   floor has at least one way up.
-- 🚪 **Doors and master keys.** Some doorways have doors you can open, shut and lock. Each floor hides one master key that
-  opens its locked rooms, and lets you lock a door behind you. Enemies open doors but can't pass a locked one.
+- 🚪 **Doors and master keys.** Some doorways have doors you can open, shut and lock. Each floor hides one master
+  key that opens its locked rooms, and lets you lock a door behind you. Enemies open doors but can't pass a locked
+  one.
 - 🪙 **Coins and vending machines.** Collect coins from desks and safes, and buy drinks and snacks quietly from
   vending machines instead of smashing them open.
 - 🛒 **Armory.** Spend your budget on 22 guns, armour, five grenade types and gear. After that, you only have what
