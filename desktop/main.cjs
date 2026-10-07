@@ -1,7 +1,7 @@
 // TOWER BREACH desktop shell (Electron): runs the built game (dist/) as a Windows/macOS/Linux app.
 // The page is served from a private app:// origin rather than file:// so fetch() (street audio) and
 // localStorage (saves, settings) behave exactly as in the browser. Co-op joins dedicated servers by address.
-const { app, BrowserWindow, protocol, net, Menu, session } = require('electron');
+const { app, BrowserWindow, protocol, net, Menu, session, systemPreferences } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
@@ -43,8 +43,13 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   // co-op voice chat: the microphone (audio only) for our own bundled page; every other permission is refused
   const ours = (url) => typeof url === 'string' && url.startsWith('app://game');
-  session.defaultSession.setPermissionRequestHandler((wc, permission, callback, details) => {
-    callback(permission === 'media' && ours(details.requestingUrl) && (details.mediaTypes ?? []).every((t) => t === 'audio'));
+  session.defaultSession.setPermissionRequestHandler(async (wc, permission, callback, details) => {
+    const ok = permission === 'media' && ours(details.requestingUrl) && (details.mediaTypes ?? []).every((t) => t === 'audio');
+    if (!ok || process.platform !== 'darwin') return callback(ok);
+    // macOS feeds the app silence unless the app itself has microphone access: ask once, and refuse when the user
+    // said no so the game can tell them where to turn it on (instead of "transmitting" nothing)
+    const st = systemPreferences.getMediaAccessStatus('microphone');
+    callback(st === 'granted' || (st === 'not-determined' && (await systemPreferences.askForMediaAccess('microphone'))));
   });
   session.defaultSession.setPermissionCheckHandler((wc, permission, origin) => permission === 'media' && ours(origin));
   createWindow();

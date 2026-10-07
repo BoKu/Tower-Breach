@@ -446,7 +446,9 @@ function genInterior(B: Builder, plan: BuildingPlan, floor: number) {
     B.carve({ x0: c.x0, y0: wy, x1: c.x1, y1: wy }, room.id);
   }
   // choose open-plan main spaces among big leaves
-  const big = leaves.filter((r) => (r.x1 - r.x0 + 1) * (r.y1 - r.y0 + 1) >= 70).sort(() => rng.next() - 0.5);
+  // a seeded Fisher-Yates, never sort() with a random comparator: engines sort differently (V8 vs Bun's JSC), so the
+  // dedicated server and the players' games would generate different floors from the same seed
+  const big = rng.shuffle(leaves.filter((r) => (r.x1 - r.x0 + 1) * (r.y1 - r.y0 + 1) >= 70));
   const openCount = floor === 1 ? 2 : rng.int(0, 2);
   const openSet = new Set(big.slice(0, openCount));
   const weights = THEME_WEIGHTS[theme];

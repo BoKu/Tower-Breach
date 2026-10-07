@@ -54,6 +54,10 @@ function spatialStep(items: HTMLElement[], cur: number, dx: number, dy: number):
 
 /** Running inside the Electron desktop app (desktop/main.cjs) rather than a browser. */
 const DESKTOP = navigator.userAgent.includes('Electron');
+/** Why the microphone didn't open, in words a player can act on (macOS needs the app allowed in System Settings). */
+const micBlockedWhy = (e: unknown) => (e as Error)?.name === 'NotAllowedError'
+  ? (DESKTOP && /Mac/.test(navigator.platform) ? 'macOS blocked the microphone: allow Tower Breach in System Settings → Privacy & Security → Microphone, then restart the game' : 'the microphone was blocked: allow it for this page')
+  : (e as Error)?.message || 'microphone blocked';
 import { APP_VERSION } from '../config/version';
 import { TEAM_CSS } from '../render/view';
 
@@ -525,7 +529,7 @@ export class App {
       let own: VoiceChat | null = null;
       if (!v) {
         try { own = v = new VoiceChat(); await v.startMic(s.voiceDevice); note.textContent = 'Speak: the bar should move.'; }
-        catch (e) { own?.close(); note.textContent = `Microphone unavailable: ${(e as Error).message}`; return; }
+        catch (e) { own?.close(); note.textContent = `Microphone unavailable: ${micBlockedWhy(e)}`; return; }
       }
       const iv = setInterval(() => {
         if (!meter.isConnected) { clearInterval(iv); own?.close(); return; }
@@ -572,7 +576,7 @@ export class App {
       const vc = v;
       vc.startMic(this.settings.voiceDevice).then(
         () => { if (this.voice === vc) this.hud.message(this.settings.voiceMode === 'ptt' ? `Voice chat on: hold ${keyLabel(this.settings.bindings.voice)} to talk.` : 'Voice chat on: open mic.', 'info'); },
-        (e) => { if (this.voice === vc) this.hud.message(`Voice chat: listening only (${(e as Error).message || 'microphone blocked'}).`, 'warn'); });
+        (e) => { if (this.voice === vc) this.hud.message(`Voice chat: listening only (${micBlockedWhy(e)}).`, 'warn'); });
     }
   }
 

@@ -136,8 +136,10 @@ export class VoiceChat {
   }
 
   private play(s: Speaker, d: AudioData) {
-    const n = d.numberOfFrames;
-    const buf = this.ctx.createBuffer(1, n, d.sampleRate);
+    // read everything before close(): a closed AudioData reports sampleRate 0, which made the playout clock Infinity
+    // and silently dropped every frame after the first
+    const n = d.numberOfFrames, rate = d.sampleRate;
+    const buf = this.ctx.createBuffer(1, n, rate);
     d.copyTo(buf.getChannelData(0), { planeIndex: 0, format: 'f32-planar' });
     d.close();
     const now = this.ctx.currentTime;
@@ -147,7 +149,7 @@ export class VoiceChat {
     src.buffer = buf;
     src.connect(s.gain);
     src.start(s.next);
-    s.next += n / d.sampleRate;
+    s.next += n / rate;
   }
 
   /** Per-frame mix for one speaker: gain 0..1, pan -1..1, muffled = a wall in between. */
