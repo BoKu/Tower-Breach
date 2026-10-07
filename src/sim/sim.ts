@@ -346,6 +346,7 @@ export class Sim {
 
   travel(p: PlayerState, to: number, tag: string, via: string) {
     const from = p.floor;
+    (p as any).stairPrevY = undefined; // a jump between floors is never a step up a flight
     const fs = this.floorState(to);
     const a = fs.L.anchors[tag] ?? fs.L.anchors.stair0 ?? fs.L.anchors.start;
     const pts = pointsNear(fs.L, a.x, a.y, 8);

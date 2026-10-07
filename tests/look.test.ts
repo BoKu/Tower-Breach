@@ -7,20 +7,23 @@ import { setHolidayOverride, HOLIDAYS } from '../src/config/holiday';
 import { Sim } from '../src/sim/sim';
 import { emptyLoadout } from '../src/sim/loadout';
 
-const A: PlayerLook = { skin: 7, h: 33, s: 0.3, l: 0.42, camo: 'desert', contrast: 0.8 };
-const B: PlayerLook = { skin: 0, h: 210, s: 0.07, l: 0.38, camo: 'urban', contrast: 0.4 };
+const A: PlayerLook = { skin: 7, h: 33, s: 0.3, l: 0.42, camo: 'desert', contrast: 0.8, balaclava: false };
+const B: PlayerLook = { skin: 0, h: 210, s: 0.07, l: 0.38, camo: 'urban', contrast: 0.4, balaclava: false };
 
 test('looks are sanitised: garbage -> default, numbers clamped, unknown camo / skin rejected', () => {
   for (const g of [null, undefined, 42, 'x', [], { skin: 'a' }]) expect(sanitizeLook(g).camo).toBe(DEFAULT_LOOK.camo);
   expect(sanitizeLook(null)).toEqual(DEFAULT_LOOK);
   const c = sanitizeLook({ skin: 99, h: 999, s: -3, l: 5, camo: 'clown', contrast: 1e9 });
-  expect(c).toEqual({ skin: DEFAULT_LOOK.skin, h: 359, s: 0, l: 0.6, camo: DEFAULT_LOOK.camo, contrast: 1 });
+  expect(c).toEqual({ skin: DEFAULT_LOOK.skin, h: 359, s: 0, l: 0.6, camo: DEFAULT_LOOK.camo, contrast: 1, balaclava: false });
   expect(sanitizeLook({ ...A, h: NaN, skin: -1, contrast: Infinity })).toMatchObject({ h: DEFAULT_LOOK.h, skin: DEFAULT_LOOK.skin, contrast: DEFAULT_LOOK.contrast });
   expect(sanitizeLook({ ...A, skin: 2.7 }).skin).toBe(2);
   expect(sanitizeLook(A)).toEqual(A);
   for (let i = 0; i < 50; i++) { const r = randomLook(); expect(sanitizeLook(r)).toEqual(r); }
   expect(lookFromWire(lookToWire(A))).toEqual(A);
   expect(lookFromWire(undefined)).toBeUndefined();
+  // balaclava: only a real true counts (junk -> off), and it survives the network form both ways
+  expect(sanitizeLook({ ...A, balaclava: 'yes' }).balaclava).toBe(false);
+  for (const b of [true, false]) expect(lookFromWire(lookToWire({ ...A, balaclava: b }))!.balaclava).toBe(b);
   expect(lookFromWire(['x', 1e6, 9, 9, 99, -1])).toMatchObject({ camo: DEFAULT_LOOK.camo, h: 359, contrast: 0 });
 });
 

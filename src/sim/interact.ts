@@ -204,16 +204,14 @@ function gather(sim: Sim, p: PlayerState, fs: FloorState): Target[] {
           });
         } else if (!stairPassable(cond)) {
           out.push({ key: 's' + s.index, label: '', hold: 0, x: s.upX, y: s.upY, act: () => {}, blocked: `Stairs up: ${STAIR_LABEL[cond]}. Find another route.` });
-        } else {
-          out.push({ key: 's' + s.index, label: `Climb to floor ${to} (or walk up the stairs)${cond !== 'clear' ? ` — ${STAIR_LABEL[cond]}` : ''}`, hold: 0, x: s.upX, y: s.upY, act: () => sim.takeStairs(p, s.index, 1) });
-        }
+        } // a passable flight has no prompt: walk up the steps (only debris needs the interact key)
       }
     }
     if (near(s.downX, s.downY, 2.1)) {
       const cond = sim.flightCondition(p.floor - 1, s.index);
       if (p.floor <= 1) out.push({ key: 'sd' + s.index, label: '', hold: 0, x: s.downX, y: s.downY, act: () => {}, blocked: 'Stairs down: flooded service levels. Use the lobby entrance.' });
       else if (!stairPassable(cond)) out.push({ key: 'sd' + s.index, label: '', hold: 0, x: s.downX, y: s.downY, act: () => {}, blocked: `Stairs down: ${STAIR_LABEL[cond]}.` });
-      else out.push({ key: 'sd' + s.index, label: `Descend to floor ${p.floor - 1}`, hold: 0, x: s.downX, y: s.downY, act: () => sim.takeStairs(p, s.index, -1) });
+      // a passable flight down has no prompt either: walk down the steps
     }
   }
   // elevators

@@ -124,6 +124,8 @@ export class Shop {
         h('div', { class: 'hint' }, 'Camo pattern'),
         h('div', { class: 'seg lk-camo' }, ...CAMOS.map((c) => h('button', { class: c === L.camo ? 'on' : '', onclick: () => { this.sound('click'); this.setLook({ ...this.look, camo: c }); } }, CAMO_NAME[c]))),
         slider('Camo contrast', 'contrast', 0.1, pct),
+        h('div', { class: 'hint' }, 'Face'),
+        h('div', { class: 'seg lk-face' }, ...([[false, 'Open face'], [true, 'Balaclava']] as const).map(([on, n]) => h('button', { class: on === L.balaclava ? 'on' : '', onclick: () => { this.sound('click'); this.setLook({ ...this.look, balaclava: on }); } }, n))),
         h('div', { class: 'row lk-btns' },
           h('button', { class: 'btn small', onclick: () => { this.sound('click'); this.setLook(randomLook()); } }, 'Randomise'),
           h('button', { class: 'btn small', onclick: () => { this.sound('back'); this.setLook({ ...DEFAULT_LOOK }); } }, 'Reset')),

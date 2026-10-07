@@ -688,6 +688,15 @@ export class OperatorRig {
         spike(hb, KIT.web, V(sx * 0.096, 0.02, 0.012), V(-sx * 0.066, -0.065, 0.058), 0.1, 0.006, 0.006, 6); // chin strap
       }
       hb.rbox(0.05, 0.016, 0.03, 0.007, 0, -0.045, 0.072, KIT.web); // chin cup
+      if (lk.balaclava) {
+        // black knit balaclava over head and neck: only an eye band of skin shows (the helmet sits on top)
+        const KNIT = 0x16181b;
+        hb.limb(0.062, 0.2, 0, 0.02, 0, KNIT) // neck
+          .geo(new THREE.SphereGeometry(0.112, 16, 12), KNIT, 0, 0.06, 0.012, 0, 0, 0, 'solid', 0.92, 1.06, 1.02) // head
+          .geo(new THREE.SphereGeometry(0.074, 12, 9), KNIT, 0, 0.018, 0.04, 0, 0, 0, 'solid', 1.07, 0.8, 1.02) // jaw
+          .rbox(0.104, 0.04, 0.02, 0.014, 0, 0.074, 0.112, skin); // eye opening, just proud of the knit
+        for (const sx of [-1, 1]) hb.geo(new THREE.SphereGeometry(0.013, 8, 6), 0x1a1410, sx * 0.032, 0.074, 0.123); // eyes
+      }
       hb.geo(new THREE.BoxGeometry(0.07, 0.012, 0.012), 0x60d8ff, 0, 0.142, 0.184, 0.5, 0, 0, 'emit'); // NVG lens glint
     }
     this.head.add(meshes(hb, M.gear));

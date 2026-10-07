@@ -118,6 +118,8 @@ You always carry a combat knife, and you can't lose it. Once you are in the towe
 
 ### Appearance
 
+<p align="center"><img src="screenshots/appearance.jpg" alt="The Appearance tab" width="80%"></p>
+
 The **Appearance** tab at the top of the armory changes how your operator looks. It is cosmetic only: it never
 changes how easily enemies see you.
 
@@ -125,6 +127,7 @@ changes how easily enemies see you.
 - **Uniform colour:** pick a preset, or tune it with the hue, saturation and brightness sliders.
 - **Camo pattern:** solid, woodland, desert digital, urban or tiger stripe. The pattern colours come from your uniform
   colour. **Camo contrast** sets how strong the pattern is.
+- **Face:** open face, or a black knit **balaclava** that shows only your eyes.
 - **Randomise** rolls a new look, and **Reset** goes back to the standard olive woodland.
 
 The preview on the right turns your operator slowly so you can see the result. Your gear (plate carrier, pouches,
@@ -168,7 +171,7 @@ Every keyboard binding can be changed under **Settings → Controls**. These are
 | Jump, vault low cover, clear tripwires | Space | A |
 | Reload | R | X |
 | Knife | V | Right stick click |
-| Interact, loot, revive, stairs and lifts | E (tap or hold) | RB |
+| Interact, loot, revive, clear stair debris, lifts | E (tap or hold) | RB |
 | Swap weapon | Q | Y |
 | Primary, secondary, knife | F1, F2, F3 | — |
 | Throw grenade | G | LB |
@@ -333,6 +336,8 @@ Select an item with 1–5 or the mouse wheel, then press **F** to use it.
 
 ### Doors and master keys
 
+<p align="center"><img src="screenshots/doors.jpg" alt="Doors on an office floor" width="80%"></p>
+
 From floor 1 to floor 199, the doorways between rooms have doors. Stairwell and lift doors are always open, and so are
 the doors to the street.
 
@@ -437,8 +442,8 @@ Darkness helps you hide. It also makes traps harder to spot, so you depend more 
 
 <p align="center"><img src="screenshots/stairwell.jpg" alt="A stairwell" width="80%"></p>
 
-Each floor has three **stairwells** (A, B and C). To climb, walk up the flight or press **E** at the foot. You can also
-go back down. The minimap colours each flight up by its condition:
+Each floor has three **stairwells** (A, B and C). To climb, walk up the flight: reaching the top takes you to the next
+floor. Walk down the other flight to go back down. The only stair action on **E** is clearing debris. The minimap colours each flight up by its condition:
 
 | Condition | What happens |
 |---|---|

@@ -143,11 +143,15 @@ export function updatePlayer(sim: Sim, p: PlayerState, dt: number, externalMove:
     const rad = (p.crouch ? 1.1 : p.sprinting ? 9.5 : 3.6) * sm;
     sim.noise(fs, p.x, p.y, rad, p);
   }
-  // walking up (or down) a stairwell flight takes you to the next floor when you step onto its top landing
+  // walking up (or down) a stairwell flight takes you to the next floor when you step onto its top landing.
+  // Compare with last tick's position, not this tick's: in co-op the client's movement is applied before the tick
+  // (applyInput), so `py` already equals p.y for externally moved players and the climb never fired
   (p as any).stairCd = Math.max(0, ((p as any).stairCd ?? 0) - dt);
+  const prevY = (p as any).stairPrevY ?? py;
+  (p as any).stairPrevY = p.y;
   if ((p as any).stairCd <= 0 && p.z <= 0.05 && p.floor >= 1) {
     const st = stairAt(L, p.x, p.y);
-    if (st && st.t >= 1 && p.y - py < -0.005) {
+    if (st && st.t >= 1 && p.y - prevY < -0.005) {
       if ((st.dir > 0 && p.floor < 200) || (st.dir < 0 && p.floor > 1)) { sim.takeStairs(p, st.s.index, st.dir); syncLast(p); return; }
     }
   }

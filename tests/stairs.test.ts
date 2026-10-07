@@ -46,6 +46,24 @@ describe('stairwells you can walk', () => {
       break;
     }
   });
+  it('co-op: a player whose client moves them (server only receives positions) also climbs by walking up', () => {
+    // on a dedicated server or browser host, a client's position arrives before the sim tick (applyInput), so the
+    // sim never sees this tick's movement itself: walking up the flight must still take the player up
+    const { s, p } = sim();
+    s.external.add(p.id);
+    const f = [...Array(40).keys()].map((k) => k + 2).find((ff) => s.flightCondition(ff, 0) === 'clear')!;
+    s.travel(p, f, 'stair0', 't'); (p as any).stairCd = 0;
+    for (const e of s.floorState(f).enemies) e.state = 'dead';
+    const st = s.floorState(f).L.stairs[0];
+    p.x = st.x0 + 1; p.y = st.y1 + 0.7;
+    for (let t = 0; t < 6 && p.floor === f; t += 1 / 60) {
+      p.y -= 3.3 / 60; // the client's own movement, applied by the authority before the tick
+      p.input.my = -1; p.input.ax = p.x; p.input.ay = p.y - 5;
+      s.tick(1 / 60);
+    }
+    expect(p.floor).toBe(f + 1);
+  });
+
   it('the top of a flight is only reachable by walking the steps (no sidestep onto the top from the landing)', () => {
     // I89: the flat aisle beside the flights let you walk to the far end at ground level and sidestep onto the top
     // step, popping 2.6 m up and straight into the next floor. Drive the player up the aisle, sidestep, push on:

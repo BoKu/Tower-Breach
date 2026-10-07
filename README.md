@@ -63,8 +63,8 @@ You get one life. Each run is a new tower. You can go in alone or with up to fou
   you find on the way up.
 - 🎯 **Weapon roles.** Every gun class has a job: pistols land double-damage sneak shots and take a Suppressor
   (as do SMGs), shotguns stagger and one-shot dogs, sniper rounds pierce two enemies, machine guns pin enemies down.
-- 🎨 **Your operator, your look.** Pick a skin tone, a uniform colour and a camo pattern (woodland, desert digital,
-  urban, tiger stripe) in the armory, with a live 3D preview. Your squad sees it too.
+- 🎨 **Your operator, your look.** Pick a skin tone, a uniform colour, a camo pattern (woodland, desert digital,
+  urban, tiger stripe) and an optional balaclava in the armory, with a live 3D preview. Your squad sees it too.
 - 👥 **Co-op for up to 5.** Cross-play between the desktop app and the browser, proximity voice chat, and revives
   with a Health Kit. Friendly fire is optional.
 - ✨ **Lighting and reflections.** Every lamp casts its own coloured light, mirrors show you and the enemy, and an
@@ -77,16 +77,20 @@ You get one life. Each run is a new tower. You can go in alone or with up to fou
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/screenshots/street.jpg" alt="The street"><br><sub><b>The street.</b> Check in with the police chief and gear up before you go in.</sub></td>
+    <td width="50%"><img src="docs/screenshots/street.jpg" alt="The street"><br><sub><b>The street.</b> Check in with Police Chief Hollis and gear up, then breach the Axiom Tower entrance.</sub></td>
     <td width="50%"><img src="docs/screenshots/dark-floor.jpg" alt="Dark floor"><br><sub><b>Floor 160.</b> A cyborg in the torch beam. Darkness here is 39%.</sub></td>
   </tr>
   <tr>
     <td><img src="docs/screenshots/hacking.jpg" alt="Hacking"><br><sub><b>Uplink.</b> Beat three puzzles before the trace reaches 100%. Here: route power to the bulb on a lighting terminal.</sub></td>
-    <td><img src="docs/screenshots/armory.jpg" alt="Armory"><br><sub><b>The armory.</b> Your budget depends on the difficulty.</sub></td>
+    <td><img src="docs/screenshots/armory.jpg" alt="Armory"><br><sub><b>The armory.</b> Every weapon class has a role. Your budget depends on the difficulty.</sub></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/stairwell.jpg" alt="Stairwell"><br><sub><b>Stairwells.</b> Walk up the stairs, or press E at the foot to climb.</sub></td>
+    <td><img src="docs/screenshots/stairwell.jpg" alt="Stairwell"><br><sub><b>Stairwells.</b> Walk up the steps to reach the next floor. Debris has to be cleared first.</sub></td>
     <td><img src="docs/screenshots/mainframe.jpg" alt="Mainframe"><br><sub><b>Floor 200.</b> Hold the mainframe for 60 seconds while SOVEREIGN shuts down.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/appearance.jpg" alt="Appearance"><br><sub><b>Appearance.</b> Skin tone, uniform colour, camo and a balaclava, with a live preview. Your squad sees it too.</sub></td>
+    <td><img src="docs/screenshots/doors.jpg" alt="Doors"><br><sub><b>Doors.</b> Shut one to break line of sight. A red light means it's locked: find the floor's master key.</sub></td>
   </tr>
 </table>
 
@@ -131,7 +135,7 @@ relay (`npm start`, 5-letter codes). See the [co-op notes](docs/DEVELOPMENT.md#p
 | Jump / vault / clear tripwires | Space | A |
 | Reload | R | X |
 | Knife | V | Right stick click |
-| Interact, loot, revive, use stairs and lifts | E (tap or hold) | RB |
+| Interact, loot, revive, clear stair debris, use lifts | E (tap or hold) | RB |
 | Throw grenade / switch grenade | G / B | LB / D-pad → |
 | Torch | T | D-pad ↑ |
 | Select / use belt item | 1–5 or mouse wheel / F | D-pad ← / D-pad ↓ |
