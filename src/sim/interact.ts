@@ -109,7 +109,7 @@ export function updateInteraction(sim: Sim, p: PlayerState, fs: FloorState, dt: 
   }
 }
 
-function gather(sim: Sim, p: PlayerState, fs: FloorState): Target[] {
+export function gather(sim: Sim, p: PlayerState, fs: FloorState): Target[] {
   const out: Target[] = [];
   const L = fs.L;
   const near = (x: number, y: number, r = REACH) => dist(p.x, p.y, x, y) < r;
@@ -278,6 +278,8 @@ function lootAll(sim: Sim, p: PlayerState, fs: FloorState, c: ContainerState) {
   if (!c.opened && fs.floor > 0) scoreSearch(p.score, c.kind);
   c.opened = true;
   const key = c.items.find((i) => i.k === 'key');
+  const note = c.items.find((i) => i.k === 'note');
+  if (note?.k === 'note') sim.codesFound.add(note.f);
   const msgs: string[] = [];
   const keep: LootItem[] = [];
   for (const it of c.items) {

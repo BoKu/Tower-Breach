@@ -12,6 +12,7 @@ import { currentHoliday } from '../config/holiday';
 import { raycastWalls } from '../sim/nav';
 import type { FloorState } from '../sim/state';
 import { lightLevel, lightOut, lightSize } from '../sim/lights';
+import { buildPosters } from './posters';
 import { perfTime } from '../core/perf';
 
 export const WALL_H = 2.6;
@@ -142,6 +143,7 @@ export class FloorView {
     perfTime('view: stairs', () => this.buildStairs());
     perfTime('view: elevators', () => this.buildElevators());
     this.buildFixtures();
+    this.track(buildPosters(L, this.group)); // public/posters, random per floor
     if (L.floor === 0) perfTime('view: street', () => this.buildStreetBackdrop());
     this.buildLightBars();
     // CCTV, traps and vending machines (state-driven in update) are made now too, so a view built ahead of time has

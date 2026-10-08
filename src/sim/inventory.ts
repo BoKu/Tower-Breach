@@ -39,6 +39,7 @@ export function giveLoot(p: PlayerState, it: LootItem): { left: LootItem | null;
       p.grenades[it.g] += take;
       return { left: take < it.n ? { ...it, n: it.n - take } : null, msg: `+${take} ${GRENADE_NAMES[it.g]}` };
     }
+    case 'note': return { left: null, msg: `Sticky note: keypad code ${it.code} (floor ${it.f})` };
     case 'key':
       if (!p.keys.includes(it.f)) p.keys.push(it.f);
       return { left: null, msg: `Master key (floor ${it.f})` };

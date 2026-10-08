@@ -72,6 +72,8 @@ interface Brain {
   reviveT: number; reviveId: number;
   /** tiles this bot got stuck on (costed up in its paths) */
   avoid: Set<number>;
+  /** doors this bot opened and must close again once the squad is through */
+  shut: number[];
   targetId: number; react: number; burst: number; nadeCd: number; pingCd: number; giftCd: number; lastShotT: number;
 }
 const brains = new WeakMap<PlayerState, Brain>();
@@ -79,7 +81,7 @@ function brainOf(p: PlayerState): Brain {
   let b = brains.get(p);
   if (!b) {
     b = { path: null, pathT: 0, gx: 0, gy: 0, progT: 0, px: p.x, py: p.y, stuck: 0, jumpCd: 0, jumpT: 0, anchorX: NaN, anchorY: NaN, slotX: p.x, slotY: p.y,
-      reviveT: 0, reviveId: -1, avoid: new Set(), targetId: -1, react: 0, burst: 0, nadeCd: 2, pingCd: 0, giftCd: 0, lastShotT: -99 };
+      reviveT: 0, reviveId: -1, avoid: new Set(), shut: [], targetId: -1, react: 0, burst: 0, nadeCd: 2, pingCd: 0, giftCd: 0, lastShotT: -99 };
     brains.set(p, b);
   }
   return b;
@@ -91,9 +93,12 @@ function selectSlot(inp: PlayerInput, s: (typeof SLOTS)[number]) { inp.slot = SL
 /** Path cost for bots: steer around revealed armed traps, burning ground and tiles the bot got stuck on. */
 export function pathCost(fs: FloorState, avoid: Set<number>) {
   const traps = fs.traps.filter((t) => t.armed && t.revealed);
+  const held = new Set<number>();
+  fs.L.doors.forEach((d, i) => { if (fs.doors[i].held && fs.doors[i].state !== 'open') for (const t of d.tiles) held.add(t); });
   const fires = fs.zones.filter((z) => z.kind === 'fire');
   return (tx: number, ty: number): number => {
     const x = tx + 0.5, y = ty + 0.5;
+    if (held.has(idx(tx, ty))) return 1e6; // a door a person shut: never through it
     if (avoid.has(idx(tx, ty))) return 25;
     for (const t of traps) if (segPointDist(t.x, t.y, t.x2, t.y2, x, y) < (t.kind === 'mine' ? 1.6 : 0.9)) return 60;
     for (const z of fires) if (dist(z.x, z.y, x, y) < z.r + 0.6) return 60;
@@ -116,7 +121,7 @@ function moveTo(sim: Sim, fs: FloorState, p: PlayerState, b: Brain, gx: number, 
     const wi = idx(Math.floor(wp.x), Math.floor(wp.y));
     if (fs.L.solid[wi] === S_DOOR && dist(p.x, p.y, wp.x, wp.y) < 1.3) {
       const di = fs.L.doors.findIndex((d) => d.tiles.includes(wi));
-      if (di >= 0 && fs.doors[di].state === 'closed') setDoor(sim, fs, di, 'open', 4, p);
+      if (di >= 0 && fs.doors[di].state === 'closed' && !fs.doors[di].held) { setDoor(sim, fs, di, 'open', 4, p); if (!b.shut.includes(di)) b.shut.push(di); }
     }
   }
   const a = angleTo(p.x, p.y, tx, ty);
@@ -150,8 +155,38 @@ function warpNear(fs: FloorState, p: PlayerState, me: PlayerState) {
   brainOf(p).path = null;
 }
 
+/**
+ * Safe to close a door behind the squad: the bot is out of the doorway and every other squad member is on the bot's
+ * side of it (the door's wall axis) and clear of the doorway too. vertical = the wall runs north-south.
+ */
+export function doorClear(d: { x: number; y: number; vertical: boolean }, bot: { x: number; y: number }, others: { x: number; y: number }[]): boolean {
+  const side = (q: { x: number; y: number }) => Math.sign(d.vertical ? q.x - d.x : q.y - d.y);
+  if (dist(bot.x, bot.y, d.x, d.y) < 1.4) return false;
+  return others.every((o) => side(o) === side(bot) && dist(o.x, o.y, d.x, d.y) >= 1.1);
+}
+
+/** Put back the doors this bot opened once the whole squad is through them (never in anyone's face). */
+function closeBehind(sim: Sim, fs: FloorState, p: PlayerState, b: Brain, _me: PlayerState) {
+  if (!b.shut.length) return;
+  const squad = sim.players.filter((o) => o !== p && o.life !== 'out' && o.floor === p.floor);
+  b.shut = b.shut.filter((i) => {
+    const d = fs.L.doors[i], st = fs.doors[i];
+    if (!d || st.state !== 'open' || st.held) return false; // someone else changed it: not ours any more
+    if (!doorClear(d, p, squad)) return true;
+    setDoor(sim, fs, i, 'closed', 3, p);
+    return false;
+  });
+}
+
 /** Formation slot around the commander, re-anchored only when they move 1.5 m (so it doesn't swing with their aim). */
 function slotFor(fs: FloorState, p: PlayerState, b: Brain, me: PlayerState): { x: number; y: number } {
+  // commander in a lift car: everyone piles in, one corner each (world building; the ride takes the squad anyway)
+  const car = fs.L.elevators.find((e) => me.x >= e.x0 && me.x <= e.x1 + 1 && me.y >= e.y0 && me.y <= e.y1 + 1);
+  if (car) {
+    const m = p.bot!.member, w = (car.x1 + 1 - car.x0) / 2 - 0.45, h = (car.y1 + 1 - car.y0) / 2 - 0.45;
+    b.anchorX = NaN; // re-form around the commander after the ride
+    return { x: car.cx + (m % 2 ? w : -w) * 0.8, y: car.cy + (m < 2 ? -h : h) * 0.8 };
+  }
   if (!(dist(me.x, me.y, b.anchorX, b.anchorY) < 1.5)) {
     const heading = Number.isNaN(b.anchorX) ? me.facing : angleTo(b.anchorX, b.anchorY, me.x, me.y);
     b.anchorX = me.x; b.anchorY = me.y;
@@ -222,6 +257,7 @@ export function botThink(sim: Sim, p: PlayerState, dt: number) {
   const fs = sim.floorState(p.floor);
   b.nadeCd -= dt; b.pingCd -= dt; b.giftCd -= dt;
   if (dist(p.x, p.y, me.x, me.y) > 30) { warpNear(fs, p, me); return; }
+  closeBehind(sim, fs, p, b, me);
   if (me.muzzleT > 0) b.lastShotT = sim.t;
   const weaponsFree = p.floor > 0 && (fs.enemies.some((e) => e.state === 'alert') || sim.t - b.lastShotT < 4 || p.hurtT > 0);
   // default look: the commander's arc
@@ -245,6 +281,9 @@ export function botThink(sim: Sim, p: PlayerState, dt: number) {
     return;
   }
   b.reviveT = 0;
+  // a Health Kit dropped for the squad: the lowest-health bot goes and gets it (it uses it on pickup)
+  const kit = sim.kitTaker(fs) === p ? fs.pickups[0] : undefined;
+  if (kit && !threat) { moveTo(sim, fs, p, b, kit.x, kit.y, dt, true); return; }
   // 2. heal (no enemy within 6 m); plates when armour is low and nothing is in view
   if (p.hp < 40 && p.items.medkit > 0 && !(foe && dist(p.x, p.y, foe.x, foe.y) < 6)) inp.medkit++;
   else if (p.armor < 30 && (p as any).vest && p.items.plate > 0 && !foe) { inp.useItem = 3; inp.useItemSeq++; inp.use++; }

@@ -172,7 +172,7 @@ describe('hackable computers', () => {
     expect(k.trace - tr).toBeCloseTo(LOCKOUT_PENALTY, 5);
     expect(kp.log.length).toBe(0);
     expect(kp.resets).toBe(1);
-    expect(Keypad.score('1123', '3111')).toEqual({ hit: 1, near: 2 });
+    expect(Keypad.score('1123', '3111')).toMatchObject({ hit: 1, near: 2 });
     const l = at('load'), lp = l.p.load!;
     l.act('load', (p) => p.toggle(0)); // toggling is free
     expect(l.trace).toBeLessThan(0.05);

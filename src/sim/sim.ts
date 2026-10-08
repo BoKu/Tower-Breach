@@ -19,9 +19,13 @@ import type { EnemyType } from './types';
 import { scoreFloor, newScore } from './score';
 import { SQUAD_MEMBERS } from '../config/bots';
 import { botKit, botThink } from './bot';
+import { keypadCode } from './hack';
+import { stairAt } from './stairs';
 
 /** friendlyFire: co-op host option (bullets, knife and grenades hurt teammates); off by default */
 /** holiday: the festive theme this run plays under (Halloween turns loyalists and cyborgs into melee zombies). */
+/** Per squadmate beyond the first (bots in single player, players in co-op): more, tougher, sharper enemies. */
+export const SQUAD_BUFF = { enemies: 0.15, health: 0.2, damage: 0.1, sharp: 0.05 };
 export interface SimConfig { seed: number; difficulty: Difficulty; mode: Mode; friendlyFire?: boolean; holiday?: Holiday | null }
 export type Phase = 'playing' | 'won' | 'lost';
 
@@ -44,7 +48,7 @@ export class Sim {
   external = new Set<number>();
   onTravel: ((p: PlayerState, from: number, to: number) => void) | null = null;
   private nextId = 1_000_000;
-  private pcache = new Map<number, PressureProfile>();
+  pcache = new Map<number, PressureProfile>();
 
   constructor(cfg: SimConfig) {
     this.cfg = cfg;
@@ -59,9 +63,23 @@ export class Sim {
   msg(p: PlayerState | null, text: string, k: 'info' | 'warn' | 'good' | 'loot' = 'info') { this.emit({ e: 'msg', pid: p ? p.id : -1, text, k }); }
   pressure(floor: number): PressureProfile {
     let p = this.pcache.get(floor);
-    if (!p) { p = pressure(this.cfg.difficulty, floor); this.pcache.set(floor, p); }
+    if (!p) {
+      const k = this.squadPeak - 1, base = pressure(this.cfg.difficulty, floor);
+      p = { ...base, damage: base.damage * (1 + SQUAD_BUFF.damage * k), accuracy: base.accuracy * (1 + SQUAD_BUFF.sharp * k), perception: base.perception * (1 + SQUAD_BUFF.sharp * k) };
+      this.pcache.set(floor, p);
+    }
     return p;
   }
+  /** Most people (players + bots) the run has had at once: enemies scale with it, and it never goes down. */
+  squadPeak = 1;
+  /** floors whose keypad-code note the squad has found (the hack shows the code) */
+  codesFound = new Set<number>();
+  private noteSquad() {
+    const n = this.players.length;
+    if (n > this.squadPeak) { this.squadPeak = n; this.pcache.clear(); }
+  }
+  /** Enemy health multiplier for the current squad size. */
+  private hpBuff() { return 1 + SQUAD_BUFF.health * (this.squadPeak - 1); }
 
   addPlayer(id: number, name: string, lo: Loadout): PlayerState {
     let slot = 0; // lowest free slot: a co-op squad can lose a member before the tower and gain a late joiner
@@ -75,6 +93,7 @@ export class Sim {
     p.aimX = p.x; p.aimY = p.y - 4;
     p.input.ax = p.aimX; p.input.ay = p.aimY;
     this.players.push(p);
+    this.noteSquad();
     return p;
   }
 
@@ -89,6 +108,10 @@ export class Sim {
   }
   /** Single player with a squad: quitting while downed would dodge the loss, so it counts as one. */
   quitCountsAsLoss(): boolean { const me = this.cfg.mode === 'single' ? this.human() : undefined; return !!me && me.life === 'down'; }
+  /** The bot that should take a dropped Health Kit on this floor: the lowest-health one that is hurt. */
+  kitTaker(fs: FloorState): PlayerState | undefined {
+    return this.players.filter((b) => b.bot && b.life === 'alive' && b.floor === fs.floor && b.hp < 100).sort((a, c) => a.hp - c.hp)[0];
+  }
   /** The person playing (single player): the first non-bot player. */
   human(): PlayerState | undefined { return this.players.find((p) => !p.bot); }
 
@@ -103,8 +126,21 @@ export class Sim {
     let fs = this.floors.get(f);
     if (fs) return fs;
     const L = perfTime('generateFloor', () => generateFloor(this.plan, f));
-    const enemies = L.spawns.map((s, i) => {
+    // a bigger squad meets more of them: extra copies of this floor's spawns, placed near the originals
+    const spawns = [...L.spawns];
+    if (f > 0 && spawns.length) {
+      const r = new Rng(hash(this.cfg.seed, f, 0x5a0d));
+      const add = Math.round(L.spawns.length * SQUAD_BUFF.enemies * (this.squadPeak - 1));
+      for (let j = 0; j < add; j++) {
+        const s = L.spawns[r.int(0, L.spawns.length - 1)];
+        const spot = r.pick(pointsNear(L, s.x, s.y, 6).slice(1)) ?? { x: s.x, y: s.y };
+        spawns.push({ ...s, x: spot.x, y: spot.y });
+      }
+    }
+    const hpK = this.hpBuff();
+    const enemies = spawns.map((s, i) => {
       const e = makeEnemy(f * 10000 + i, this.zombify(s), f, enemyStatsFor);
+      e.hp *= hpK; e.maxHp *= hpK;
       e.mag = weapon(e.weapon).mag;
       e.homeFacing = e.facing;
       return e;
@@ -116,7 +152,7 @@ export class Sim {
       containers: L.containers.map((c) => ({ id: c.id, kind: c.kind, x: c.x, y: c.y, items: c.items.map((i) => ({ ...i })), opened: false, label: CONTAINER_LABEL[c.kind] })),
       vendings: L.vendings.map((v) => ({ id: v.id, x: v.x, y: v.y, rot: v.rot, hp: 45, broken: false, drops: v.drops.map((d) => ({ ...d })), price: v.price })),
       hazards: L.hazards.map((h) => ({ ...h })),
-      grenades: [], zones: [], pings: [],
+      grenades: [], zones: [], pings: [], pickups: [],
       lights: L.lights.map((l) => ({ broken: l.broken, burstT: 0 })),
       panels: makePanels(L),
       hacks: L.hacks.map((h) => ({ id: h.id, kind: h.kind, x: h.x, y: h.y, state: 'ready' as const })),
@@ -127,6 +163,9 @@ export class Sim {
       scareT: 40 + new Rng(hash(this.cfg.seed, f, 0x5ca)).next() * 60,
       networkAlertT: 0,
     };
+    // one desk per floor hides a sticky note with this floor's keypad code
+    const desks = fs.containers.filter((c) => c.kind === 'desk');
+    if (f > 0 && desks.length) desks[new Rng(hash(this.cfg.seed, f, 0x6e07)).int(0, desks.length - 1)].items.push({ k: 'note', f, code: keypadCode(this.cfg.seed, f) });
     if (f < 0) { // sandbox: show every state, nothing hostile
       for (const t of fs.traps) t.revealed = true;
       if (fs.vendings[1]) fs.vendings[1].broken = true;
@@ -330,7 +369,11 @@ export class Sim {
     const cond = this.flightCondition(flight, i);
     const to = p.floor + dir;
     if (cond === 'fire') { damagePlayer(this, p, 16, 1, 'fire'); p.burnT = 2.5; this.msg(p, 'You push through the flames!', 'warn'); if (p.life !== 'alive') return; }
-    this.travel(p, to, 'stair' + i, 'stairs');
+    // arrive where those steps lead: climbing ends at the bottom (deep end) of the down flight above,
+    // descending ends at the top of the up flight below; a little way in, facing off the steps
+    const s = this.floorState(to).L.stairs[i];
+    const at = s ? { x: dir > 0 ? s.downX : s.upX, y: s.y1 - 0.75 * (s.y1 - s.y0 - 1) } : undefined;
+    this.travel(p, to, 'stair' + i, 'stairs', at);
     if (cond === 'damaged') {
       const fs = this.floorState(to);
       this.noise(fs, p.x, p.y, 12, p);
@@ -362,11 +405,12 @@ export class Sim {
     this.noise(fs, e.cx, e.cy, 17 * this.pressure(r.to).aggression, p);
   }
 
-  travel(p: PlayerState, to: number, tag: string, via: string) {
+  /** at: exact arrival point (stairs); otherwise the floor's anchor for `tag`. */
+  travel(p: PlayerState, to: number, tag: string, via: string, at?: { x: number; y: number }) {
     const from = p.floor;
     (p as any).stairPrevY = undefined; // a jump between floors is never a step up a flight
     const fs = this.floorState(to);
-    const a = fs.L.anchors[tag] ?? fs.L.anchors.stair0 ?? fs.L.anchors.start;
+    const a = at ?? fs.L.anchors[tag] ?? fs.L.anchors.stair0 ?? fs.L.anchors.start;
     const pts = pointsNear(fs.L, a.x, a.y, 8);
     const taken = this.players.filter((o) => o !== p && o.floor === to);
     const spot = pts.find((q) => taken.every((o) => dist(o.x, o.y, q.x, q.y) > 0.7)) ?? pts[0];
@@ -375,6 +419,9 @@ export class Sim {
     p.hold = null; (p as any).panel = null;
     (p as any).tp = ((p as any).tp ?? 0) + 1;
     (p as any).stairCd = 1.2; // don't immediately walk back onto a flight after arriving
+    // ...and never take the very flight you arrived on until you've stepped off it
+    const onFlight = stairAt(fs.L, p.x, p.y);
+    (p as any).stairHold = onFlight ? `${onFlight.s.index}:${onFlight.dir}` : null;
     this.emit({ e: 'travel', pid: p.id, from, to, via });
     if (!p.bot && to >= 1 && this.stats.startT < 0) this.stats.startT = this.t;
     if (!p.bot && to >= 1) scoreFloor(p.score, to, this.t);
@@ -388,7 +435,7 @@ export class Sim {
       }
     }
     // the squad never gets left behind: every bot not out arrives beside the human (downed ones too, to be revived)
-    if (!p.bot && from !== to) for (const b of this.players) if (b.bot && b.life !== 'out' && b.floor !== to) this.travel(b, to, tag, 'follow');
+    if (!p.bot && from !== to) for (const b of this.players) if (b.bot && b.life !== 'out' && b.floor !== to) { b.ride = null; this.travel(b, to, tag, 'follow', at); }
     this.onTravel?.(p, from, to);
   }
 
@@ -490,6 +537,7 @@ export class Sim {
       const s = { type, x: sp.x + this.rng.range(-0.6, 0.6), y: sp.y + this.rng.range(-0.6, 0.6), squad: 999, behavior: 'patrol' as const, route: [{ x: sp.x, y: sp.y }], elite: this.rng.chance(0.4), weapon: type === 'cyborg' ? this.rng.pick(['sr4', 'aro', 'pdw50', 'a12']) : this.rng.pick(['sr4', 'k45', 'br12', 'fb25']) };
       if (!isWalkableTile(fs.L, Math.floor(s.x), Math.floor(s.y))) { s.x = sp.x; s.y = sp.y; }
       const e = makeEnemy(this.id(), this.zombify(s), FINAL_FLOOR, enemyStatsFor);
+      e.hp *= this.hpBuff(); e.maxHp *= this.hpBuff();
       e.mag = weapon(e.weapon).mag;
       e.spawnWave = true;
       fs.enemies.push(e);
@@ -538,7 +586,7 @@ export class Sim {
   // ------------------------------------------------------------------ persistence (single player)
   exportSave(p: PlayerState) {
     return {
-      v: 1, seed: this.cfg.seed, difficulty: this.cfg.difficulty, floor: p.floor, t: this.t,
+      v: 1, seed: this.cfg.seed, difficulty: this.cfg.difficulty, floor: p.floor, t: this.t, squadPeak: this.squadPeak,
       cleared: [...this.clearedFlights], stats: { ...this.stats },
       player: {
         name: p.name, hp: p.hp, armor: p.armor, helmet: p.helmet, injured: p.injured, vest: (p as any).vest,
@@ -564,6 +612,7 @@ export class Sim {
     for (const c of s.cleared) sim.clearedFlights.add(c);
     sim.stats = { ...s.stats };
     sim.t = s.t;
+    sim.squadPeak = Math.max(sim.squadPeak, (s as any).squadPeak ?? 1); sim.pcache.clear(); // a fallen squadmate never makes the tower easier
     for (const sb of (s as any).bots ?? []) { // before the resume travel, so the squad arrives with the human
       const b = sim.addBot(sb.bot);
       Object.assign(b, { life: sb.life, downT: sb.downT, hp: sb.hp, armor: sb.armor, helmet: sb.helmet, injured: sb.injured, weapons: sb.weapons, sel: sb.sel, ammo: sb.ammo, grenades: sb.grenades, items: sb.items, mods: sb.mods, battery: sb.battery, kills: sb.kills });

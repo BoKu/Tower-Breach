@@ -1,0 +1,353 @@
+Tower Breach wall posters - image credits
+All images: modified: cropped and resized to 512x512
+
+abacus-server-room.jpg
+  Title:   Little abacus in the server room
+  Author:  Gael Varoquaux
+  Source:  https://www.flickr.com/photos/66885349@N03/34826644234
+  Licence: CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)
+  modified: cropped and resized to 512x512
+
+blue-glass-tower.jpg
+  Title:   A business building at night
+  Author:  Tsvetan Bondzhov
+  Source:  https://www.flickr.com/photos/77667666@N07/9486016158
+  Licence: CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)
+  modified: cropped and resized to 512x512
+
+chip-die.jpg
+  Title:   Microchip DSPIC33FJ06
+  Author:  Travis Goodspeed
+  Source:  https://www.flickr.com/photos/27388680@N05/5658331975
+  Licence: CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)
+  modified: cropped and resized to 512x512
+
+circuit-green-glow.jpg
+  Title:   Twechie circuit board
+  Author:  Twechie
+  Source:  https://www.flickr.com/photos/46385325@N06/5233558496
+  Licence: CC BY-SA 2.0 (https://creativecommons.org/licenses/by-sa/2.0/)
+  modified: cropped and resized to 512x512
+
+circuit-traces.jpg
+  Title:   green circuit board I
+  Author:  BotheredByBees
+  Source:  https://www.flickr.com/photos/87273935@N00/2389301860
+  Licence: CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)
+  modified: cropped and resized to 512x512
+
+city-night-seoul.jpg
+  Title:   Skyscrapers' Night
+  Author:  Flo_Drgn
+  Source:  https://www.flickr.com/photos/142703878@N05/43316814784
+  Licence: Public Domain Mark 1.0 (https://creativecommons.org/publicdomain/mark/1.0/)
+  modified: cropped and resized to 512x512
+
+cpu-pins.jpg
+  Title:   CPU Macro
+  Author:  Lemsipmatt
+  Source:  https://www.flickr.com/photos/26254688@N03/2894816411
+  Licence: CC BY-SA 2.0 (https://creativecommons.org/licenses/by-sa/2.0/)
+  modified: cropped and resized to 512x512
+
+earth-from-orbit.jpg
+  Title:   GOES Satellite Sees Strong Front Bringing Blizzard Conditions to U.S. Southwest
+  Author:  NASA Goddard Photo and Video
+  Source:  https://www.flickr.com/photos/24662369@N07/6539562233
+  Licence: CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)
+  modified: cropped and resized to 512x512
+
+eprom-die.jpg
+  Title:   256kbit/16kbit EPROM/SRAM Wafer Scale Integration PSD311
+  Author:  yellowcloud
+  Source:  https://www.flickr.com/photos/63794141@N00/4524710615
+  Licence: CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)
+  modified: cropped and resized to 512x512
+
+fiber-optic-globe.jpg
+  Title:   Fiber Optic Globe 2
+  Author:  JaredZammit
+  Source:  https://www.flickr.com/photos/29770470@N03/2960094912
+  Licence: CC BY-SA 2.0 (https://creativecommons.org/licenses/by-sa/2.0/)
+  modified: cropped and resized to 512x512
+
+fiber-optic-vortex.jpg
+  Title:   Fiber Optic Vortex
+  Author:  JaredZammit
+  Source:  https://www.flickr.com/photos/29770470@N03/2959253251
+  Licence: CC BY-SA 2.0 (https://creativecommons.org/licenses/by-sa/2.0/)
+  modified: cropped and resized to 512x512
+
+fly-bomber-poster.jpg
+  Title:   No Known Restrictions: Deadly Fly Poster (LOC)
+  Author:  pingnews.com
+  Source:  https://www.flickr.com/photos/39735679@N00/443620931
+  Licence: Public Domain Mark 1.0 (https://creativecommons.org/publicdomain/mark/1.0/)
+  modified: cropped and resized to 512x512
+
+glass-lattice-tower.jpg
+  Title:   Gherkin Stitch, London
+  Author:  Ian Muttoo
+  Source:  https://www.flickr.com/photos/20741443@N00/2109509395
+  Licence: CC BY-SA 2.0 (https://creativecommons.org/licenses/by-sa/2.0/)
+  modified: cropped and resized to 512x512
+
+jacquard-cards.jpg
+  Title:   Punched Card Technology II
+  Author:  gnomonic
+  Source:  https://www.flickr.com/photos/28120556@N08/5951574910
+  Licence: CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)
+  modified: cropped and resized to 512x512
+
+john-not-dull-poster.jpg
+  Title:   John is not really dull, WPA poster, ca. 1937
+  Author:  trialsanderrors
+  Source:  https://www.flickr.com/photos/76204898@N00/4834602186
+  Licence: CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)
+  modified: cropped and resized to 512x512
+
+lack-of-funds-poster.jpg
+  Title:   No Known Restrictions: WPA Poster: Health Care Even Without Money, 1939 (LOC)
+  Author:  pingnews.com
+  Source:  https://www.flickr.com/photos/39735679@N00/443628711
+  Licence: Public Domain Mark 1.0 (https://creativecommons.org/publicdomain/mark/1.0/)
+  modified: cropped and resized to 512x512
+
+led-facade.jpg
+  Title:   Untitled Forms / 20090924.SD850IS.3202.P1.SQ / SML
+  Author:  See-ming Lee (SML)
+  Source:  https://www.flickr.com/photos/48973657@N00/3954657297
+  Licence: CC BY-SA 2.0 (https://creativecommons.org/licenses/by-sa/2.0/)
+  modified: cropped and resized to 512x512
+
+leibniz-calculator.jpg
+  Title:   leibniz calculator machine-800px
+  Author:  The Public Domain Review
+  Source:  https://www.flickr.com/photos/76635305@N03/30809296171
+  Licence: Public Domain Mark 1.0 (https://creativecommons.org/publicdomain/mark/1.0/)
+  modified: cropped and resized to 512x512
+
+light-tunnel-bridge.jpg
+  Title:   High Trestle Bridge
+  Author:  Carol (vanhookc)
+  Source:  https://www.flickr.com/photos/97651299@N00/13368326574
+  Licence: CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)
+  modified: cropped and resized to 512x512
+
+magnetar.jpg
+  Title:   Most Magnetized Object in the Universe (artist concept)
+  Author:  NASA Goddard Photo and Video
+  Source:  https://www.flickr.com/photos/24662369@N07/3632281849
+  Licence: CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)
+  modified: cropped and resized to 512x512
+
+mainframe-console.jpg
+  Title:   NEC 2203 Mainframe Computer
+  Author:  donjd2
+  Source:  https://www.flickr.com/photos/28156071@N00/5900039667
+  Licence: CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)
+  modified: cropped and resized to 512x512
+
+motherboard-tracks.jpg
+  Title:   computer motherboard tracks
+  Author:  Creativity103
+  Source:  https://www.flickr.com/photos/36894712@N04/5228433146
+  Licence: CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)
+  modified: cropped and resized to 512x512
+
+neural-bubbles.jpg
+  Title:   Neural Network
+  Author:  Kevin Rheese
+  Source:  https://www.flickr.com/photos/129440207@N08/27929852485
+  Licence: CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)
+  modified: cropped and resized to 512x512
+
+office-tower-night.jpg
+  Title:   I give thanks to my Flickr friends!
+  Author:  kevin dooley
+  Source:  https://www.flickr.com/photos/12836528@N00/4135982538
+  Licence: CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)
+  modified: cropped and resized to 512x512
+
+oscilloscope-lab.jpg
+  Title:   Vacuum Tube Etch-A-Sketch
+  Author:  jurvetson
+  Source:  https://www.flickr.com/photos/44124348109@N01/197768962
+  Licence: CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)
+  modified: cropped and resized to 512x512
+
+processor-die.jpg
+  Title:   Old processor's die
+  Author:  Ioan Sameli
+  Source:  https://www.flickr.com/photos/39698489@N00/153056995
+  Licence: CC BY-SA 2.0 (https://creativecommons.org/licenses/by-sa/2.0/)
+  modified: cropped and resized to 512x512
+
+punch-card-reader.jpg
+  Title:   Hollerith punch card reader at Bletchley Park
+  Author:  James Cridland
+  Source:  https://www.flickr.com/photos/18378655@N00/3284669760
+  Licence: CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)
+  modified: cropped and resized to 512x512
+
+ram-chip.jpg
+  Title:   Thanks for the Memories
+  Author:  jurvetson
+  Source:  https://www.flickr.com/photos/44124348109@N01/5207284181
+  Licence: CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)
+  modified: cropped and resized to 512x512
+
+ready-to-serve-poster.jpg
+  Title:   Ready serve - trained, efficient
+  Author:  libraryofcongress
+  Source:  https://www.rawpixel.com/image/8650411/image-art-vintage-public-domain
+  Licence: CC0 1.0 (https://creativecommons.org/publicdomain/zero/1.0/)
+  modified: cropped and resized to 512x512
+
+retro-terminal.jpg
+  Title:   Vintage computers
+  Author:  fdecomite
+  Source:  https://www.flickr.com/photos/21649179@N00/18955674865
+  Licence: CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)
+  modified: cropped and resized to 512x512
+
+robot-sculpture.jpg
+  Title:   Robot Jim Groom
+  Author:  benrimes
+  Source:  https://www.flickr.com/photos/64239850@N07/5916609976
+  Licence: CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)
+  modified: cropped and resized to 512x512
+
+rocket-night-launch.jpg
+  Title:   Sounding Rocket Launches Successfully from Alaska
+  Author:  NASA Goddard Photo and Video
+  Source:  https://www.flickr.com/photos/24662369@N07/16389062375
+  Licence: CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)
+  modified: cropped and resized to 512x512
+
+rur-robot-poster.jpg
+  Title:   Marionette Theatre presents RUR, WPA poster, ca. 1937
+  Author:  trialsanderrors
+  Source:  https://www.flickr.com/photos/76204898@N00/4720372925
+  Licence: CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)
+  modified: cropped and resized to 512x512
+
+satellite-fairing.jpg
+  Title:   Fairing Encloses Landsat Satellite
+  Author:  NASA Goddard Photo and Video
+  Source:  https://www.flickr.com/photos/24662369@N07/8453029767
+  Licence: CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)
+  modified: cropped and resized to 512x512
+
+server-racks.jpg
+  Title:   Server room
+  Author:  torkildr
+  Source:  https://www.flickr.com/photos/8718930@N07/3463419826
+  Licence: CC BY-SA 2.0 (https://creativecommons.org/licenses/by-sa/2.0/)
+  modified: cropped and resized to 512x512
+
+server-room-cern.jpg
+  Title:   Server room at CERN
+  Author:  torkildr
+  Source:  https://www.flickr.com/photos/8718930@N07/3462606643
+  Licence: CC BY-SA 2.0 (https://creativecommons.org/licenses/by-sa/2.0/)
+  modified: cropped and resized to 512x512
+
+silicon-wafer.jpg
+  Title:   A Wafer of the Latest D-Wave Quantum Computers
+  Author:  jurvetson
+  Source:  https://www.flickr.com/photos/44124348109@N01/39188583425
+  Licence: CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)
+  modified: cropped and resized to 512x512
+
+skyline-night-hk.jpg
+  Title:   Neon City
+  Author:  allenhimself
+  Source:  https://www.flickr.com/photos/78139009@N03/31247505066
+  Licence: CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)
+  modified: cropped and resized to 512x512
+
+space-colony-cylinder.jpg
+  Title:   Space Colony Art from the 1970s
+  Author:  Image Catalog
+  Source:  https://www.flickr.com/photos/132795455@N08/17254663816
+  Licence: Public Domain Mark 1.0 (https://creativecommons.org/publicdomain/mark/1.0/)
+  modified: cropped and resized to 512x512
+
+space-colony-torus.jpg
+  Title:   Space Colony Art from the 1970s
+  Author:  Image Catalog
+  Source:  https://www.flickr.com/photos/132795455@N08/17280577275
+  Licence: Public Domain Mark 1.0 (https://creativecommons.org/publicdomain/mark/1.0/)
+  modified: cropped and resized to 512x512
+
+space-station-art.jpg
+  Title:   Space Colony Art from the 1970s
+  Author:  Image Catalog
+  Source:  https://www.flickr.com/photos/132795455@N08/17093067770
+  Licence: Public Domain Mark 1.0 (https://creativecommons.org/publicdomain/mark/1.0/)
+  modified: cropped and resized to 512x512
+
+station-sunrise.jpg
+  Title:   Sun Over Earth (NASA, International Space Station Science, 11:22:09)
+  Author:  NASA Goddard Photo and Video
+  Source:  https://www.flickr.com/photos/24662369@N07/12867973205
+  Licence: CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)
+  modified: cropped and resized to 512x512
+
+supercomputer-aisle.jpg
+  Title:   Discover Supercomputer 5
+  Author:  NASA Goddard Space Flight Center
+  Source:  https://www.flickr.com/photos/35278629@N08/6559334995
+  Licence: CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)
+  modified: cropped and resized to 512x512
+
+supercomputer-cabinets.jpg
+  Title:   Frontier supercomputer
+  Author:  oakridgelabnews
+  Source:  https://www.flickr.com/photos/37940997@N05/52281121645
+  Licence: CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)
+  modified: cropped and resized to 512x512
+
+tin-robot-astronaut.jpg
+  Title:   Retro Robot Toy
+  Author:  Kodomo Studio
+  Source:  https://www.flickr.com/photos/110563361@N02/11205891866
+  Licence: CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)
+  modified: cropped and resized to 512x512
+
+tin-robot-atomic.jpg
+  Title:   Tin robot
+  Author:  renaissancechambara
+  Source:  https://www.flickr.com/photos/39435232@N00/6919328882
+  Licence: CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)
+  modified: cropped and resized to 512x512
+
+tin-robot-blue.jpg
+  Title:   Tin toy robot
+  Author:  quinet
+  Source:  https://www.flickr.com/photos/91994044@N00/25405001885
+  Licence: CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)
+  modified: cropped and resized to 512x512
+
+tin-robot-crowd.jpg
+  Title:   'We .. were .. waiting .. ages' they droned
+  Author:  :mrMark:
+  Source:  https://www.flickr.com/photos/64036275@N00/172825933
+  Licence: CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)
+  modified: cropped and resized to 512x512
+
+tin-robot-trio.jpg
+  Title:   Vintage Robot 1 - Go Jeunejean
+  Author:  FaceMePLS
+  Source:  https://www.flickr.com/photos/38891071@N00/49963238166
+  Licence: CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)
+  modified: cropped and resized to 512x512
+
+vacuum-tubes.jpg
+  Title:   Philips Miniwatt Vacuum Tubes
+  Author:  dvanzuijlekom
+  Source:  https://www.flickr.com/photos/52365139@N05/11252049965
+  Licence: CC BY-SA 2.0 (https://creativecommons.org/licenses/by-sa/2.0/)
+  modified: cropped and resized to 512x512
+

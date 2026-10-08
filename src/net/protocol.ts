@@ -10,7 +10,7 @@ export const DOOR_MODES: DoorMode[] = ['open', 'closed', 'locked'];
 
 export const SNAP_HZ = 15;
 /** Wire protocol version: bump on any incompatible message change. Clients send it on join; servers refuse a mismatch. */
-export const NET_VERSION = 6; // v6: run score (sc) in the own-player snapshot, run clock starts at the tower; v5: player appearance (look) in ready + snapshots; v4: doors (they change collision), coins + keys; v3 (1.2.0): late join window, proximity voice
+export const NET_VERSION = 7; // v7: keypad notes found (kc), floor pickups (pk); // v6: run score (sc) in the own-player snapshot, run clock starts at the tower; v5: player appearance (look) in ready + snapshots; v4: doors (they change collision), coins + keys; v3 (1.2.0): late join window, proximity voice
 /** Joins report the protocol (v) and the app release (av): server and every game must be the very same release, 1:1. */
 export const sameRelease = (m: { v?: unknown; av?: unknown }) => m.v === NET_VERSION && m.av === APP_VERSION;
 export const versionMismatch = (theirs: unknown) =>
@@ -64,6 +64,7 @@ export function encodeFloor(fs: FloorState, withContainers: boolean) {
     dr: fs.doors.map((d) => [d.id, DOOR_MODES.indexOf(d.state)]),
     gr: fs.grenades.map((g) => [g.id, g.kind, r2(g.x), r2(g.y), r2(g.z)]),
     zn: fs.zones.map((z) => [z.id, z.kind, r2(z.x), r2(z.y), z.r, r2(z.t)]),
+    pk: fs.pickups.map((k) => [k.id, r2(k.x), r2(k.y)]),
     pg: fs.pings.map((p) => [p.id, p.enemyId, r2(p.x), r2(p.y), p.by, r2(p.t)]),
     lb: fs.lights.map((l, i) => (l.broken ? i : -1)).filter((i) => i >= 0),
     lo: fs.lights.map((l, i) => (l.off || l.cut ? i : -1)).filter((i) => i >= 0),
@@ -80,7 +81,7 @@ export function encodeFloor(fs: FloorState, withContainers: boolean) {
 export function encodeSnapshot(sim: Sim, recipient: number, events: SimEvent[], withContainers: boolean) {
   const me = sim.player(recipient)!;
   return {
-    k: 'snap', t: r2(sim.t), ph: sim.phase, why: sim.lostReason, obj: sim.objective, cl: [...sim.clearedFlights], st: sim.stats,
+    k: 'snap', t: r2(sim.t), ph: sim.phase, why: sim.lostReason, obj: sim.objective, cl: [...sim.clearedFlights], st: sim.stats, kc: [...sim.codesFound],
     pl: sim.players.map((p) => encodePlayer(p, p.id === recipient)),
     fl: encodeFloor(sim.floorState(me.floor), withContainers),
     ev: events,

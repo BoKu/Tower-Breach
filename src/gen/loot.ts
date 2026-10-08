@@ -106,6 +106,7 @@ export function describeLoot(it: LootItem): string {
     case 'grenade': return `${it.n}x ${it.g}`;
     case 'weapon': return weapon(it.id).name;
     case 'key': return `Master key (floor ${it.f})`;
+    case 'note': return `Sticky note (keypad code)`;
     case 'coin': return `${it.n} coin${it.n > 1 ? 's' : ''}`;
   }
 }

@@ -4,7 +4,7 @@ import { sanitizeLook, type PlayerLook } from '../config/look';
 
 export type Action =
   | 'moveUp' | 'moveDown' | 'moveLeft' | 'moveRight' | 'sprint' | 'crouch' | 'jump' | 'reload' | 'melee' | 'interact'
-  | 'use' | 'cycleItem' | 'swap' | 'slot1' | 'slot2' | 'slot3' | 'grenade' | 'cycleGrenade' | 'torch' | 'ping' | 'item1' | 'item2' | 'item3' | 'item4' | 'item5' | 'zoomIn' | 'zoomOut' | 'pause' | 'voice';
+  | 'use' | 'cycleItem' | 'swap' | 'slot1' | 'slot2' | 'slot3' | 'grenade' | 'cycleGrenade' | 'torch' | 'ping' | 'item1' | 'item2' | 'item3' | 'item4' | 'item5' | 'zoomIn' | 'zoomOut' | 'pause' | 'voice' | 'drop';
 
 export const ACTION_LABEL: Record<Action, string> = {
   moveUp: 'Move up', moveDown: 'Move down', moveLeft: 'Move left', moveRight: 'Move right', sprint: 'Sprint (hold)', crouch: 'Crouch',
@@ -12,16 +12,24 @@ export const ACTION_LABEL: Record<Action, string> = {
   cycleItem: 'Cycle item', swap: 'Swap weapon', slot1: 'Primary weapon', slot2: 'Secondary weapon', slot3: 'Knife',
   grenade: 'Throw grenade', cycleGrenade: 'Cycle grenade', torch: 'Toggle torch', ping: 'Ping / mark enemy',
   item1: 'Select health kit (belt 1)', item2: 'Select battery (belt 2)', item3: 'Select armour plate (belt 3)', item4: 'Select energy drink (belt 4)', item5: 'Select snack (belt 5)',
-  zoomIn: 'Zoom in', zoomOut: 'Zoom out', pause: 'Pause / menu', voice: 'Push-to-talk (co-op voice)',
+  zoomIn: 'Zoom in', zoomOut: 'Zoom out', pause: 'Pause / menu', voice: 'Push-to-talk (co-op voice)', drop: 'Drop a Health Kit (for a squadmate)',
 };
 
 export const DEFAULT_BINDINGS: Record<Action, string> = {
-  moveUp: 'KeyW', moveDown: 'KeyS', moveLeft: 'KeyA', moveRight: 'KeyD', sprint: 'ShiftLeft', crouch: 'KeyC', jump: 'Space',
-  reload: 'KeyR', melee: 'KeyV', interact: 'KeyE', use: 'KeyF', cycleItem: 'KeyX', swap: 'KeyQ', slot1: 'F1', slot2: 'F2',
-  slot3: 'F3', grenade: 'KeyG', cycleGrenade: 'KeyB', torch: 'KeyT', ping: 'KeyZ',
-  item1: 'Digit1', item2: 'Digit2', item3: 'Digit3', item4: 'Digit4', item5: 'Digit5', zoomIn: 'Equal', zoomOut: 'Minus', pause: 'Escape',
+  // Minecraft-style: Ctrl sprints, Shift sneaks, Q drops, F swaps, 1-8 is the hotbar (weapons 1-3, belt 4-8)
+  moveUp: 'KeyW', moveDown: 'KeyS', moveLeft: 'KeyA', moveRight: 'KeyD', sprint: 'ControlLeft', crouch: 'ShiftLeft', jump: 'Space',
+  reload: 'KeyR', melee: 'KeyV', interact: 'KeyE', use: 'KeyC', cycleItem: 'KeyX', swap: 'KeyF', drop: 'KeyQ',
+  slot1: 'Digit1', slot2: 'Digit2', slot3: 'Digit3', grenade: 'KeyG', cycleGrenade: 'KeyB', torch: 'KeyT', ping: 'KeyZ',
+  item1: 'Digit4', item2: 'Digit5', item3: 'Digit6', item4: 'Digit7', item5: 'Digit8', zoomIn: 'Equal', zoomOut: 'Minus', pause: 'Escape',
   voice: 'KeyH', // V (the usual push-to-talk key) is the knife here
 };
+
+/** The desktop app (Electron) can use Ctrl; a browser can't (Ctrl+W closes the tab before the page sees it). */
+export const isDesktop = () => /Electron/i.test(globalThis.navigator?.userAgent ?? '');
+/** Default keys: Minecraft-style in the desktop app; in a browser sprint/crouch move off Ctrl (Shift / C). */
+export function defaultBindings(desktop = isDesktop()): Record<Action, string> {
+  return desktop ? { ...DEFAULT_BINDINGS } : { ...DEFAULT_BINDINGS, sprint: 'ShiftLeft', crouch: 'KeyC', use: 'KeyX', cycleItem: 'KeyN' };
+}
 
 export interface Settings {
   quality: Quality;
@@ -47,17 +55,17 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   quality: 'medium', masterVol: 0.8, sfxVol: 0.9, musicVol: 0.7, crouchToggle: true, aimAssist: true, mouseAimAssist: true, showFps: false,
-  bindings: { ...DEFAULT_BINDINGS }, deadzone: 0.18, screenShake: true, reflections: 'mirrors',
+  bindings: defaultBindings(), deadzone: 0.18, screenShake: true, reflections: 'mirrors',
   voiceOn: true, voiceMode: 'ptt', voiceDevice: '', voiceVol: 1,
 };
 
-/** v2: number keys moved to the item belt (1-5); weapon slots to F1-F3. Older saved bindings are reset. */
-export const BINDINGS_VERSION = 2;
+/** v3 (1.11.0): Minecraft-style defaults (Ctrl sprint, Shift crouch, Q drop, hotbar 1-8). Older saved bindings are reset. */
+export const BINDINGS_VERSION = 3;
 
 export function loadSettings(): Settings {
   const s = load<Partial<Settings> & { bindingsVersion?: number }>('settings', {});
   const saved = (s.bindingsVersion ?? 1) >= BINDINGS_VERSION ? s.bindings ?? {} : {};
-  const bindings = { ...DEFAULT_BINDINGS } as Record<Action, string>;
+  const bindings = defaultBindings();
   for (const [a, c] of Object.entries(saved)) if (a in DEFAULT_BINDINGS) bindings[a as Action] = c as string;
   delete (s as { name?: string }).name; // callsigns are no longer stored (older saves had one)
   return { ...DEFAULT_SETTINGS, ...s, bindings };

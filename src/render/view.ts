@@ -10,6 +10,8 @@ export interface ViewSource {
   plan: BuildingPlan;
   objective: { uploadStarted: boolean; uploadT: number; done: boolean };
   stats: { startT: number; endT: number };
+  /** floors whose keypad-code note has been found */
+  codesFound: Set<number>;
   cfg: { mode: 'single' | 'coop'; difficulty: string; seed: number };
 }
 

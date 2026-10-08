@@ -6,6 +6,9 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
 const DIST = path.join(__dirname, '..', 'dist');
+// moddable folders (posters, street audio) are unpacked next to the app archive so players can drop files in
+const MODDABLE = DIST.replace(/app\.asar(?=[\\/])/, 'app.asar.unpacked');
+const fs = require('node:fs');
 
 // laptops with two GPUs: always render on the fast one
 app.commandLine.appendSwitch('force_high_performance_gpu');
@@ -36,8 +39,14 @@ function createWindow() {
 app.whenReady().then(() => {
   protocol.handle('app', (req) => {
     const rel = decodeURIComponent(new URL(req.url).pathname);
-    const file = path.normalize(path.join(DIST, rel));
-    if (!file.startsWith(DIST)) return new Response('Not found', { status: 404 }); // no escaping dist/
+    const root = /^\/(posters|audio)\//.test(rel) ? MODDABLE : DIST;
+    const file = path.normalize(path.join(root, rel));
+    if (!file.startsWith(root + path.sep)) return new Response('Not found', { status: 404 }); // no escaping dist/ (or into a sibling like dist-x)
+    if (rel === '/posters/index.json') { // drop-in posters: list the folder as it is now
+      let names = [];
+      try { names = fs.readdirSync(path.join(MODDABLE, 'posters')).filter((n) => /\.jpe?g$/i.test(n)).sort(); } catch { /* no folder: no posters */ }
+      return new Response(JSON.stringify(names), { headers: { 'content-type': 'application/json' } });
+    }
     return net.fetch(pathToFileURL(file).toString());
   });
   Menu.setApplicationMenu(null);

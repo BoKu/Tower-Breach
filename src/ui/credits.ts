@@ -2,13 +2,14 @@ import { h } from './dom';
 import { CREDITS_SECONDS, ROOT_LINK } from '../audio/creditsMusic';
 import { STREET_CAST, CHIEF } from '../config/npcs';
 import type { GameAudio } from '../audio/audio';
+import POSTER_CREDITS from '../../public/posters/credits.json';
 
 /**
  * End credits after a won run: fade to black, a 60 s movie-style roll over faint falling code and data sparks,
  * the closing theme, then the post-credits scene (a terminal waking somewhere dark; one transmission going down
  * a cable) and the Omega teaser. 3 s of black, then onDone. Esc skips the roll, then the post-credits scene.
  */
-type Block = { role?: string; names?: string[]; head?: string; line?: string; gap?: number; dedication?: boolean };
+type Block = { role?: string; names?: string[]; head?: string; line?: string; gap?: number; dedication?: boolean; small?: boolean };
 
 const ME = 'BoKu';
 const BLOCKS: Block[] = [
@@ -33,6 +34,8 @@ const BLOCKS: Block[] = [
   { role: 'Built with', names: ['three.js (MIT)', 'Electron (MIT)', 'Vite (MIT)', 'ws (MIT)', 'Bun (MIT)', 'cloudflared, Cloudflare (Apache-2.0)'] },
   { role: 'Typeface', names: ['Chakra Petch by Cadson Demak (SIL Open Font License 1.1)'] },
   { role: 'Street ambience', names: ['“citystreet3” by sagetyrtle, freesound.org (CC0 1.0)'] },
+  { role: 'Wall posters', small: true, names: POSTER_CREDITS.map((c) => `“${c.title}” by ${c.author} (${c.license})`) },
+  { line: 'Posters cropped and resized. Full credits and licence links: posters/CREDITS.txt' },
   { line: 'Every other model, texture, sound and tune in this game is generated in code.' },
   { role: 'Tower Breach is free software', names: ['GNU Affero General Public License v3.0', `© 2026 ${ME}`] },
   { line: 'The occupation is over. The city is free.' },
@@ -130,7 +133,7 @@ export function playCredits(host: HTMLElement, audio: GameAudio, onDone: () => v
   const roll = h('div', { class: 'cr-roll' }, ...BLOCKS.map((b) => b.gap ? h('div', { style: { height: `${b.gap * 10}vh` } })
     : b.head ? h('div', { class: 'cr-head' }, b.head)
       : b.line && !b.role ? h('div', { class: 'cr-line' }, b.line)
-        : h('div', { class: `cr-block${b.dedication ? ' cr-ded' : ''}` }, b.role ? h('div', { class: 'cr-role' }, b.role) : null, ...(b.names ?? []).map((n) => h('div', { class: 'cr-name' }, n)), b.line ? h('div', { class: 'cr-line' }, b.line) : null)));
+        : h('div', { class: `cr-block${b.dedication ? ' cr-ded' : ''}${b.small ? ' cr-small' : ''}` }, b.role ? h('div', { class: 'cr-role' }, b.role) : null, ...(b.names ?? []).map((n) => h('div', { class: 'cr-name' }, n)), b.line ? h('div', { class: 'cr-line' }, b.line) : null)));
   const post = h('div', { class: 'cr-post' });
   const skip = h('div', { class: 'cr-skip' }, 'ESC  SKIP');
   const root = h('div', { class: 'credits' }, cv, roll, post, skip);

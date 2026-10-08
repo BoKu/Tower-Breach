@@ -265,6 +265,7 @@ export function togglePanel(sim: Sim, fs: FloorState, pn: PanelState, by: Player
 export function setDoor(sim: Sim, fs: FloorState, i: number, st: DoorMode, r: number, by: PlayerState | null, skip?: Enemy) {
   const d = fs.L.doors[i];
   fs.doors[i].state = st;
+  if (by && !by.bot) fs.doors[i].held = true; // a person set it: squad bots must leave it be
   setDoorSolid(fs.L, d, st);
   sim.ai.hear(fs, d.x, d.y, r, by, skip);
   if (by) sim.emit({ e: 'use', f: fs.floor, pid: by.id, item: 'door' });

@@ -25,6 +25,8 @@ export interface PlayerInput {
   fire: boolean; aim: boolean; sprint: boolean; crouch: boolean; interact: boolean;
   jump: number; reload: number; melee: number; use: number; swap: number; grenade: number;
   cycleGrenade: number; cycleItem: number; torch: number; ping: number; medkit: number; battery: number;
+  /** drop a Health Kit on the floor in front of you (Q) */
+  drop: number;
   slot: number; slotSeq: number;
   /** elevator destination chosen from the panel (0 = none) */
   elevTo: number; elevSeq: number;
@@ -42,7 +44,7 @@ export interface PlayerInput {
 export function emptyInput(): PlayerInput {
   return {
     mx: 0, my: 0, ax: 0, ay: 0, az: NaN, fire: false, aim: false, sprint: false, crouch: false, interact: false,
-    jump: 0, reload: 0, melee: 0, use: 0, swap: 0, grenade: 0, cycleGrenade: 0, cycleItem: 0, torch: 0, ping: 0, medkit: 0, battery: 0,
+    jump: 0, reload: 0, melee: 0, use: 0, swap: 0, grenade: 0, cycleGrenade: 0, cycleItem: 0, torch: 0, ping: 0, medkit: 0, battery: 0, drop: 0,
     slot: -1, slotSeq: 0, useItem: 0, useItemSeq: 0, selItem: 0, selItemSeq: 0, elevTo: 0, elevSeq: 0, stairDir: 0, stairSeq: 0, hackId: 0, hackOk: 0, hackSeq: 0, closeSeq: 0,
   };
 }
@@ -155,7 +157,9 @@ export interface ContainerState { id: number; kind: ContainerKind; x: number; y:
 /** drops = the remaining stock (bought one unit at a time for `price` coins; prying it open spills the rest) */
 export interface VendingState { id: number; x: number; y: number; rot: number; hp: number; broken: boolean; drops: LootItem[]; price: number }
 /** Live state of L.doors[i] (same order). Closed and locked doors block walking and sight (see setDoorSolid). */
-export interface DoorState { id: number; state: DoorMode }
+/** held: a player (not a bot) last set it: bots leave it exactly as it is */
+export interface Pickup { id: number; item: 'medkit'; x: number; y: number }
+export interface DoorState { id: number; state: DoorMode; held?: boolean }
 export interface HazardState { id: number; kind: 'fire' | 'shock'; x: number; y: number; r: number }
 export interface Grenade { id: number; kind: GrenadeType; x: number; y: number; z: number; vx: number; vy: number; vz: number; fuse: number; owner: number; rest: boolean }
 export interface Zone { id: number; kind: 'smoke' | 'fire' | 'decoy'; x: number; y: number; r: number; t: number; tick: number }
@@ -178,6 +182,8 @@ export interface FloorState {
   grenades: Grenade[];
   zones: Zone[];
   pings: Ping[];
+  /** Health Kits dropped on the floor (Q): walk over to take; the lowest-health bot comes for them */
+  pickups: Pickup[];
   lights: LightState[];
   panels: PanelState[];
   hacks: HackState[];

@@ -1,4 +1,5 @@
 import type { PlayerInput, PlayerState } from '../sim/state';
+import { hotbarStep, PAD, grenadeButton, scopeClick, wheelIsZoom } from './hotbar';
 import type { Action, Settings } from '../save/settings';
 
 /** Camera-relative movement basis: camera sits at +x,+z looking toward -x,-z. */
@@ -7,14 +8,14 @@ const RIGHT = { x: Math.SQRT1_2, y: -Math.SQRT1_2 };
 
 const PRESS_ACTIONS: Partial<Record<Action, keyof PlayerInput>> = {
   jump: 'jump', reload: 'reload', melee: 'melee', use: 'use', swap: 'swap', grenade: 'grenade', cycleGrenade: 'cycleGrenade',
-  cycleItem: 'cycleItem', torch: 'torch', ping: 'ping',
+  cycleItem: 'cycleItem', torch: 'torch', ping: 'ping', drop: 'drop',
 };
 
 type Pad = { buttons: boolean[]; axes: number[] };
 
 /** Fixed alternates that always work in addition to the (remappable) primary binding. */
 const ALT_KEYS: Partial<Record<Action, string[]>> = {
-  moveUp: ['ArrowUp'], moveDown: ['ArrowDown'], moveLeft: ['ArrowLeft'], moveRight: ['ArrowRight'], crouch: ['ControlLeft'],
+  moveUp: ['ArrowUp'], moveDown: ['ArrowDown'], moveLeft: ['ArrowLeft'], moveRight: ['ArrowRight'], crouch: ['ShiftRight'],
 };
 
 export class Input {
@@ -24,6 +25,8 @@ export class Input {
   mousePx = { x: 0, y: 0 };
   mouseL = false;
   mouseR = false;
+  /** quick right-click scope lock (Mac trackpads) */
+  private scope = { latched: false, downAt: 0 };
   wheel = 0;
   crouchOn = false;
   sprintPadOn = false;
@@ -34,6 +37,11 @@ export class Input {
   private pendingInteract = false;
   private useItemIdx = 0; private useItemSeq = 0;
   private selIdx = -1; private selSeq = 0; private selT = 0;
+  /** hotbar cursor (0-2 weapons, 3-7 belt) for the mouse wheel; -1 = follow the equipped weapon */
+  private hotIdx = -1;
+  /** D-pad right tap/hold state (tap throws, hold switches grenade type) */
+  private padGrenade = { t: 0, cycled: 0 };
+  private padT = 0;
   /** pending camera zoom steps (Ctrl+wheel, -/= keys) */
   zoomSteps = 0;
   private slot = -1;
@@ -46,7 +54,7 @@ export class Input {
   constructor(private el: HTMLElement, private settings: Settings) {
     window.addEventListener('keydown', (e) => this.key(e, true));
     window.addEventListener('keyup', (e) => this.key(e, false));
-    window.addEventListener('blur', () => { this.held.clear(); this.mouseL = this.mouseR = false; });
+    window.addEventListener('blur', () => { this.held.clear(); this.mouseL = this.mouseR = false; this.scope = { latched: false, downAt: 0 }; });
     el.addEventListener('mousemove', (e) => {
       const r = el.getBoundingClientRect();
       this.mousePx = { x: e.clientX - r.left, y: e.clientY - r.top };
@@ -55,15 +63,24 @@ export class Input {
     });
     el.addEventListener('mousedown', (e) => {
       if (this.capture) { this.capture('Mouse' + e.button); this.capture = null; e.preventDefault(); return; }
-      if (e.button === 0) this.mouseL = true;
-      if (e.button === 2) this.mouseR = true;
+      // macOS turns Ctrl+click into a right-click; Ctrl is sprint here, so treat it as the left button (fire)
+      const btn = e.button === 2 && e.ctrlKey && /Mac/i.test(navigator.platform) ? 0 : e.button;
+      if (btn === 0) this.mouseL = true;
+      if (btn === 2) { this.mouseR = true; this.scope = scopeClick(this.scope, 'down', performance.now()); }
       if (e.button === 1) { this.bump('ping'); e.preventDefault(); }
       this.usingPad = false;
     });
-    window.addEventListener('mouseup', (e) => { if (e.button === 0) this.mouseL = false; if (e.button === 2) this.mouseR = false; });
+    window.addEventListener('mouseup', (e) => {
+      if (e.button === 0 || (e.button === 2 && !this.mouseR)) this.mouseL = false;
+      if (e.button === 2 && this.mouseR) { this.mouseR = false; this.scope = scopeClick(this.scope, 'up', performance.now()); }
+    });
     el.addEventListener('contextmenu', (e) => e.preventDefault());
     // wheel scrolls the item belt; Ctrl/Cmd + wheel (or pinch) zooms the camera
-    el.addEventListener('wheel', (e) => { if (e.ctrlKey || e.metaKey) this.zoomSteps += Math.sign(e.deltaY); else this.wheel += Math.sign(e.deltaY); e.preventDefault(); }, { passive: false });
+    el.addEventListener('wheel', (e) => {
+      const ctrlSprint = /^Control/.test(this.settings.bindings.sprint) && this.down('sprint');
+      if (wheelIsZoom(e, ctrlSprint)) this.zoomSteps += Math.sign(e.deltaY); else this.wheel += Math.sign(e.deltaY);
+      e.preventDefault();
+    }, { passive: false });
     window.addEventListener('gamepadconnected', (e) => { this.padName = (e as GamepadEvent).gamepad.id; });
   }
 
@@ -89,6 +106,7 @@ export class Input {
     const a = this.actionFor(e.code);
     // keep game keys from triggering browser shortcuts (F1 help, Tab focus, space scroll, arrows)
     if ((a && ['Tab', 'Space', 'ControlLeft', 'KeyF', 'F1', 'F2', 'F3', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Equal', 'Minus'].includes(e.code)) || e.code.startsWith('Arrow')) e.preventDefault();
+    if (e.ctrlKey && a) e.preventDefault(); // Ctrl held (sprint): game keys must not fire browser shortcuts (Ctrl+S, Ctrl+D…)
     if (down) {
       if (e.repeat) return;
       this.held.add(e.code);
@@ -97,8 +115,8 @@ export class Input {
       if (a === 'pause') { this.onAction?.('pause'); return; }
       if (!this.enabled) return;
       if (a === 'crouch') this.crouchOn = !this.crouchOn;
-      if (a === 'slot1' || a === 'slot2' || a === 'slot3') { this.slot = a === 'slot1' ? 0 : a === 'slot2' ? 1 : 2; this.slotSeq++; }
-      if (a.startsWith('item')) { this.useItemIdx = Number(a.slice(4)); this.useItemSeq++; this.selIdx = this.useItemIdx - 1; this.selT = performance.now(); }
+      if (a === 'slot1' || a === 'slot2' || a === 'slot3') { this.slot = a === 'slot1' ? 0 : a === 'slot2' ? 1 : 2; this.slotSeq++; this.hotIdx = this.slot; }
+      if (a.startsWith('item')) { this.useItemIdx = Number(a.slice(4)); this.useItemSeq++; this.selIdx = this.useItemIdx - 1; this.selT = performance.now(); this.hotIdx = 3 + this.selIdx; }
       if (a === 'zoomIn') this.zoomSteps -= 1;
       if (a === 'zoomOut') this.zoomSteps += 1;
       if (a === 'interact') this.pendingInteract = true;
@@ -143,7 +161,7 @@ export class Input {
     mx = RIGHT.x * ax + UP.x * ay;
     my = RIGHT.y * ax + UP.y * ay;
     let fire: boolean = this.mouseL;
-    let aim = this.mouseR;
+    let aim = this.mouseR || this.scope.latched;
     let sprint = this.down('sprint');
     let interact = this.down('interact') || this.pendingInteract;
     let padCrouch = false;
@@ -175,26 +193,31 @@ export class Input {
         const reach = b[6] ? 11 : 7;
         aimPt = { x: p.x + this.padAim.x * reach, y: p.y + this.padAim.y * reach, h: NaN }; // stick aim fires flat
         if (this.settings.aimAssist && assist) { const t = assist(this.padAim.x, this.padAim.y); if (t) aimPt = { ...t, h: NaN }; }
-        fire = b[7] || fire;
-        aim = b[6] || aim;
-        if (edge(10)) this.sprintPadOn = !this.sprintPadOn;
+        // Minecraft-on-console layout (see PAD in input/hotbar.ts)
+        fire = b[PAD.fire] || fire;
+        aim = b[PAD.aim] || aim;
+        if (edge(PAD.sprint)) this.sprintPadOn = !this.sprintPadOn;
         if (!(lx || ly)) this.sprintPadOn = false;
         sprint = this.sprintPadOn || sprint;
-        interact = b[5] || interact;
-        if (edge(0)) this.bump('jump');
-        if (edge(1)) this.crouchOn = !this.crouchOn;
-        padCrouch = !!b[1]; // hold-to-crouch mode
-        if (edge(2)) this.bump('reload');
-        if (edge(3)) this.bump('swap');
-        if (edge(4)) this.bump('grenade');
-        if (edge(11)) this.bump('melee');
-        if (edge(8)) this.bump('ping');
-        if (edge(9)) this.onAction?.('pause');
-        if (edge(12)) this.bump('torch');
-        if (edge(13)) this.bump('use');
-        if (edge(14)) this.bump('cycleItem');
-        if (edge(15)) this.bump('cycleGrenade');
-        if (edge(5)) this.onAction?.('interact');
+        interact = b[PAD.interact] || interact;
+        if (edge(PAD.jump)) this.bump('jump');
+        if (edge(PAD.crouch)) this.crouchOn = !this.crouchOn;
+        padCrouch = !!b[PAD.crouch]; // hold-to-crouch mode
+        if (edge(PAD.reload)) this.bump('reload');
+        if (edge(PAD.drop)) this.bump('drop');
+        if (edge(PAD.knife)) this.bump('melee');
+        if (edge(PAD.ping)) this.bump('ping');
+        if (edge(PAD.pause)) this.onAction?.('pause');
+        if (edge(PAD.torch)) this.bump('torch');
+        if (edge(PAD.use)) this.bump('use');
+        if (edge(PAD.interact)) this.onAction?.('interact');
+        if (edge(PAD.hotPrev) || edge(PAD.hotNext)) this.wheel += edge(PAD.hotNext) ? 1 : -1; // bumpers step the hotbar like the mouse wheel
+        const now = performance.now(), pdt = Math.min(0.1, (now - (this.padT || now)) / 1000);
+        this.padT = now;
+        const gb = grenadeButton(!!b[PAD.grenade], this.padGrenade, pdt);
+        this.padGrenade = gb.s;
+        if (gb.out === 'throw') this.bump('grenade');
+        if (gb.out === 'cycle') this.bump('cycleGrenade');
       }
       this.prevPad = b;
     }
@@ -207,13 +230,14 @@ export class Input {
     for (const [a, k] of Object.entries(PRESS_ACTIONS)) (inp as any)[k] = this.counters[a] ?? 0;
     inp.slot = this.slot; inp.slotSeq = this.slotSeq;
     inp.useItem = this.useItemIdx; inp.useItemSeq = this.useItemSeq;
-    // wheel -> belt selection; tracks its own index briefly so fast scrolls don't wait for a (network) round trip
+    // wheel -> Minecraft-style hotbar 1-8 (weapons 1-3 equip, belt 4-8 select); tracks its own cursor so fast
+    // scrolls don't wait for a (network) round trip
     if (this.wheel) {
-      const belt = ['medkit', 'battery', 'plate', 'drink', 'food'];
-      const base = this.selIdx >= 0 && performance.now() - this.selT < 600 ? this.selIdx : Math.max(0, belt.indexOf(p.itemSel));
-      this.selIdx = (((base + this.wheel) % 5) + 5) % 5;
-      this.selT = performance.now();
-      this.selSeq++;
+      let i = this.hotIdx >= 0 ? this.hotIdx : p.sel === 'primary' ? 0 : p.sel === 'secondary' ? 1 : 2;
+      const has = { primary: !!p.weapons.primary, secondary: !!p.weapons.secondary };
+      for (let n = 0; n < Math.abs(this.wheel); n++) i = hotbarStep(i, this.wheel, has);
+      this.hotIdx = i;
+      if (i < 3) { this.slot = i; this.slotSeq++; } else { this.selIdx = i - 3; this.selSeq++; this.selT = performance.now(); }
       this.wheel = 0;
     }
     inp.selItem = Math.max(0, this.selIdx); inp.selItemSeq = this.selSeq;

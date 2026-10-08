@@ -1,6 +1,6 @@
 {
   "name": "tower-breach",
-  "version": "1.10.0",
+  "version": "1.11.0",
   "private": true,
   "type": "module",
   "description": "TOWER BREACH - isometric co-op tactical survival game (WebGL)",
@@ -41,6 +41,10 @@
     "directories": {
       "output": "release"
     },
+    "asarUnpack": [
+      "dist/posters/**",
+      "dist/audio/**"
+    ],
     "files": [
       "dist/**/*",
       "desktop/**/*",

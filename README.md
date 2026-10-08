@@ -78,7 +78,9 @@ friends.
 - ✨ **Lighting and reflections.** Every lamp casts its own coloured light, mirrors show you and the enemy, and an
   optional ray-traced mode adds a sheen to floors and the street.
 - 🎃 **Holiday themes.** Halloween, Christmas and Easter versions of the street and the tower.
-- 🎛️ **Everything is generated in code.** All models, textures, animations and sound effects. The only recorded
+- 🖼️ **Wall posters you can swap.** Drop any `.jpg` into `public/posters/` (up to 512 × 512; transparency shows
+  black) and it turns up on the tower's walls. In the desktop app that folder sits next to the app (`resources/app.asar.unpacked/dist/posters`).
+- 🎛️ **Everything else is generated in code.** All models, textures, animations and sound effects. The only recorded
   audio is the street ambience.
 
 ## Screenshots
@@ -137,19 +139,23 @@ relay (`npm start`, 5-letter codes). See the [co-op notes](docs/DEVELOPMENT.md#p
 |---|---|---|
 | Move | W A S D | Left stick |
 | Aim / fire | Mouse / left click | Right stick / RT |
-| Aim down sights | Right click | LT |
-| Sprint (loud) | Left Shift | Left stick click |
-| Crouch | C | B |
+| Aim down sights | Right click (hold, or a quick click to lock the scope) | LT |
+| Sprint (loud) | Left Ctrl | Left stick click |
+| Crouch / sneak | Left Shift | Right stick click |
 | Jump / vault / clear tripwires | Space | A |
 | Reload | R | X |
-| Knife | V | Right stick click |
-| Interact, loot, revive, clear stair debris, use lifts | E (tap or hold) | RB |
-| Throw grenade / switch grenade | G / B | LB / D-pad → |
+| Knife | V | D-pad ← |
+| Interact, loot, revive, clear stair debris, use lifts | E (tap or hold) | Y |
+| Hotbar: weapons / belt items | 1–3 / 4–8, or the mouse wheel | LB / RB |
+| Use selected belt item | C | D-pad ↓ |
+| Drop a Health Kit (for a squadmate) | Q | B |
+| Throw grenade / switch grenade | G / B | tap / hold D-pad → |
 | Torch | T | D-pad ↑ |
-| Select / use belt item | 1–5 or mouse wheel / F | D-pad ← / D-pad ↓ |
-| Pause | Esc | Start |
+| Pause | Esc | Menu |
 
-You can remap every key under **Settings → Controls**. The [manual](docs/MANUAL.md#3-controls) lists every control.
+The defaults follow Minecraft's (Ctrl sprints, Shift sneaks, Q drops, a 1–8 hotbar). In a web browser, sprint is
+Shift and crouch is C, since browsers keep Ctrl for themselves. You can remap every key under
+**Settings → Controls**. The [manual](docs/MANUAL.md#3-controls) lists every control.
 
 ## Holiday themes
 
@@ -207,6 +213,8 @@ Third-party components:
   a tunnel
 - Chakra Petch UI font (SIL Open Font License 1.1), via `@fontsource/chakra-petch`
 - Street ambience: "citystreet3" by sagetyrtle (CC0 1.0). See [public/audio/CREDITS.txt](public/audio/CREDITS.txt).
+- Wall posters: 50 photos and posters under CC BY 2.0, CC BY-SA 2.0, CC0 and the Public Domain Mark, cropped and
+  resized. Every title, author, source and licence is in [public/posters/CREDITS.txt](public/posters/CREDITS.txt).
 
 ## License
 

@@ -31,6 +31,7 @@ export class ClientView implements ViewSource {
   phase: 'playing' | 'won' | 'lost' = 'playing';
   lostReason = '';
   stats = { kills: 0, maxFloor: 0, startT: -1, endT: 0 };
+  codesFound = new Set<number>();
   cleared = new Set<string>();
   private floors = new Map<number, FloorState>();
   /** timestamped positions of remote players ('p'+id) and enemies ('e'+id), drawn INTERP_DELAY in the past */
@@ -61,7 +62,7 @@ export class ClientView implements ViewSource {
       containers: L.containers.map((c) => ({ id: c.id, kind: c.kind, x: c.x, y: c.y, items: c.items.map((i) => ({ ...i })), opened: false, label: CONTAINER_LABEL[c.kind] })),
       vendings: L.vendings.map((v) => ({ id: v.id, x: v.x, y: v.y, rot: v.rot, hp: 45, broken: false, drops: v.drops.map((d) => ({ ...d })), price: v.price })),
       doors: L.doors.map((d) => { setDoorSolid(L, d, d.init); return { id: d.id, state: d.init }; }), // the cached layout is shared: (re)apply
-      hazards: L.hazards.map((h) => ({ ...h })), grenades: [], zones: [], pings: [],
+      hazards: L.hazards.map((h) => ({ ...h })), grenades: [], zones: [], pings: [], pickups: [],
       lights: L.lights.map((l) => ({ broken: l.broken, burstT: 0 })), panels: makePanels(L), debris: {}, wave: null, scareT: 1e9, networkAlertT: 0,
       hacks: L.hacks.map((h) => ({ id: h.id, kind: h.kind, x: h.x, y: h.y, state: 'ready' as const })), lightsFixed: false, npcHold: {}, npcTalk: [],
     };
@@ -89,7 +90,7 @@ export class ClientView implements ViewSource {
     this.t = s.t;
     // follow the authority's clock: snap when far off, otherwise nudge (absorbs network jitter)
     this.clock = Math.abs(s.t - this.clock) < 0.5 ? this.clock + (s.t - this.clock) * 0.15 : s.t;
-    this.phase = s.ph; this.lostReason = s.why; this.objective = s.obj; this.stats = s.st;
+    this.phase = s.ph; this.lostReason = s.why; this.objective = s.obj; this.stats = s.st; this.codesFound = new Set(s.kc ?? []);
     for (const k of s.cl as string[]) if (!this.cleared.has(k)) { this.cleared.add(k); this.unblock(k); }
     for (const o of s.pl) {
       let p = this.player(o.id);
@@ -128,6 +129,7 @@ export class ClientView implements ViewSource {
     for (const [id, m] of F.dr ?? []) { const i = fs.doors.findIndex((d) => d.id === id); if (i >= 0 && fs.doors[i].state !== DOOR_MODES[m]) { fs.doors[i].state = DOOR_MODES[m]; setDoorSolid(fs.L, fs.L.doors[i], DOOR_MODES[m]); } }
     fs.grenades = F.gr.map(([id, kind, x, y, z]: any) => ({ id, kind, x, y, z, vx: 0, vy: 0, vz: 0, fuse: 1, owner: 0, rest: false }));
     fs.zones = F.zn.map(([id, kind, x, y, r, t]: any) => ({ id, kind, x, y, r, t, tick: 0 }));
+    fs.pickups = (F.pk ?? []).map(([id, x, y]: any) => ({ id, item: 'medkit' as const, x, y }));
     fs.pings = F.pg.map(([id, enemyId, x, y, by, t]: any) => ({ id, enemyId, x, y, by, t }));
     const lb = new Set<number>(F.lb);
     fs.lights.forEach((l, i) => (l.broken = lb.has(i)));

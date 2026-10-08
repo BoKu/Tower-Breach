@@ -43,8 +43,9 @@ export class HackUI {
     if (e.code === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); this.game.abort(); }
   };
 
-  constructor(floor: number, kind: HackKind, private onEnd: (r: 1 | 0 | -1) => void, private sound: (k: 'ok' | 'bad' | 'granted' | 'traced') => void) {
-    this.game = new HackGame(floor, kind, undefined, forcedPuzzles());
+  /** code: this floor's keypad code; noteFound: the squad found its sticky note, so the keypad shows it */
+  constructor(floor: number, kind: HackKind, private onEnd: (r: 1 | 0 | -1) => void, private sound: (k: 'ok' | 'bad' | 'granted' | 'traced') => void, private code?: string, private noteFound = false) {
+    this.game = new HackGame(floor, kind, undefined, forcedPuzzles(), code);
     const title = kind === 'security' ? 'SECURITY SUBSYSTEM · CCTV / PROXIMITY MINES / TRIPWIRES' : 'FACILITIES SUBSYSTEM · LIGHTING GRID';
     this.el = h('div', { class: 'hack' },
       h('div', { class: 'hk-head' }, h('b', {}, 'UPLINK'), h('span', {}, ` // ${title}`)),
@@ -236,12 +237,13 @@ export class HackUI {
         const keys = [1, 2, 3, 4, 5, 6, 7, 8, 9].map((d) => this.btn('hk-key', () => g.act('keypad', (p) => p.press(d)), String(d)));
         keys.push(this.btn('hk-key', () => g.act('keypad', (p) => p.del()), 'DEL'), this.btn('hk-key', () => g.act('keypad', (p) => p.press(0)), '0'),
           this.btn('hk-key', () => g.act('keypad', (p) => p.enter()), 'ENTER'));
-        const log = k.log.map((l) => h('div', { class: 'hk-log-l' }, `> ${l.g}`, h('span', {}, `  ${l.hit} PLACED · ${l.near} MISPLACED`)));
+        const log = k.log.map((l) => h('div', { class: 'hk-log-l' }, '> ', ...[...l.g].map((d, i) => h('b', { class: `kd ${l.marks[i]}` }, d)), h('span', {}, `  ${l.hit} PLACED · ${l.near} MISPLACED`)));
         return [[h('div', { class: 'hk-kp' },
-          h('div', { class: 'hk-kpad' }, h('div', { class: 'hk-seq' }, ...slots), h('div', { class: 'hk-keys' }, ...keys)),
+          h('div', { class: 'hk-kpad' }, this.noteFound && !k.resets ? h('div', { class: 'hk-note' }, 'STICKY NOTE  ', h('b', {}, this.code ?? '')) : null, h('div', { class: 'hk-seq' }, ...slots), h('div', { class: 'hk-keys' }, ...keys)),
           h('div', { class: 'hk-log' }, h('div', { class: 'hk-log-h' }, `ATTEMPTS ${k.log.length}/${Keypad.MAX}`), ...(log.length ? log : [h('div', { class: 'hk-log-l dim' }, 'no attempts yet')])))],
-          k.resets && !k.log.length ? 'LOCKOUT: the controller rolled a new code. Start again.'
-            : `Enter a 4-digit code${k.repeats ? ' (digits may repeat)' : ' (no repeated digits)'}. PLACED = right digit, right place; MISPLACED = right digit, wrong place. Each wrong code adds trace.`];
+          this.noteFound && !k.resets ? `STICKY NOTE: the code is ${this.code}. Enter it.`
+          : k.resets && !k.log.length ? `LOCKOUT: the controller rolled a new code${this.noteFound ? ' (the note is useless now)' : ''}. Start again.`
+            : `Enter a 4-digit code${k.repeats ? ' (digits may repeat)' : ' (no repeated digits)'}. Green = right digit, right place; amber = in the code, wrong place; dim = not in the code. Each wrong code adds trace.`];
       }
       case 'load': {
         const l = g.p.load!, max = l.watts.reduce((a, b) => a + b, 0), tot = l.total;

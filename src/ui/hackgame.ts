@@ -22,6 +22,8 @@ export const GUESS_PENALTY = 0.1;
 /** keypad: each wrong code is cheap (it's how you learn), running out of attempts is not */
 export const KEY_PENALTY = 0.03;
 export const LOCKOUT_PENALTY = 0.25;
+/** the keypad is the hardest to reason through: its trace runs at 60% speed (40% more time) */
+export const KEYPAD_TIME = 0.6;
 const WORDS: Record<number, string[]> = {
   5: ['GHOST', 'PROXY', 'ROUTE', 'TOKEN', 'VAULT', 'NEXUS', 'RELAY', 'SHARD', 'PULSE', 'OMEGA', 'DELTA', 'SIGMA', 'VIPER', 'RAVEN', 'LASER', 'NODES', 'PIXEL', 'CRYPT', 'ORBIT', 'STEEL', 'TOWER', 'AXIOM', 'CABLE', 'DRONE'],
   6: ['CIPHER', 'KERNEL', 'SERVER', 'ACCESS', 'BINARY', 'PACKET', 'SIGNAL', 'MATRIX', 'VECTOR', 'SYSTEM', 'DAEMON', 'SOCKET', 'BUFFER', 'MIRROR', 'SHADOW', 'CARBON', 'CORTEX', 'FALCON', 'TUNNEL', 'ORACLE', 'PHOTON', 'ROCKET'],
@@ -236,17 +238,20 @@ export class Keypad {
   readonly repeats: boolean;
   code = '';
   entry = '';
-  log: { g: string; hit: number; near: number }[] = [];
+  log: { g: string; hit: number; near: number; marks: ('hit' | 'near' | 'miss')[] }[] = [];
   /** lockouts so far (each one rolls a new code) */
   resets = 0;
   solved = false;
-  constructor(private rnd: Rnd, k: number) { this.repeats = k >= 0.75; this.roll(); }
+  /** preset: the floor's code (keypadCode), used until a lockout rolls a fresh one */
+  constructor(private rnd: Rnd, k: number, preset?: string) { this.repeats = k >= 0.75; if (preset && /^\d{4}$/.test(preset)) this.code = preset; else this.roll(); }
   private roll() { this.code = ''; while (this.code.length < 4) { const d = String(pickInt(this.rnd, 10)); if (this.repeats || !this.code.includes(d)) this.code += d; } }
+  /** hit/near counts, plus a Wordle-style mark per digit (repeats only count as often as the code has them) */
   static score(g: string, code: string) {
-    let hit = 0;
-    const a = Array(10).fill(0), b = Array(10).fill(0);
-    for (let i = 0; i < 4; i++) { if (g[i] === code[i]) hit++; a[+g[i]]++; b[+code[i]]++; }
-    return { hit, near: a.reduce((s, n, d) => s + Math.min(n, b[d]), 0) - hit };
+    const marks: ('hit' | 'near' | 'miss')[] = ['miss', 'miss', 'miss', 'miss'];
+    const left = Array(10).fill(0);
+    for (let i = 0; i < 4; i++) { if (g[i] === code[i]) marks[i] = 'hit'; else left[+code[i]]++; }
+    for (let i = 0; i < 4; i++) if (marks[i] !== 'hit' && left[+g[i]] > 0) { marks[i] = 'near'; left[+g[i]]--; }
+    return { hit: marks.filter((m) => m === 'hit').length, near: marks.filter((m) => m === 'near').length, marks };
   }
   press(d: number): Move { if (this.entry.length < 4) this.entry += d; return null; }
   del(): Move { this.entry = this.entry.slice(0, -1); return null; }
@@ -310,7 +315,8 @@ export class HackGame {
   flashWrong = 0;
   private rnd: () => number;
 
-  constructor(readonly floor: number, readonly kind: HackKind, seed = Math.random() * 1e9, force?: PuzzleId[]) {
+  /** keypadCode: this floor's code (sim/hack.ts keypadCode), so the sticky note matches */
+  constructor(readonly floor: number, readonly kind: HackKind, seed = Math.random() * 1e9, force?: PuzzleId[], keypadCode?: string) {
     let s = Math.floor(seed) % 2147483647 || 1;
     this.rnd = () => ((s = (s * 48271) % 2147483647) / 2147483647);
     for (let i = 0; i < 4; i++) this.rnd(); // small seeds give tiny first draws
@@ -336,7 +342,7 @@ export class HackGame {
     const nodes = ['InterNIC', 'Uplink PAS', 'Rostock Grid', 'Osaka Relay 7', 'NeoTokyo Exch.', 'Axiom Proxy 3', 'Lagos Mesh', 'Helsinki Node'];
     this.route = [...this.shuffled(nodes).slice(0, 3 + Math.round(floor / 90)), kind === 'security' ? `AXIOM SEC-NET F${floor}` : `AXIOM FACILITIES F${floor}`];
     const make = { cameras: Cameras, signal: Signal, keypad: Keypad, wires: WirePatch, breakers: Breakers, circuit: Circuit, voltage: Voltage, load: Load };
-    for (const id of this.stages) if (id in make) (this.p as any)[id] = new make[id as keyof Puzzles](this.rnd, d.k);
+    for (const id of this.stages) if (id in make) (this.p as any)[id] = id === 'keypad' ? new Keypad(this.rnd, d.k, keypadCode) : new make[id as keyof Puzzles](this.rnd, d.k);
   }
 
   private shuffled<T>(a: T[]): T[] { return shuffle(this.rnd, a); }
@@ -352,7 +358,7 @@ export class HackGame {
     this.t += dt;
     this.flashWrong = Math.max(0, this.flashWrong - dt);
     if (this.stage === 'bounce') { if (this.t >= 2) this.stage = this.stages[0]; return; }
-    this.trace += dt / this.traceTime;
+    this.trace += (dt / this.traceTime) * (this.stage === 'keypad' ? KEYPAD_TIME : 1);
     if (this.trace >= 1) { this.trace = 1; this.stage = 'traced'; return; }
     if (this.stage === 'decrypt') {
       this.shuffleT += dt;

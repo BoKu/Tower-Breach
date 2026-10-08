@@ -1,6 +1,7 @@
 import type { FloorState, HackState, PlayerState } from './state';
 import type { Sim } from './sim';
 import { scoreHack } from './score';
+import { Rng, hash } from '../core/rng';
 
 /**
  * Hackable computers. The minigame itself runs in the UI (ui/hack.ts); the sim only applies the outcome, so co-op
@@ -47,4 +48,13 @@ export function applyHack(sim: Sim, p: PlayerState, fs: FloorState, h: HackState
     sim.msg(p, 'TRACE COMPLETE: terminal locked out and the alarm has been raised.', 'warn');
   }
   sim.emit({ e: 'hack', f: fs.floor, id: h.id, kind: h.kind, ok, x: h.x, y: h.y });
+}
+
+/** The keypad code for a floor (fixed per run, so the sticky note on that floor's desk always matches). Digits repeat only on the top floors. */
+export function keypadCode(seed: number, floor: number): string {
+  const r = new Rng(hash(seed, floor, 0x4e07));
+  const repeats = hackDifficulty(floor).k >= 0.75;
+  let c = '';
+  while (c.length < 4) { const d = String(r.int(0, 9)); if (repeats || !c.includes(d)) c += d; }
+  return c;
 }

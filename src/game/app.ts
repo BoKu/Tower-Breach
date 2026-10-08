@@ -15,9 +15,10 @@ import { Sim } from '../sim/sim';
 import { HostSession } from '../net/host';
 import { ClientSession, ClientView } from '../net/client';
 import { defaultServerUrl, normalizeServerAddress } from '../net/transport';
-import { loadSettings, saveSettings, Settings, ACTION_LABEL, DEFAULT_BINDINGS, keyLabel, Action, loadRecords, addRecord, loadLook, rankRecords, rankBySpeed, type ScoreRecord } from '../save/settings';
+import { loadSettings, saveSettings, Settings, ACTION_LABEL, defaultBindings, isDesktop, keyLabel, Action, loadRecords, addRecord, loadLook, rankRecords, rankBySpeed, type ScoreRecord } from '../save/settings';
 import { finalScore, runTime, fmtRunTime, scoreRows } from '../sim/score';
 import { playCredits } from '../ui/credits';
+import { keypadCode } from '../sim/hack';
 import { makeSquad, type SquadPick } from '../sim/bot';
 import { BOT_CLASS, BOT_CLASSES, SQUAD_MEMBERS } from '../config/bots';
 import { load, save, remove, storageAvailable } from '../save/storage';
@@ -125,6 +126,8 @@ export class App {
   private nextSeed = randomSeed();
 
   constructor() {
+    // browsers: closing the tab mid-run (or a stray Ctrl+W) asks first
+    if (!isDesktop()) window.addEventListener('beforeunload', (e) => { if (this.session && !this.endShown) { e.preventDefault(); e.returnValue = ''; } });
     this.input = new Input(this.canvas, this.settings);
     this.hud = new HUD(this.settings);
     this.hud.onSandboxAnim = (on) => this.renderer.setShowcaseAnim(on);
@@ -532,8 +535,8 @@ export class App {
         } }, keyLabel(s.bindings[a]));
         body.append(h('div', { class: 'srow' }, h('span', {}, ACTION_LABEL[a]), b, h('span')));
       }
-      body.append(h('div', { class: 'srow' }, h('span', {}, 'Fire / Aim'), h('span', { class: 'hint' }, 'Left mouse / Right mouse (fixed). Middle mouse: ping. Wheel: select belt item. Ctrl + wheel: zoom.'), h('span')));
-      body.append(h('div', { style: { marginTop: '10px' } }, this.btn('Reset to defaults', () => { s.bindings = { ...DEFAULT_BINDINGS }; apply(); this.settingsScreen(back, 'controls'); }, 'small')));
+      body.append(h('div', { class: 'srow' }, h('span', {}, 'Fire / Aim'), h('span', { class: 'hint' }, 'Left mouse / Right mouse (fixed; a quick right-click locks the scope). Middle mouse: ping. Wheel: hotbar 1-8. Pinch or Cmd + wheel: zoom.'), h('span')));
+      body.append(h('div', { style: { marginTop: '10px' } }, this.btn('Reset to defaults', () => { s.bindings = defaultBindings(); apply(); this.settingsScreen(back, 'controls'); }, 'small')));
     }
     const el = h('div', { class: 'screen' },
       h('div', { class: 'panel settings' },
@@ -638,11 +641,11 @@ export class App {
     const K = (a: Action) => keyLabel(b[a]);
     const rows: [string, string][] = [
       ['Move', `${K('moveUp')}${K('moveLeft')}${K('moveDown')}${K('moveRight')} / Left stick`], ['Aim', 'Mouse / Right stick'], ['Fire', 'LMB / RT'], ['Aim down sights', 'RMB / LT'],
-      ['Sprint (loud)', `${K('sprint')} / L-stick click`], ['Crouch (quiet)', `${K('crouch')} or Ctrl / B`], ['Jump / vault / clear tripwires', `${K('jump')} / A`], ['Reload', `${K('reload')} / X`],
-      ['Knife', `${K('melee')} / R-stick click`], ['Interact · loot · revive', `${K('interact')} / RB`], ['Swap weapon', `${K('swap')} / Y`], ['Weapon slots', `${K('slot1')} ${K('slot2')} ${K('slot3')}`],
-      ['Throw grenade', `${K('grenade')} / LB`], ['Cycle grenade', `${K('cycleGrenade')} / D-pad →`], ['Torch on/off', `${K('torch')} / D-pad ↑`], ['Use selected item', `${K('use')} / D-pad ↓`],
-      ['Select belt item', `${K('item1')}–${K('item5')} or mouse wheel`], ['Cycle belt item', `${K('cycleItem')} / D-pad ←`], ['Ping / mark enemy', `${K('ping')} or MMB / View`],
-      ['Pause', `${K('pause')} / Start`], ['Push-to-talk (co-op voice)', `hold ${K('voice')}`], ['Zoom', `Ctrl + wheel or ${K('zoomOut')} / ${K('zoomIn')}`],
+      ['Sprint (loud)', `${K('sprint')} / L-stick click`], ['Crouch / sneak (quiet)', `${K('crouch')} / R-stick click`], ['Jump / vault / clear tripwires', `${K('jump')} / A`], ['Reload', `${K('reload')} / X`],
+      ['Knife', `${K('melee')} / D-pad ←`], ['Interact · loot · revive', `${K('interact')} / Y`], ['Swap to last weapon', `${K('swap')}`], ['Weapons (hotbar 1-3)', `${K('slot1')} ${K('slot2')} ${K('slot3')}`],
+      ['Belt (hotbar 4-8)', `${K('item1')}–${K('item5')}`], ['Step through hotbar', 'Mouse wheel / LB · RB'], ['Use selected item', `${K('use')} / D-pad ↓`], ['Drop a Health Kit (for a squadmate)', `${K('drop')} / B`],
+      ['Throw grenade', `${K('grenade')} / tap D-pad →`], ['Switch grenade type', `${K('cycleGrenade')} / hold D-pad →`], ['Torch on/off', `${K('torch')} / D-pad ↑`], ['Cycle belt item', `${K('cycleItem')}`],
+      ['Ping / mark enemy', `${K('ping')} or MMB / View`], ['Pause', `${K('pause')} / Menu`], ['Push-to-talk (co-op voice)', `hold ${K('voice')}`], ['Zoom', `Pinch / Cmd + wheel or ${K('zoomOut')} / ${K('zoomIn')}`],
     ];
     const el = h('div', { class: 'screen' }, h('div', { class: 'panel settings' },
       h('div', { class: 'h2' }, 'Controls'),
@@ -839,7 +842,7 @@ export class App {
           const m = this.view()?.players.find((p) => p.id === this.localId);
           if (m) { m.input.hackId = id; m.input.hackOk = r; m.input.hackSeq++; if (this.session?.kind === 'client') (m as any).panel = null; }
           if (!this.screen) { this.input.enabled = true; this.cursor.style.display = 'none'; }
-        }, (k) => this.audio.hack(k));
+        }, (k) => this.audio.hack(k), keypadCode(this.view()!.cfg.seed, panel.floor), !!this.view()?.codesFound.has(panel.floor));
         this.ui.append(this.hackUI.el);
         this.cursor.style.display = 'block';
         this.input.enabled = false;

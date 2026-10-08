@@ -103,6 +103,13 @@ every run.
   then others. The run ends if you bleed out, or if the whole squad is down at once. A squadmate who bleeds out is
   gone for the rest of the run.
 - Only your own actions score. Squad runs show "+N bots" in the Hall of Records.
+- **The tower pushes back:** every squadmate (a bot, or another player in co-op) brings +15% enemies, +20% enemy
+  health, +10% enemy damage and +5% enemy accuracy and alertness. It never drops during a run, even if someone falls.
+- **Drop a Health Kit (Q / B on a controller):** it lands a metre in front of you, hovering. The most hurt squadmate
+  comes and uses it; walk over it yourself to take it back.
+- **Doors:** squadmates never change a door you opened, closed or locked. Other doors they open to get through and
+  close again behind them.
+- **Lifts:** step into a lift and your squad piles in with you. Take the stairs and they arrive beside you.
 
 ### The street
 
@@ -211,24 +218,34 @@ Every keyboard binding can be changed under **Settings → Controls**. These are
 | Move | W A S D or arrow keys (relative to the camera) | Left stick |
 | Aim | Mouse | Right stick |
 | Fire | Left mouse button | RT |
-| Aim down sights | Right mouse button | LT |
-| Sprint (loud) | Left Shift (hold) | Left stick click |
-| Crouch (quiet, harder to spot) | C or Left Ctrl | B |
+| Aim down sights | Right mouse button: hold, or a quick click to lock the scope on (quick click again to release) | LT |
+| Sprint (loud) | Left Ctrl (hold) | Left stick click |
+| Crouch / sneak (quiet, harder to spot) | Left Shift | Right stick click |
 | Jump, vault low cover, clear tripwires | Space | A |
 | Reload | R | X |
-| Knife | V | Right stick click |
-| Interact, loot, revive, clear stair debris, lifts | E (tap or hold) | RB |
-| Swap weapon | Q | Y |
-| Primary, secondary, knife | F1, F2, F3 | — |
-| Throw grenade | G | LB |
-| Switch grenade type | B | D-pad → |
+| Knife | V | D-pad ← |
+| Interact, loot, revive, clear stair debris, lifts | E (tap or hold) | Y |
+| Hotbar: primary, secondary, knife | 1, 2, 3 | LB / RB step through the hotbar |
+| Hotbar: belt items (Health Kit, battery, plate, drink, snack) | 4–8 | LB / RB |
+| Step through the hotbar (1–8) | Mouse wheel | LB / RB |
+| Swap to your last weapon | F | — |
+| Use selected belt item | C | D-pad ↓ |
+| Cycle belt item | X | — |
+| Drop a Health Kit for a squadmate | Q | B |
+| Throw grenade | G | Tap D-pad → |
+| Switch grenade type | B | Hold D-pad → |
 | Torch on/off | T | D-pad ↑ |
-| Select belt item | 1–5 or mouse wheel | — |
-| Cycle belt item | X | D-pad ← |
-| Use selected item | F | D-pad ↓ |
 | Ping or mark an enemy | Z or middle mouse button | View / Back |
-| Zoom | Ctrl + mouse wheel, or − and = | — |
-| Pause / menu | Esc | Start |
+| Zoom | Trackpad pinch, Cmd + mouse wheel, or − and = | — |
+| Pause / menu | Esc | Menu / Start |
+
+The defaults follow Minecraft: Ctrl sprints, Shift sneaks, Q drops, and 1–8 is the hotbar. **In a web browser** sprint
+is Left Shift, crouch is C, use item is X and cycle item is N instead, because browsers reserve Ctrl (Ctrl+W would close
+the tab). On a controller the left
+stick click sprints and the right stick click sneaks, as in Minecraft on console.
+
+**Mac trackpad:** a two-finger tap locks the scope on, so a normal click fires; tap with two fingers again to lower it.
+Ctrl+click (which macOS treats as a right-click) fires while you sprint.
 
 **Controllers:** any standard-mapping USB or Bluetooth pad works, including Xbox, PlayStation and Logitech pads. If the
 game doesn't see your pad, press a button on it. The Controls screen shows the pad it detected. Menus, the lift panel,
@@ -238,7 +255,7 @@ choose and B to back out (B disconnects from a hack or ends a conversation).
 **Settings → Gameplay:**
 
 - **Crouch is a toggle:** on by default. Turn it off to crouch only while you hold the key. With it off, the
-  controller's B button crouches while you hold it.
+  controller's right stick click crouches while you hold it.
 - **Mouse aim assist:** snaps the crosshair onto a visible enemy when you aim close to them. Turn it off for exact aim.
 - **Controller aim assist:** the stick snaps to the nearest visible enemy in the direction you push.
 - **Stick deadzone.**
@@ -380,6 +397,12 @@ Select an item with 1–5 or the mouse wheel, then press **F** to use it.
 - **Vending machines** are in kitchens and corridors. Each one has a price (2 to 5 coins) and a few drinks and snacks.
   - **Tap E** to buy the next item. This is quiet. If you are short of coins, or it is sold out, the prompt says so.
   - **Hold E**, shoot it, knife it, or blow it up to break it open. It spills whatever is left. Breaking it is loud.
+
+### Keypad code notes
+
+One desk drawer on every floor hides a **sticky note** with that floor's keypad code. Find it and the keypad puzzle in
+that floor's hacks shows the code (the whole squad's, in co-op). Lock yourself out and the keypad rolls a new code,
+which makes the note useless.
 
 ### Doors and master keys
 

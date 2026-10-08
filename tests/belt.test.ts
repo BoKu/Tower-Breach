@@ -38,12 +38,12 @@ describe('key binding migration', () => {
     const m: Record<string, string> = {};
     (globalThis as any).localStorage = { getItem: (k: string) => m[k] ?? null, setItem: (k: string, v: string) => (m[k] = v), removeItem: (k: string) => delete m[k] };
   });
-  it('old (v1) saved bindings are reset so 1-5 belong to the belt', () => {
+  it('older saved bindings are reset to the current (Minecraft-style) defaults', () => {
     save('settings', { quality: 'high', bindings: { ...DEFAULT_BINDINGS, slot1: 'Digit1', slot2: 'Digit2', slot3: 'Digit3', cycleGrenade: 'Digit4' } });
     const s = loadSettings();
     expect(s.quality).toBe('high');
-    expect(s.bindings.item1).toBe('Digit1');
-    expect(s.bindings.slot1).toBe('F1');
+    expect(s.bindings.item1).toBe('Digit4');
+    expect(s.bindings.slot1).toBe('Digit1');
     const values = Object.values(s.bindings);
     expect(new Set(values).size).toBe(values.length); // no duplicate keys
   });

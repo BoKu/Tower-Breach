@@ -3,12 +3,12 @@ import { DRINK_DURATION, DRINK_SPEED, FOOD_HEAL, PLATE_REPAIR, INJURY_SPEED, TOR
 import { clamp, dist, wrapAngle, angleTo, segPointDist } from '../core/math';
 import { moveCircle, collides, BODY_R } from './nav';
 import { newScore, scoreShot } from './score';
-import { idx, S_LOW, FloorLayout } from '../gen/floor';
+import { idx, S_LOW, FloorLayout, pointsNear } from '../gen/floor';
 import { trace, unaware, damageEnemy, damagePlayer, destroyCamera, breakVending, killPanel, shootLight } from './combat';
 import { currentWeapon, nextItem, nextGrenade, ammoCap } from './inventory';
 import { FUSE } from './combat';
 import type { Sim } from './sim';
-import type { PlayerState, Loadout, PlayerInput, Enemy } from './state';
+import type { PlayerState, Loadout, PlayerInput, Enemy, FloorState } from './state';
 import { emptyInput } from './state';
 import { updateInteraction } from './interact';
 import { stairAt, stairElevation } from './stairs';
@@ -150,8 +150,10 @@ export function updatePlayer(sim: Sim, p: PlayerState, dt: number, externalMove:
   (p as any).stairCd = Math.max(0, ((p as any).stairCd ?? 0) - dt);
   const prevY = (p as any).stairPrevY ?? py;
   (p as any).stairPrevY = p.y;
-  if (!p.bot && (p as any).stairCd <= 0 && p.z <= 0.05 && p.floor >= 1) { // bots only change floor with the human (Sim.travel)
-    const st = stairAt(L, p.x, p.y);
+  const here = stairAt(L, p.x, p.y);
+  if ((p as any).stairHold && (!here || `${here.s.index}:${here.dir}` !== (p as any).stairHold)) (p as any).stairHold = null;
+  if (!p.bot && !(p as any).stairHold && (p as any).stairCd <= 0 && p.z <= 0.05 && p.floor >= 1) { // bots only change floor with the human (Sim.travel)
+    const st = here;
     if (st && st.t >= 1 && p.y - prevY < -0.005) {
       if ((st.dir > 0 && p.floor < 200) || (st.dir < 0 && p.floor > 1)) { sim.takeStairs(p, st.s.index, st.dir); syncLast(p); return; }
     }
@@ -232,6 +234,8 @@ export function updatePlayer(sim: Sim, p: PlayerState, dt: number, externalMove:
   if (pressed(p, 'medkit')) useItem(sim, p, 'medkit');
   if (pressed(p, 'battery')) useItem(sim, p, 'battery');
   if (pressed(p, 'ping')) sim.ping(p);
+  if (pressed(p, 'drop')) dropKit(sim, p, fs);
+  takePickups(sim, p, fs);
   // exposure (for stealth)
   p.exposure = sim.exposureOf(fs, p);
   updateInteraction(sim, p, fs, dt);
@@ -271,7 +275,7 @@ function onLowL(L: FloorLayout, p: PlayerState): boolean {
 function syncLast(p: PlayerState) {
   const a = p.input, b = p.last;
   b.jump = a.jump; b.reload = a.reload; b.melee = a.melee; b.use = a.use; b.swap = a.swap; b.grenade = a.grenade;
-  b.cycleGrenade = a.cycleGrenade; b.cycleItem = a.cycleItem; b.torch = a.torch; b.ping = a.ping; b.medkit = a.medkit; b.battery = a.battery;
+  b.cycleGrenade = a.cycleGrenade; b.cycleItem = a.cycleItem; b.torch = a.torch; b.ping = a.ping; b.medkit = a.medkit; b.battery = a.battery; b.drop = a.drop;
   b.slotSeq = a.slotSeq; b.elevSeq = a.elevSeq; b.stairSeq = a.stairSeq; b.hackSeq = a.hackSeq; b.closeSeq = a.closeSeq; b.useItemSeq = a.useItemSeq; b.selItemSeq = a.selItemSeq;
   b.interact = a.interact;
 }
@@ -469,3 +473,31 @@ export function useItem(sim: Sim, p: PlayerState, it: ItemType) {
 }
 
 export { ammoCap };
+
+/** Q: one Health Kit onto the floor a metre in front (for a squadmate). */
+function dropKit(sim: Sim, p: PlayerState, fs: FloorState) {
+  if (p.items.medkit <= 0) { sim.msg(p, 'No Health Kit to drop.', 'warn'); return; }
+  let x = p.x + Math.cos(p.facing) * 1.1, y = p.y + Math.sin(p.facing) * 1.1;
+  if (collides(fs.L, x, y, 0.2, false)) { // blocked ahead: the nearest clear spot not under your own feet
+    const spot = pointsNear(fs.L, p.x, p.y, 16).find((q) => { const d = dist(q.x, q.y, p.x, p.y); return d > 0.8 && d < 1.8; });
+    if (!spot) { sim.msg(p, 'No room to drop it here.', 'warn'); return; }
+    x = spot.x; y = spot.y;
+  }
+  p.items.medkit--;
+  fs.pickups.push({ id: sim.id(), item: 'medkit', x, y });
+  sim.emit({ e: 'use', f: p.floor, pid: p.id, item: 'loot' });
+}
+
+/** Walking onto a dropped kit takes it: people always (if they have room); bots only the one meant for it, and use it. */
+function takePickups(sim: Sim, p: PlayerState, fs: FloorState) {
+  if (!fs.pickups.length) return;
+  for (let i = fs.pickups.length - 1; i >= 0; i--) {
+    const k = fs.pickups[i];
+    if (dist(p.x, p.y, k.x, k.y) > 0.6) continue;
+    if (p.bot ? sim.kitTaker(fs) !== p : p.items.medkit >= 3) continue;
+    fs.pickups.splice(i, 1);
+    p.items.medkit++;
+    if (p.bot) useItem(sim, p, 'medkit');
+    else sim.msg(p, '+1 Health Kit', 'loot');
+  }
+}

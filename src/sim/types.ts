@@ -20,6 +20,8 @@ export type LootItem =
   | { k: 'weapon'; id: string; mag: number; reserve: number }
   /** the master key for floor f: opens (and locks) every locked door on that floor */
   | { k: 'key'; f: number }
-  | { k: 'coin'; n: number };
+  | { k: 'coin'; n: number }
+  /** a sticky note with floor f's keypad code (one desk per floor) */
+  | { k: 'note'; f: number; code: string };
 
 export type Vec2 = { x: number; y: number };

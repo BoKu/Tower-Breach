@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { gunKindOf, cloneRig } from './models';
+import { gearModel } from './armoryArt';
 import { currentHoliday } from '../config/holiday';
 import { OperatorRig, GunKind } from './operator';
 import { DogRig, DroneRig, WardenRig } from './beasts';
@@ -59,6 +60,8 @@ export class Entities {
   private players = new Map<number, PRig>();
   private pings = new Map<number, THREE.Sprite>();
   private grenades = new Map<number, THREE.Mesh>();
+  /** dropped Health Kits: hovering, turning model + a soft shadow */
+  private kits = new Map<number, { kit: THREE.Object3D; shadow: THREE.Mesh }>();
   private floor = -1;
 
   reset() {
@@ -70,6 +73,8 @@ export class Entities {
     this.pings.clear();
     for (const g of this.grenades.values()) this.group.remove(g);
     this.grenades.clear();
+    for (const k of this.kits.values()) this.group.remove(k.kit, k.shadow);
+    this.kits.clear();
   }
 
   /** Is an enemy perceivable by the local team (light + line of sight)? */
@@ -171,7 +176,7 @@ export class Entities {
         if (r) { this.group.remove(r.rig.root); this.group.remove(r.marks); }
         const rig = OperatorRig.make(color, { player: p.look });
         const marks = new THREE.Group();
-        const ring = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.5, 32), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.6, toneMapped: false }));
+        const ring = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.5, 32), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: p.bot ? 0.3 : 0.6, toneMapped: false }) /* bots: half as bright, less distracting */);
         ring.rotation.x = -Math.PI / 2; ring.position.y = 0.03;
         const downRing = new THREE.Mesh(new THREE.RingGeometry(0.9, 1.05, 32), new THREE.MeshBasicMaterial({ color: 0xff3030, transparent: true, opacity: 0.7, toneMapped: false }));
         downRing.rotation.x = -Math.PI / 2; downRing.position.y = 0.04;
@@ -235,6 +240,26 @@ export class Entities {
       m.position.set(g.x, g.z + 0.08, g.y);
     }
     for (const [id, m] of this.grenades) if (!nseen.has(id)) { this.group.remove(m); this.grenades.delete(id); }
+    // dropped Health Kits
+    const kseen = new Set<number>();
+    for (const k of fs.pickups) {
+      kseen.add(k.id);
+      let r = this.kits.get(k.id);
+      if (!r) {
+        const kit = gearModel('medkit');
+        kit.scale.setScalar(1.6);
+        const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.28, 20), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.45, depthWrite: false }));
+        shadow.rotation.x = -Math.PI / 2;
+        this.group.add(kit, shadow);
+        this.kits.set(k.id, (r = { kit, shadow }));
+      }
+      const g = stairElevation(fs.L, k.x, k.y), bob = Math.sin(t * 2.2 + k.id) * 0.06;
+      r.kit.position.set(k.x, g + 0.45 + bob, k.y);
+      r.kit.rotation.y = t * 0.9;
+      r.shadow.position.set(k.x, g + 0.02, k.y);
+      r.shadow.scale.setScalar(1 - bob * 1.5); // smaller as it rises
+    }
+    for (const [id, r] of this.kits) if (!kseen.has(id)) { this.group.remove(r.kit, r.shadow); this.kits.delete(id); }
   }
 
   /** Whether the local team can currently see this enemy (used for cursor target snapping). */
