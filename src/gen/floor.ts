@@ -15,7 +15,9 @@ export const S_DOOR = 3, S_LOCKED = 4;
 
 export type RoomType =
   | 'corridor' | 'open' | 'office' | 'kitchen' | 'bathroom' | 'server' | 'security' | 'storage'
-  | 'maintenance' | 'executive' | 'boardroom' | 'lobby' | 'utility' | 'stair' | 'elevator' | 'mainframe' | 'street' | 'plaza';
+  | 'maintenance' | 'executive' | 'boardroom' | 'lobby' | 'utility' | 'stair' | 'elevator' | 'mainframe' | 'street' | 'plaza'
+  /** easter egg: floor 8's private card room */
+  | 'poker';
 export type Surface = 'carpet' | 'tile' | 'concrete' | 'metal' | 'asphalt';
 
 export interface Room { id: number; type: RoomType; x: number; y: number; w: number; h: number; surface: Surface; main: boolean }
@@ -129,7 +131,7 @@ export function blocksSight(L: FloorLayout, tx: number, ty: number): boolean {
 const SURFACE: Record<RoomType, Surface> = {
   corridor: 'carpet', open: 'carpet', office: 'carpet', kitchen: 'tile', bathroom: 'tile', server: 'metal', security: 'concrete',
   storage: 'concrete', maintenance: 'metal', executive: 'carpet', boardroom: 'carpet', lobby: 'tile', utility: 'concrete', stair: 'concrete',
-  elevator: 'metal', mainframe: 'metal', street: 'asphalt', plaza: 'concrete',
+  elevator: 'metal', mainframe: 'metal', street: 'asphalt', plaza: 'concrete', poker: 'carpet',
 };
 
 const LIGHT_COLOR: Partial<Record<RoomType, number>> = {
@@ -469,6 +471,12 @@ function genInterior(B: Builder, plan: BuildingPlan, floor: number) {
     const room = B.room(type, r, type === 'open' || type === 'lobby');
     B.carve(r, room.id);
   }
+  // easter egg: floor 8 always has a private poker room (the roomiest enclosed office-type room)
+  if (floor === 8) {
+    const ok = (r: Room) => ['office', 'executive', 'boardroom', 'storage', 'security', 'utility', 'maintenance', 'server'].includes(r.type) && Math.min(r.w, r.h) >= 5 && Math.max(r.w, r.h) >= 6;
+    const pick = L.rooms.filter(ok).sort((a, b) => b.w * b.h - a.w * a.h || a.id - b.id)[0];
+    if (pick) { pick.type = 'poker'; pick.surface = SURFACE.poker; }
+  }
   if (floor === 1) {
     const foyer = B.room('lobby', FOYER, true);
     B.carve(FOYER, foyer.id);
@@ -725,6 +733,27 @@ function furnish(B: Builder, floor: number) {
         let n = 0;
         for (const s of spots()) { if (n >= 3) break; const k = n === 0 ? 'toolbox' : 'boiler'; const p = B.place(k, s.x, s.y, 1, 1, k === 'boiler' ? 2 : 1, room.id, s.rot); if (p) { n++; if (k === 'toolbox') B.container('toolbox', p); } }
         pipeBank(B, room, ['steam', 'water', 'fuel', 'air', 'fire', 'sewage'], 2, 3);
+        break;
+      }
+      case 'poker': {
+        // green-felt oval for three: the winner (south seat, facing the camera) behind a royal flush and every chip
+        // centre of the room if free, else the nearest spot that leaves room for the chairs (1 tile all round)
+        const cx = room.x + Math.floor((room.w - 3) / 2), cy = room.y + Math.floor((room.h - 2) / 2);
+        const at: [number, number][] = [];
+        for (let y = room.y + 2; y <= room.y + room.h - 4; y++) for (let x = room.x + 1; x <= room.x + room.w - 4; x++) at.push([x, y]);
+        at.sort((a, b) => Math.hypot(a[0] - cx, a[1] - cy) - Math.hypot(b[0] - cx, b[1] - cy));
+        let t: Prop | null = null;
+        for (const [x, y] of at) if ((t = B.place('pokertable', x, y, 3, 2, 1, room.id))) break;
+        if (t) {
+          B.deco('pokerchair', t.x, t.y + 1.45, 2, room.id);
+          B.deco('pokerchair', t.x - 1.05, t.y - 1.3, 0, room.id);
+          B.deco('pokerchair', t.x + 1.05, t.y - 1.3, 0, room.id);
+          B.deco('pokerrug', t.x, t.y, 0, room.id, 5, 4);
+        }
+        const s = spots();
+        if (s[0]) B.place('barcart', s[0].x, s[0].y, 1, 1, 1, room.id, s[0].rot);
+        if (s[1]) B.place(plantKind(rng), s[1].x, s[1].y, 1, 1, 1, room.id);
+        if (s[2]) B.place('credenza', s[2].x, s[2].y, 1, 1, 1, room.id, s[2].rot);
         break;
       }
       case 'boardroom': {

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { tex } from './textures';
 import type { SimEvent, FloorState } from '../sim/state';
+import { shotStart } from './muzzle';
 import { currentHoliday } from '../config/holiday';
 
 const MAX_P = 3000;
@@ -139,17 +140,19 @@ export class FX {
     for (let i = 0; i < n; i++) this.add.emit(x, z, y, (Math.random() - 0.5) * speed, Math.random() * speed * 0.8, (Math.random() - 0.5) * speed, 0.2 + Math.random() * 0.3, 0.08, r, g, b, 1, -0.1, 9);
   }
 
-  onEvent(ev: SimEvent, localFloor: number, localId: number) {
+  /** muzzle: the shooter's gun muzzle on its 3D model (Entities.muzzleOf), so trails leave the gun */
+  onEvent(ev: SimEvent, localFloor: number, localId: number, muzzle?: (src: 'p' | 'e', id: number) => { x: number; y: number; z: number } | null) {
     if ('f' in ev && ev.f !== localFloor) return;
     const spooky = currentHoliday() === 'halloween'; // drones are bats and wardens ogres: they bleed instead of sparking
     if (spooky && ev.e === 'shot' && ev.hit === 'metal') ev = { ...ev, hit: 'flesh' };
     switch (ev.e) {
       case 'shot': {
         const col = ev.src === 'e' ? new THREE.Color(1, 0.35, 0.25) : new THREE.Color(1, 0.85, 0.5);
-        const z0 = ev.z ?? 1.25, z1 = ev.z2 ?? (ev.hit === 'none' ? 1.25 : 1.0);
-        this.tracer(ev.x, ev.y, z0, ev.x2, ev.y2, z1, col);
-        this.add.emit(ev.x, z0, ev.y, 0, 0.3, 0, 0.06, 0.55, 1, 0.8, 0.4, 1);
-        this.flashes.push({ x: ev.x, y: ev.y, z: z0 + 0.05, color: 0xffc070, intensity: 6, t: 0, dur: 0.06, range: 7 });
+        const s0 = shotStart(ev, muzzle?.(ev.src, ev.id) ?? null);
+        const z1 = ev.z2 ?? (ev.hit === 'none' ? 1.25 : 1.0);
+        this.tracer(s0.x, s0.y, s0.z, ev.x2, ev.y2, z1, col);
+        this.add.emit(s0.x, s0.z, s0.y, 0, 0.3, 0, 0.06, 0.55, 1, 0.8, 0.4, 1);
+        this.flashes.push({ x: s0.x, y: s0.y, z: s0.z + 0.05, color: 0xffc070, intensity: 6, t: 0, dur: 0.06, range: 7 });
         if (ev.hit === 'wall' || ev.hit === 'glass') { this.sparks(ev.x2, ev.y2, z1, 4); this.norm.emit(ev.x2, z1, ev.y2, 0, 0.4, 0, 0.6, 0.25, 0.5, 0.48, 0.45, 0.5, 0.6); }
         if (ev.hit === 'floor') { this.sparks(ev.x2, ev.y2, 0.03, 5, 1, 0.8, 0.45, 2.5); for (let i = 0; i < 3; i++) this.norm.emit(ev.x2, 0.05, ev.y2, (Math.random() - 0.5) * 0.6, 0.5 + Math.random() * 0.5, (Math.random() - 0.5) * 0.6, 0.7, 0.2, 0.45, 0.43, 0.4, 0.55, 0.5); if (Math.random() < 0.5) this.decal(ev.x2, ev.y2, false, 0.22); }
         if (ev.hit === 'metal') this.sparks(ev.x2, ev.y2, z1, 8, 1, 0.9, 0.6, 4);

@@ -194,6 +194,10 @@ export function buildProp(kind: string, w: number, h: number): Parts {
       break;
     }
     case 'boardtable': boardTable(b, W, D); break;
+    case 'pokertable': pokerTable(b, W, D); break;
+    case 'pokerchair': clubChair(b); break;
+    case 'pokerrug': pokerRug(b, W, D); break;
+    case 'barcart': barCart(b); break;
     case 'tvwall': tvWall(b); break;
     case 'credenza': credenza(b, W); break;
     case 'monitor': {
@@ -1132,6 +1136,90 @@ function toolChest(b: Builder) {
 
 // ------------------------------------------------------------------ boardroom
 /** Long boardroom table (runs along the longer footprint axis) set for a meeting. */
+// ------------------------------------------------------------------ easter egg: floor 8's poker room
+const POKER_H = 0.78;
+/** cards and chips are drawn ~1.5x life size, like the characters, so they read from the game camera */
+export const CARD_W = 0.13, CARD_H = 0.18;
+/** The winner's royal flush, in table space (x across, z toward the winner's seat; card faces drawn by FloorView). */
+export function royalFlushCards(W: number, D: number): { x: number; y: number; z: number; ry: number }[] {
+  const z = D / 2 - 0.4;
+  return [-2, -1, 0, 1, 2].map((i) => ({ x: i * 0.155, y: POKER_H + 0.034 + Math.abs(i) * 0.0004, z: z - Math.abs(i) * 0.012, ry: -i * 0.06 }));
+}
+function pokerTable(b: Builder, W: number, D: number) {
+  const rx = W / 2 - 0.1, rz = D / 2 - 0.1, H = POKER_H;
+  const oval = (k: number, h: number, y: number, c: number, seg = 48) => b.geo(new THREE.CylinderGeometry(1, 1, h, seg), c, 0, y, 0, 0, 0, 0, 'solid', rx * k, 1, rz * k);
+  // turned walnut pedestal on a wide oval foot
+  oval(0.34, 0.05, 0.025, 0x1c120a);
+  b.cyl(0.16, 0.24, H - 0.12, 0, (H - 0.12) / 2 + 0.05, 0, 0x3a2414, 'solid', 18);
+  b.cyl(0.22, 0.16, 0.06, 0, H - 0.1, 0, 0x2a1a0e, 'solid', 18);
+  // walnut apron, then the felt bed, then a padded black-leather rail with a brass bead
+  oval(1.0, 0.09, H - 0.03, 0x5a3822);
+  oval(0.9, 0.03, H + 0.015, 0x1d6b3a);
+  oval(0.62, 0.002, H + 0.031, 0x237a44); // the lighter playing oval (betting line)
+  b.geo(new THREE.TorusGeometry(1, 0.055, 10, 64), 0x17110e, 0, H + 0.04, 0, Math.PI / 2, 0, 0, 'solid', rx * 0.95, rz * 0.95, 1);
+  b.geo(new THREE.TorusGeometry(1, 0.008, 6, 64), 0xc9a24a, 0, H + 0.005, 0, Math.PI / 2, 0, 0, 'solid', rx * 0.995, rz * 0.995, 1);
+  // the winner's royal flush (white blanks; faces are textured planes) and EVERY chip, in front of the south seat
+  for (const c of royalFlushCards(W, D)) b.box(CARD_W, 0.003, CARD_H, c.x, c.y - 0.002, c.z, 0xf4f1e8, 'solid', c.ry);
+  const chipCols = [0xc8202a, 0x1f4fb0, 0x111214, 0x1f8a3a, 0xece6d6, 0x6a2a8a];
+  const stack = (x: number, z: number, n: number, col: number) => {
+    for (let i = 0; i < n; i++) b.cyl(0.032, 0.032, 0.0066, x, H + 0.034 + i * 0.0068, z, i % 2 ? col : 0xf0ece0, 'solid', 16);
+    b.cyl(0.0325, 0.0325, n * 0.0068 - 0.0018, x, H + 0.034 + (n * 0.0068) / 2 - 0.003, z, col, 'solid', 16);
+  };
+  const cz = D / 2 - 0.68;
+  let k = 0;
+  for (let row = 0; row < 3; row++) for (let i = -4; i <= 4; i++) {
+    if ((i + row) % 2 && row === 2) continue;
+    stack(i * 0.07 + (row % 2) * 0.035, cz - row * 0.068, 6 + ((i * 7 + row * 3 + 12) % 9), chipCols[(k++) % chipCols.length]);
+  }
+  // a toppled pot spilling across the felt
+  for (let i = 0; i < 14; i++) { const a = i * 2.39, r = 0.05 + (i % 5) * 0.03; b.cyl(0.032, 0.032, 0.0066, Math.cos(a) * r * 1.4, H + 0.034, -0.05 + Math.sin(a) * r * 0.6, chipCols[i % chipCols.length], 'solid', 14, 0.12 * Math.sin(i), 0.12 * Math.cos(i)); }
+  // the two losers: folded hands, face down, pushed in; no chips left
+  for (const sx of [-1, 1]) {
+    const x = sx * (W / 2 - 0.75), z = -(D / 2 - 0.38);
+    b.box(CARD_W, 0.003, CARD_H, x, H + 0.033, z, 0x8a1a22, 'solid', sx * 0.4);
+    b.box(CARD_W, 0.003, CARD_H, x + sx * 0.02, H + 0.036, z + 0.015, 0x8a1a22, 'solid', sx * 0.15);
+  }
+  // deck, dealer button, ashtray with a cigar, and two whisky tumblers
+  b.box(0.088, 0.025, 0.124, 0.32, H + 0.045, -0.15, 0x8a1a22, 'solid', 0.2);
+  b.cyl(0.03, 0.03, 0.008, -0.34, H + 0.036, -0.1, 0xf4f1e8, 'solid', 16);
+  b.cyl(0.06, 0.05, 0.025, W / 2 - 0.5, H + 0.045, 0.25, 0x3a3d42, 'solid', 14);
+  b.cyl(0.009, 0.009, 0.13, W / 2 - 0.5, H + 0.06, 0.25, 0x5a3218, 'solid', 8, 0, Math.PI / 2 - 0.15);
+  b.sphere(0.008, W / 2 - 0.435, H + 0.07, 0.25, 0xff5020, 'emit');
+  for (const [x, z] of [[-(W / 2 - 0.55), -0.15], [W / 2 - 0.62, -0.32], [0.55, D / 2 - 0.42]]) {
+    b.cyl(0.036, 0.032, 0.085, x, H + 0.075, z, 0xd6e8f0, 'glass', 14);
+    b.cyl(0.03, 0.028, 0.03, x, H + 0.05, z, 0xb06a1a, 'solid', 14);
+  }
+}
+/** Deep oxblood leather club chair (faces +z before rotation, like the office chair). */
+function clubChair(b: Builder) {
+  const L = 0x5a1a16, D = 0x3a0f0c, brass = 0xc9a24a;
+  b.rbox(0.7, 0.22, 0.66, 0.06, 0, 0.2, 0.02, D);
+  b.rbox(0.56, 0.12, 0.56, 0.05, 0, 0.36, -0.02, L);
+  b.rbox(0.7, 0.5, 0.18, 0.07, 0, 0.55, -0.28, L, 0.12);
+  for (const sx of [-1, 1]) {
+    b.rbox(0.13, 0.36, 0.64, 0.06, sx * 0.3, 0.42, 0.02, L);
+    for (let i = 0; i < 6; i++) b.sphere(0.008, sx * 0.365, 0.52, -0.25 + i * 0.1, brass);
+  }
+  for (const [x, z] of [[-0.29, -0.27], [0.29, -0.27], [-0.29, 0.29], [0.29, 0.29]]) b.cyl(0.025, 0.02, 0.09, x, 0.045, z, 0x1c120a, 'solid', 8);
+}
+/** Burgundy rug with a gold border under the table. */
+function pokerRug(b: Builder, W: number, D: number) {
+  b.box(W - 0.4, 0.008, D - 0.4, 0, 0.004, 0, 0xc9a24a);
+  b.box(W - 0.55, 0.01, D - 0.55, 0, 0.006, 0, 0x5a1424);
+  b.box(W - 1.0, 0.012, D - 1.0, 0, 0.007, 0, 0x6e1a2c);
+}
+/** Brass drinks trolley: two glass shelves, bottles, a decanter and tumblers. */
+function barCart(b: Builder) {
+  const brass = 0xc9a24a;
+  for (const [x, z] of [[-0.32, -0.18], [0.32, -0.18], [-0.32, 0.18], [0.32, 0.18]]) b.cyl(0.012, 0.012, 0.82, x, 0.46, z, brass, 'solid', 8);
+  for (const [x, z] of [[-0.32, -0.18], [0.32, -0.18], [-0.32, 0.18], [0.32, 0.18]]) b.cyl(0.04, 0.04, 0.03, x, 0.04, z, 0x1a1a1a, 'solid', 10, Math.PI / 2);
+  for (const y of [0.32, 0.72]) { b.box(0.66, 0.012, 0.38, 0, y, 0, 0x9ac8d8, 'glass'); b.box(0.68, 0.02, 0.4, 0, y - 0.016, 0, brass); }
+  const bottle = (x: number, z: number, col: number, y0: number) => lathe(b, [[0, 0], [0.04, 0], [0.042, 0.02], [0.04, 0.2], [0.018, 0.26], [0.014, 0.31], [0.016, 0.33], [0, 0.33]], col, 14, y0, x, z);
+  bottle(-0.2, 0.05, 0x3a1a08, 0.73); bottle(-0.08, -0.06, 0x1c3a1c, 0.73); bottle(0.04, 0.06, 0x8a6a2a, 0.73);
+  lathe(b, [[0, 0], [0.06, 0], [0.075, 0.06], [0.06, 0.15], [0.02, 0.2], [0.03, 0.24], [0, 0.26]], 0xd8ecf4, 16, 0.73, 0.2, 0);
+  for (const [x, z] of [[-0.18, 0.05], [-0.04, 0.08], [0.1, -0.05]]) b.cyl(0.035, 0.03, 0.08, x, 0.37, z, 0xd8ecf4, 'glass', 12);
+}
+
 function boardTable(b: Builder, W: number, D: number) {
   const along = W >= D;
   const L = Math.max(W, D) - 0.15, Wd = Math.min(W, D) - 0.3, H = 0.78;

@@ -262,6 +262,12 @@ export class Entities {
     for (const [id, r] of this.kits) if (!kseen.has(id)) { this.group.remove(r.kit, r.shadow); this.kits.delete(id); }
   }
 
+  /** A shooter's gun muzzle (sim coordinates) from its rig's last pose: players and human enemies; null otherwise. */
+  muzzleOf(src: 'p' | 'e', id: number) {
+    const op = src === 'p' ? this.players.get(id)?.rig : this.enemies.get(id)?.op;
+    return op ? op.muzzleWorld() : null;
+  }
+
   /** Whether the local team can currently see this enemy (used for cursor target snapping). */
   isVisible(id: number): boolean { return (this.enemies.get(id)?.vis ?? 0) > 0; }
 

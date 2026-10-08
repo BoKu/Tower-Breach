@@ -204,10 +204,15 @@ function slotFor(fs: FloorState, p: PlayerState, b: Brain, me: PlayerState): { x
   return { x: b.slotX, y: b.slotY };
 }
 
-/** Who to revive: the commander, then the bot closest to bleeding out. */
+/** Bots currently going to revive (or reviving) someone. */
+export function reviversOf(sim: Sim, target: PlayerState): PlayerState[] {
+  return sim.players.filter((o) => o.bot && o.life === 'alive' && o.floor === target.floor && brains.get(o)?.reviveId === target.id);
+}
+
+/** Who to revive: the commander, then the bot closest to bleeding out; never someone another bot is already reviving. */
 function reviveTarget(sim: Sim, p: PlayerState): PlayerState | null {
   if (p.items.medkit <= 0) return null;
-  const downs = sim.players.filter((o) => o !== p && o.life === 'down' && o.floor === p.floor);
+  const downs = sim.players.filter((o) => o !== p && o.life === 'down' && o.floor === p.floor && reviversOf(sim, o).every((r) => r === p));
   return downs.find((o) => !o.bot) ?? downs.sort((a, c) => a.downT - c.downT)[0] ?? null;
 }
 
@@ -281,6 +286,7 @@ export function botThink(sim: Sim, p: PlayerState, dt: number) {
     return;
   }
   b.reviveT = 0;
+  b.reviveId = -1; // not reviving anyone: free the claim
   // a Health Kit dropped for the squad: the lowest-health bot goes and gets it (it uses it on pickup)
   const kit = sim.kitTaker(fs) === p ? fs.pickups[0] : undefined;
   if (kit && !threat) { moveTo(sim, fs, p, b, kit.x, kit.y, dt, true); return; }

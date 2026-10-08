@@ -19,6 +19,7 @@ import { loadSettings, saveSettings, Settings, ACTION_LABEL, defaultBindings, is
 import { finalScore, runTime, fmtRunTime, scoreRows } from '../sim/score';
 import { playCredits } from '../ui/credits';
 import { keypadCode } from '../sim/hack';
+import { Chatter, BOT_LINES } from '../ui/chatter';
 import { makeSquad, type SquadPick } from '../sim/bot';
 import { BOT_CLASS, BOT_CLASSES, SQUAD_MEMBERS } from '../config/bots';
 import { load, save, remove, storageAvailable } from '../save/storage';
@@ -104,6 +105,7 @@ export class App {
   private crosshair = h('div', { class: 'crosshair' }, h('div', { class: 'ring' }), h('div', { class: 'dot' }));
   private cursor = h('div', { class: 'cursor' });
   private tags = new NameTags();
+  private chatter = new Chatter();
   /** co-op proximity voice for the current session (null: single player, voice off or unsupported) */
   private voice: VoiceChat | null = null;
   private micTried = '';
@@ -800,7 +802,17 @@ export class App {
     perfFrameStage('frames: hud', () => this.hud.onEvents(events, this.localId, view));
     const focus = this.renderer.focusPlayer(view, this.localId);
     this.updateVoice(view, me);
-    if (focus) this.tags.update(view, this.localId, focus.floor, (x, y, z) => this.renderer.worldToScreen(x, y, z), (id) => !!this.voice?.speaking(id));
+    // squad chatter: about once a minute one nearby bot says a line (bubble + radio voice)
+    if (this.session?.kind === 'local' && me && !this.screen) {
+      const near = view.players.filter((p) => p.bot && p.life === 'alive' && p.floor === me.floor && Math.hypot(p.x - me.x, p.y - me.y) < 14);
+      const said = this.chatter.tick(dt, near.map((p) => ({ id: p.id, member: p.bot!.member })), me.life !== 'alive');
+      if (said) {
+        const b = near.find((p) => p.id === said.id)!;
+        this.tags.say(said.id, BOT_LINES[said.line]);
+        this.audio.voiceLine(said.member, said.line, 1 - Math.min(1, Math.hypot(b.x - me.x, b.y - me.y) / 16) * 0.6);
+      }
+    }
+    if (focus) this.tags.update(view, this.localId, focus.floor, (x, y, z) => this.renderer.worldToScreen(x, y, z), (id) => !!this.voice?.speaking(id), dt);
     perfFrameStage('frames: hud', () => this.hud.update(view, this.localId, dt, focus?.id ?? this.localId));
     this.updateOverlays(me, dt);
     this.updateElevator(me);

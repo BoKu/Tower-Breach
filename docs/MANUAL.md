@@ -109,7 +109,8 @@ every run.
   comes and uses it; walk over it yourself to take it back.
 - **Doors:** squadmates never change a door you opened, closed or locked. Other doors they open to get through and
   close again behind them.
-- **Lifts:** step into a lift and your squad piles in with you. Take the stairs and they arrive beside you.
+- **Lifts:** step into a lift and your squad piles in with you.
+- **Radio chatter:** about once a minute a squadmate near you says something over the squad radio. Take the stairs and they arrive beside you.
 
 ### The street
 

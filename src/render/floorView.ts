@@ -13,6 +13,7 @@ import { raycastWalls } from '../sim/nav';
 import type { FloorState } from '../sim/state';
 import { lightLevel, lightOut, lightSize } from '../sim/lights';
 import { buildPosters } from './posters';
+import { buildCardFaces, buildDartboard } from './eastereggs';
 import { perfTime } from '../core/perf';
 
 export const WALL_H = 2.6;
@@ -144,6 +145,7 @@ export class FloorView {
     perfTime('view: elevators', () => this.buildElevators());
     this.buildFixtures();
     this.track(buildPosters(L, this.group)); // public/posters, random per floor
+    this.track(buildDartboard(L, this.group)); // easter egg: floor 4
     if (L.floor === 0) perfTime('view: street', () => this.buildStreetBackdrop());
     this.buildLightBars();
     // CCTV, traps and vending machines (state-driven in update) are made now too, so a view built ahead of time has
@@ -424,6 +426,7 @@ export class FloorView {
         all.mirror.push(...own.mirror);
       }
       if (p.kind === 'panel') this.makePanelLeds(p.id, p.x, p.y, ROT_Y[p.rot] ?? 0);
+      if (p.kind === 'pokertable') this.track(buildCardFaces(p, this.group)); // easter egg: the royal flush
     }
     this.flushKits();
     this.addParts(all);

@@ -843,6 +843,12 @@ export class OperatorRig {
 
   private firedT = 0;
   onShot() { this.kick = 1; this.firedT = 0.9; }
+  /** The gun's muzzle in sim coordinates (x, y on the floor plan, z = height), from the last pose; null with no gun. */
+  muzzleWorld(): { x: number; y: number; z: number } | null {
+    if (!this.gun) return null;
+    const v = this.gun.muzzle.clone().applyMatrix4(this.gunHolder.matrixWorld);
+    return { x: v.x, y: v.z, z: v.y };
+  }
   onThrow() { this.throwT = 0.45; }
   onMelee() { this.slashT = 0.3; }
 

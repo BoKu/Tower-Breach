@@ -277,6 +277,9 @@ Officer portraits are PNG files in `public/portraits/`. They are 512×512 and co
   window. If a file is missing, the game falls back to a live 3D render of that officer.
 - **Regenerating a portrait:** the shipped portraits were generated with an AI image model (Gemini,
   `gemini-3-pro-image`), each from a description of that officer's look in `src/config/npcs.ts`.
+- **Squad portraits and voices:** the four squad portraits (`public/portraits/squad*.png`) come from
+  `scripts/gen-squad-portraits.mjs`, and the squad's spoken lines (`public/audio/voice/{m,f}/NNN.m4a`, the text in
+  `src/config/botLines.json`) from `scripts/gen-bot-voices.mjs`. Both use the Gemini API (`GEMINI_API_KEY`).
 - **Using the 3D renders:** `?dev=portraits` renders the procedural 3D versions with download links. Save those over
   the files to replace the photo portraits.
 

@@ -17,8 +17,17 @@ type Project = (x: number, y: number, z: number) => { x: number; y: number; on: 
 export class NameTags {
   root = h('div', { class: 'nametags' });
   private tags = new Map<number, { el: HTMLElement; key: string }>();
+  /** speech bubbles over squadmates (single-player chatter), with seconds left */
+  private bubbles = new Map<number, { el: HTMLElement; t: number }>();
 
-  update(view: ViewSource, localId: number, floor: number, project: Project, speaking: (id: number) => boolean) {
+  say(id: number, text: string, seconds = 3.2) {
+    this.bubbles.get(id)?.el.remove();
+    const el = h('div', { class: 'bubble' }, text);
+    this.root.append(el);
+    this.bubbles.set(id, { el, t: seconds });
+  }
+
+  update(view: ViewSource, localId: number, floor: number, project: Project, speaking: (id: number) => boolean, dt = 0) {
     const seen = new Set<number>();
     for (const p of taggedPlayers(view, localId, floor)) {
       const ground = stairElevation(view.floorState(floor).L, p.x, p.y) + p.z;
@@ -43,5 +52,13 @@ export class NameTags {
       t.el.style.transform = `translate(${s.x.toFixed(1)}px, ${s.y.toFixed(1)}px) translate(-50%, -100%)`;
     }
     for (const [id, t] of this.tags) if (!seen.has(id)) { t.el.remove(); this.tags.delete(id); }
+    for (const [id, b] of this.bubbles) {
+      b.t -= dt;
+      const p = view.players.find((q) => q.id === id);
+      const s = p && p.floor === floor && p.life === 'alive' ? project(p.x, p.y, stairElevation(view.floorState(floor).L, p.x, p.y) + p.z + (p.crouch ? 1.9 : 2.5)) : null;
+      if (b.t <= 0 || !s || !s.on) { if (b.t <= 0 || !p || p.life !== 'alive') { b.el.remove(); this.bubbles.delete(id); } else b.el.style.opacity = '0'; continue; }
+      b.el.style.opacity = b.t < 0.4 ? String(b.t / 0.4) : '1';
+      b.el.style.transform = `translate(${s.x.toFixed(1)}px, ${s.y.toFixed(1)}px) translate(-50%, -100%)`;
+    }
   }
 }

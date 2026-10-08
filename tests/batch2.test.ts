@@ -351,3 +351,20 @@ describe('review fixes', () => {
     expect(c.size).toBe(0);
   });
 });
+
+import { reviversOf } from '../src/sim/bot';
+describe('one reviver at a time', () => {
+  it('when bots revive you only the first one comes; the others carry on; it costs that one Health Kit', () => {
+    const { sim, me } = solo(12);
+    const bots = makeSquad(12, ['medic', 'rifleman', 'gunner']).map((i) => sim.addBot(i));
+    sim.travel(me, 2, 'stair0', 'debug');
+    for (const e of sim.floorState(2).enemies) { e.state = 'dead'; e.hp = 0; }
+    for (const b of bots) b.items.medkit = 2;
+    sim.playerDies(me);
+    let most = 0;
+    for (let t = 0; t < 10 * 60 && me.life === 'down'; t++) { sim.tick(1 / 60); most = Math.max(most, reviversOf(sim, me).length); }
+    expect(me.life).toBe('alive');
+    expect(most).toBe(1);
+    expect(bots.reduce((n, b) => n + b.items.medkit, 0)).toBe(5); // one kit used, by the reviver
+  });
+});

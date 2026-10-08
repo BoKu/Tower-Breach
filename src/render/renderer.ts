@@ -279,7 +279,7 @@ export class GameRenderer {
       this.camTarget.set(focus.x, 0, focus.y);
       this.ahead.reset(view, focus.floor);
     }
-    for (const ev of events) this.fx.onEvent(ev, focus.floor, localId);
+    for (const ev of events) this.fx.onEvent(ev, focus.floor, localId, (src, id) => this.entities.muzzleOf(src, id));
     this.floorView!.update(fs, view.t, dt);
     perfTime(switched ? 'entities (1st)' : '', () => this.entities.update(view, localId, fs, dt, events));
     {

@@ -134,6 +134,37 @@ export class GameAudio {
     }
   }
 
+  // ------------------------------------------------------------------ squad chatter
+  private lines = new Map<string, Promise<AudioBuffer | null>>();
+  /**
+   * A bot's spoken line (public/audio/voice/NNN.m4a, Gemini TTS: even lines a man's voice, odd lines a woman's) through
+   * a squad-radio filter. Members 2 and 3 are pitched a little apart from 0 and 1. near: 0..1 loudness by distance.
+   */
+  voiceLine(member: number, line: number, near: number) {
+    const s = this.s; if (!s || near <= 0) return;
+    const url = `${import.meta.env.BASE_URL}audio/voice/${String(line).padStart(3, '0')}.m4a`;
+    let p = this.lines.get(url);
+    if (!p) this.lines.set(url, (p = fetch(url).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(r.status))).then((a) => s.ctx.decodeAudioData(a)).catch(() => null)));
+    void p.then((buf) => {
+      if (!buf || !this.s) return;
+      const src = s.ctx.createBufferSource(); src.buffer = buf;
+      src.playbackRate.value = [1, 1, 0.94, 1.06][member] ?? 1;
+      const hp = s.ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 320;
+      const lp = s.ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3400;
+      const g = s.gain(0.9 * near);
+      src.connect(hp).connect(lp).connect(g).connect(s.sfx);
+      src.start();
+      // radio squelch: a short click and a puff of static either side
+      const t = s.now, dur = buf.duration / src.playbackRate.value;
+      for (const at of [t, t + dur + 0.05]) {
+        const n = s.ctx.createBufferSource(); n.buffer = s.white;
+        const ng = s.gain(0); ng.gain.setValueAtTime(0.05 * near, at); ng.gain.exponentialRampToValueAtTime(0.0001, at + 0.12);
+        const bp = s.ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2400;
+        n.connect(bp).connect(ng).connect(s.sfx); n.start(at); n.stop(at + 0.14);
+      }
+    });
+  }
+
   // ------------------------------------------------------------------ UI
   ui(kind: 'click' | 'hover' | 'buy' | 'error' | 'open' | 'back') {
     const s = this.s; if (!s) return;

@@ -545,3 +545,5 @@ input.text:focus { border-color: var(--cyan); box-shadow: inset 0 0 12px rgba(53
 .hk-note { background: #e8d36a; color: #2a2108; padding: 4px 10px; font-size: 12px; letter-spacing: 0.15em; transform: rotate(-2deg); box-shadow: 2px 3px 0 rgba(0,0,0,0.4); }
 .hk-note b { font-size: 18px; letter-spacing: 0.3em; }
 .cr-small .cr-name { font-size: 14px; letter-spacing: 0.04em; color: #b9cfd8; }
+.bubble { position: absolute; left: 0; top: 0; max-width: 220px; padding: 5px 10px; background: rgba(235, 244, 238, 0.94); color: #10181a; font-size: 13px; font-weight: 600; letter-spacing: 0.02em; border-radius: 10px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5); will-change: transform; transition: opacity 0.15s; }
+.bubble::after { content: ''; position: absolute; left: 50%; bottom: -7px; margin-left: -7px; border: 7px solid transparent; border-bottom: 0; border-top-color: rgba(235, 244, 238, 0.94); }
