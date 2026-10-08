@@ -21,7 +21,8 @@ export type RoomType =
 export type Surface = 'carpet' | 'tile' | 'concrete' | 'metal' | 'asphalt';
 
 export interface Room { id: number; type: RoomType; x: number; y: number; w: number; h: number; surface: Surface; main: boolean }
-export interface Prop { id: number; kind: string; x: number; y: number; w: number; h: number; rot: number; solid: number; room: number }
+/** ry: optional free yaw in radians (decorations that face a point, e.g. chairs round a table); overrides rot */
+export interface Prop { id: number; kind: string; x: number; y: number; w: number; h: number; rot: number; solid: number; room: number; ry?: number }
 export interface LightSpec { id: number; x: number; y: number; color: number; intensity: number; range: number; flicker: number; broken: boolean; room: number; kind: 'ceiling' | 'fire' | 'street' | 'emergency' | 'police'; z?: number; phase?: number }
 export interface ContainerSpec { id: number; kind: ContainerKind; x: number; y: number; items: LootItem[]; room: number }
 /** drops = the stock, sold one unit at a time for `price` coins (prying the machine open spills what is left) */
@@ -137,7 +138,7 @@ const SURFACE: Record<RoomType, Surface> = {
 const LIGHT_COLOR: Partial<Record<RoomType, number>> = {
   office: 0xffe6c4, open: 0xfff0d8, corridor: 0xf4ead8, kitchen: 0xe6f2ff, bathroom: 0xe0f0ff, server: 0x8fc4ff,
   security: 0xffa090, storage: 0xffe0b0, maintenance: 0xffb060, executive: 0xffd49a, boardroom: 0xfff0dc, lobby: 0xfff2dc, utility: 0xffd8a0,
-  stair: 0xd8e8d0, elevator: 0xf0f0ff, mainframe: 0x70b0ff,
+  stair: 0xd8e8d0, elevator: 0xf0f0ff, mainframe: 0x70b0ff, poker: 0xffd6a8,
 };
 
 interface Rect { x0: number; y0: number; x1: number; y1: number }
@@ -745,9 +746,11 @@ function furnish(B: Builder, floor: number) {
         let t: Prop | null = null;
         for (const [x, y] of at) if ((t = B.place('pokertable', x, y, 3, 2, 1, room.id))) break;
         if (t) {
-          B.deco('pokerchair', t.x, t.y + 1.45, 2, room.id);
-          B.deco('pokerchair', t.x - 1.05, t.y - 1.3, 0, room.id);
-          B.deco('pokerchair', t.x + 1.05, t.y - 1.3, 0, room.id);
+          // three seats, each turned to face the middle of the table (chair models face +z at ry 0)
+          for (const [x, y] of [[t.x, t.y + 1.45], [t.x - 1.05, t.y - 1.3], [t.x + 1.05, t.y - 1.3]]) {
+            B.deco('pokerchair', x, y, 0, room.id);
+            L.props[L.props.length - 1].ry = Math.atan2(t.x - x, t.y - y);
+          }
           B.deco('pokerrug', t.x, t.y, 0, room.id, 5, 4);
         }
         const s = spots();
@@ -843,19 +846,26 @@ function addLights(B: Builder, floor: number) {
       const long = room.w > room.h;
       const len = long ? room.w : room.h;
       for (let t = 3; t < len; t += 8) pts.push(long ? [room.x + t, room.y + room.h / 2] : [room.x + room.w / 2, room.y + t]);
+    } else if (room.type === 'poker') {
+      // warm light from the corners: nothing hangs over the table (a fixture above it glared over the royal flush)
+      const t = L.props.find((p) => p.kind === 'pokertable' && p.room === room.id);
+      const corners: [number, number][] = [[room.x + 1.1, room.y + 1.1], [room.x + room.w - 1.1, room.y + 1.1], [room.x + 1.1, room.y + room.h - 1.1], [room.x + room.w - 1.1, room.y + room.h - 1.1]];
+      const far = t ? corners.sort((a, b) => Math.hypot(b[0] - t.x, b[1] - t.y) - Math.hypot(a[0] - t.x, a[1] - t.y)) : corners;
+      pts.push(...far.filter((c) => !t || Math.hypot(c[0] - t.x, c[1] - t.y) >= 2));
     } else {
       const nx = Math.max(1, Math.round(room.w / 7)), ny = Math.max(1, Math.round(room.h / 7));
       for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) pts.push([room.x + (room.w * (i + 0.5)) / nx, room.y + (room.h * (j + 0.5)) / ny]);
     }
     for (const [x, y] of pts) {
-      const isEmergency = room.type !== 'mainframe' && floor > 60 && rng.chance(Math.min(0.5, (floor - 60) / 250));
+      const poker = room.type === 'poker';
+      const isEmergency = !poker && room.type !== 'mainframe' && floor > 60 && rng.chance(Math.min(0.5, (floor - 60) / 250));
       L.lights.push({
         id: B.id(), x, y, room: room.id, kind: isEmergency ? 'emergency' : 'ceiling',
         color: isEmergency ? 0xff3322 : color,
-        intensity: isEmergency ? 0.8 : room.type === 'stair' || room.type === 'elevator' ? 0.9 : 1.2,
+        intensity: poker ? 1.1 : isEmergency ? 0.8 : room.type === 'stair' || room.type === 'elevator' ? 0.9 : 1.2,
         range: room.type === 'corridor' ? 7 : Math.max(6, Math.min(10, Math.max(room.w, room.h) * 0.8)),
-        flicker: rng.chance(flick) ? rng.range(0.3, 1) : 0,
-        broken: room.type !== 'mainframe' && rng.chance(broken),
+        flicker: rng.chance(flick) && !poker ? rng.range(0.3, 1) : 0,
+        broken: room.type !== 'mainframe' && !poker && rng.chance(broken),
       });
     }
   }

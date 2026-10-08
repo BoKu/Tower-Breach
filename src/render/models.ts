@@ -1148,10 +1148,17 @@ export function royalFlushCards(W: number, D: number): { x: number; y: number; z
 function pokerTable(b: Builder, W: number, D: number) {
   const rx = W / 2 - 0.1, rz = D / 2 - 0.1, H = POKER_H;
   const oval = (k: number, h: number, y: number, c: number, seg = 48) => b.geo(new THREE.CylinderGeometry(1, 1, h, seg), c, 0, y, 0, 0, 0, 0, 'solid', rx * k, 1, rz * k);
-  // turned walnut pedestal on a wide oval foot
-  oval(0.34, 0.05, 0.025, 0x1c120a);
-  b.cyl(0.16, 0.24, H - 0.12, 0, (H - 0.12) / 2 + 0.05, 0, 0x3a2414, 'solid', 18);
-  b.cyl(0.22, 0.16, 0.06, 0, H - 0.1, 0, 0x2a1a0e, 'solid', 18);
+  // four turned walnut legs set out near the rim (visible from the game camera), on brass-capped bun feet
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    const x = sx * (rx - 0.32), z = sz * (rz - 0.22);
+    b.cyl(0.055, 0.04, 0.42, x, H - 0.08 - 0.21, z, 0x3a2414, 'solid', 14); // upper taper
+    b.sphere(0.06, x, H - 0.52, z, 0x2e1c10); // turned collar
+    b.cyl(0.04, 0.032, 0.2, x, H - 0.66, z, 0x3a2414, 'solid', 14);
+    b.sphere(0.05, x, 0.05, z, 0x2a1a0e, 'solid', 0.8); // bun foot
+    b.cyl(0.035, 0.035, 0.012, x, 0.006, z, 0xc9a24a, 'solid', 12);
+  }
+  // a stretcher frame between the legs keeps it sturdy-looking
+  b.box((rx - 0.32) * 2, 0.04, 0.05, 0, 0.18, rz - 0.22, 0x2e1c10).box((rx - 0.32) * 2, 0.04, 0.05, 0, 0.18, -(rz - 0.22), 0x2e1c10);
   // walnut apron, then the felt bed, then a padded black-leather rail with a brass bead
   oval(1.0, 0.09, H - 0.03, 0x5a3822);
   oval(0.9, 0.03, H + 0.015, 0x1d6b3a);

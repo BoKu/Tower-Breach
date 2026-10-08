@@ -417,7 +417,7 @@ export class FloorView {
     for (const p of this.L.props) {
       if (p.kind === 'vending') continue;
       if (!isKitProp(this.L, p)) { const o = buildStreetProp(p); if (o) { this.group.add(o); o.traverse((c) => { if (c.userData.spin) this.spinners.push(c); }); continue; } }
-      const ry = p.w === p.h ? ROT_Y[p.rot] ?? 0 : 0, k = propKit(p.kind, p.w, p.h, snowy);
+      const ry = p.ry ?? (p.w === p.h ? ROT_Y[p.rot] ?? 0 : 0), k = propKit(p.kind, p.w, p.h, snowy);
       this.placeKit(propKey(p.kind, p.w, p.h, snowy), k, p.x, p.y, ry);
       if (k.screen.length || k.mirror.length) {
         const own = newParts();

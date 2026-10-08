@@ -13,7 +13,7 @@ const tex = (c: HTMLCanvasElement) => { const t = new THREE.CanvasTexture(c); t.
 
 function cardFace(rank: string): HTMLCanvasElement {
   const [c, g] = canvas(256, 356);
-  g.fillStyle = '#f7f4ea'; g.beginPath(); g.roundRect(4, 4, 248, 348, 18); g.fill();
+  g.fillStyle = '#e9e4d6'; g.beginPath(); g.roundRect(4, 4, 248, 348, 18); g.fill(); // off-white: stays under the bloom threshold
   g.strokeStyle = '#c9c2ae'; g.lineWidth = 3; g.stroke();
   g.fillStyle = '#111';
   const corner = (flip: boolean) => {
@@ -42,7 +42,7 @@ export function buildCardFaces(p: Prop, group: THREE.Group): { dispose(): void }
   out.push(geo);
   royalFlushCards(p.w, p.h).forEach((c, i) => {
     const t = tex(cardFace(['10', 'J', 'Q', 'K', 'A'][i]));
-    const m = applyCutaway(new THREE.MeshStandardMaterial({ map: t, roughness: 0.6 }), 0.95); // same cut height as table props
+    const m = applyCutaway(new THREE.MeshStandardMaterial({ map: t, roughness: 1, metalness: 0 }), 0.95); // matte card stock (no glare); same cut height as table props
     out.push(t, m);
     const mesh = new THREE.Mesh(geo, m);
     mesh.rotation.set(-Math.PI / 2, 0, c.ry);

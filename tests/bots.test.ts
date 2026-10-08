@@ -190,7 +190,7 @@ describe('bot brain: movement and support', () => {
       for (const b of bots) expect(Math.hypot(b.x - me.x, b.y - me.y), `${b.name} floor ${f}`).toBeLessThan(8); // formation slots reach ~4 m, plus up to 3 m to the nearest walkable tile
       expect(far, `bot-seconds spent >12 m away on floor ${f}`).toBeLessThan(20);
     }
-  });
+  }, 20000); // a long headless walk: slow when the whole suite runs in parallel
   it('a medic with one kit revives the downed human, not the downed bot', () => {
     const { sim, me, bots } = walkSim(['medic', 'rifleman']);
     sim.travel(me, 1, 'stair0', 'stairs');

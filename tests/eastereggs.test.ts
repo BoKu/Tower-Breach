@@ -29,4 +29,30 @@ describe('easter eggs', () => {
       expect(dartSpot(generateFloor(new BuildingPlan(seed, 'normal'), 5))).toBeNull();
     }
   });
+  it('every poker chair faces the table centre', () => {
+    for (const seed of [1, 42, 777, 31337]) {
+      const L = generateFloor(new BuildingPlan(seed, 'normal'), 8);
+      const t = L.props.find((p) => p.kind === 'pokertable')!;
+      for (const c of L.props.filter((p) => p.kind === 'pokerchair')) {
+        const ry = c.ry ?? [0, -Math.PI / 2, Math.PI, Math.PI / 2][c.rot]; // the chair model faces +z
+        const dx = t.x - c.x, dy = t.y - c.y, l = Math.hypot(dx, dy);
+        expect((Math.sin(ry) * dx + Math.cos(ry) * dy) / l, `seed ${seed} chair at ${c.x},${c.y}`).toBeGreaterThan(0.99);
+      }
+    }
+  });
+  it('the poker room is lit warm from the corners, never from above the table', () => {
+    for (const seed of [1, 42, 777, 31337]) {
+      const L = generateFloor(new BuildingPlan(seed, 'normal'), 8);
+      const room = L.rooms.find((r) => r.type === 'poker')!;
+      const t = L.props.find((p) => p.kind === 'pokertable')!;
+      const lights = L.lights.filter((l) => l.room === room.id);
+      expect(lights.length, `seed ${seed}`).toBeGreaterThan(0);
+      for (const l of lights) {
+        expect(Math.hypot(l.x - t.x, l.y - t.y)).toBeGreaterThanOrEqual(2);
+        expect(l.intensity).toBeLessThanOrEqual(1.2);
+        expect(l.flicker).toBe(0);
+        expect(l.broken).toBe(false);
+      }
+    }
+  });
 });
