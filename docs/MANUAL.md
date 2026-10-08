@@ -50,9 +50,11 @@ Co-op works in the desktop app and in the browser: you join a **dedicated server
 ### Main menu
 
 - **Continue:** resume your saved run. It shows the floor and difficulty. It only appears when you have a save.
-- **Single Player:** start a new run.
+- **Single Player:** start a new run: choose a difficulty, then your squad (up to four AI squadmates, or none).
 - **Co-op (up to 5):** join a dedicated server, or (browser version) host or join a squad by code.
-- **Hall of Records:** your best runs, top 10 for each difficulty.
+- **Hall of Records:** every run you have finished, won or lost, top 15 for each difficulty. **Top scores** ranks
+  them by score; **Fastest** puts wins first, then the furthest floor, then the fastest time. Click a run to see its
+  kills, knife kills, accuracy, hacks, searches and speed bonus.
 - **Settings:** graphics, audio, controls and gameplay options.
 - **Controls:** the full list of controls.
 - **Quit to desktop:** desktop app only.
@@ -75,6 +77,32 @@ Co-op works in the desktop app and in the browser: you join a **dedicated server
 The same enemy types appear on every difficulty. Only these numbers change. On every difficulty, the pressure rises
 again every 10 floors: enemies see better, hit harder, push harder and come in greater numbers, there are more traps,
 and there is less loot.
+
+### Squad (single player)
+
+After choosing a difficulty you can take up to **four AI squadmates**. Pick a class for each slot (or *Random*), or
+leave every slot empty to go in alone. The four squad members keep their faces, but each gets a random name and rank
+every run.
+
+| Class | Plays as |
+|---|---|
+| Rifleman | All-rounder; stays close and covers your arc |
+| Breacher | Shotgun and flashbangs; goes through doors first |
+| Gunner | Machine gun; holds a spot and pins enemies down |
+| Commando | Suppressed and quiet; flanks and knifes unaware enemies |
+| Marksman | Sniper; hangs back on long sight lines |
+| Grenadier | Frags and incendiaries for groups and enemies behind cover |
+| Medic | Extra Health Kits; revives first and hands you one when you run low |
+| Recon | Scouts ahead and marks every enemy it sees |
+
+- Squadmates never leave your floor: when you take the stairs or a lift, they arrive beside you.
+- They manage their own health, ammo and reloads, and pick up ammo and medical supplies near you. They never take
+  keys, coins or weapons, or search furniture (those points are yours).
+- They hold fire while you sneak and nobody has noticed you, and open fire once you shoot or an enemy is alerted.
+- With a squad you are **downed** instead of killed. A squadmate with a Health Kit revives you first, then itself,
+  then others. The run ends if you bleed out, or if the whole squad is down at once. A squadmate who bleeds out is
+  gone for the rest of the run.
+- Only your own actions score. Squad runs show "+N bots" in the Hall of Records.
 
 ### The street
 
@@ -141,8 +169,26 @@ Climb from floor 1 to floor 200. On each floor, find a working route up: a stair
 start the virus upload at the mainframe terminal, then survive for **60 seconds**. If you are still alive when the
 timer runs out, SOVEREIGN shuts down and you win.
 
-You have **one life**. In single player, if you die the run is over, and the next run is a new tower. Every run,
-won or lost, is entered in the Hall of Records with your callsign, best floor, kills and time.
+You have **one life**. In single player without a squad, if you die the run is over, and the next run is a new tower. Every run,
+won or lost, is entered in the Hall of Records with your callsign, score, best floor, kills and time.
+
+### Score and run clock
+
+The **run clock** starts the moment the first operator enters the building and stops when the run ends. It shows
+`hh:mm:ss.ssss` under your vitals, next to your score, and it pauses while a single-player game is paused.
+
+| You earn | Points |
+|---|---|
+| Each new highest floor | 100 (going back down and up again earns nothing) |
+| Speed | 5 per second under a 90-second par per floor, counted each time you reach a new highest floor |
+| Kills | Loyalist 50, dog 40, drone 60, cyber-hound 80, cyborg 100, Warden 500; elites ×1.5 |
+| Knife kills | Double the kill points |
+| Successful hacks | 250 |
+| Searching desks, lockers, crates, cabinets and the like | 10 each (executive safes 50); bodies don't count |
+| Accuracy (fewer bullets used) | Up to 5,000 at the end: your hit rate × 5,000, reaching full value once you have 25 kills |
+| Uploading the virus and surviving the shutdown | 10,000 |
+
+In co-op each operator has their own score. The end screen shows the breakdown, won or lost.
 
 The tower gets harder as you climb:
 
@@ -215,6 +261,7 @@ choose and B to back out (B disconnects from a hack or ends a conversation).
     - `¢ n` (your coins)
     - your stealth state: `HIDDEN`, `EXPOSED n%` (how visible you are), `SUSPICION` (enemies are searching) or
       `HUNTED` (they know where you are).
+  - The run clock and your score (see [Score and run clock](#score-and-run-clock)).
 - **Bottom centre: the item belt.** Five slots: Health Kit, Battery, Armour Plate, Energy Drink and Snack, each with
   its count.
 - **Bottom right: the weapon panel.** Your weapon, the rounds in the magazine and in reserve, and the ammo type. Below
@@ -568,7 +615,8 @@ shutdown countdown begins.
 - Waves come faster on Hard and Insane.
 
 Hold out until the counter reaches zero. If at least one operator is alive at that point, SOVEREIGN shuts down and you
-win.
+win. A few seconds later you see your score, and then the end credits roll. Esc skips the credits; stay until the
+very end.
 
 ## 18. Holiday themes
 

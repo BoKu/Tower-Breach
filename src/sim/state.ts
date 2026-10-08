@@ -4,6 +4,11 @@ import type { GrenadeType, ItemType } from '../config/items';
 import type { FloorLayout, SpawnSpec, DoorMode } from '../gen/floor';
 import type { ContainerKind } from '../gen/loot';
 import type { EnemyType, LootItem } from './types';
+import type { RunScore } from './score';
+import type { BotClass } from '../config/bots';
+
+/** A single-player squadmate (sim/bot.ts): its class, rank, surname and squad member slot (0..3, portrait + look). */
+export interface BotInfo { cls: BotClass; rank: string; surname: string; member: number }
 
 export type Mode = 'single' | 'coop';
 export type PlayerLife = 'alive' | 'down' | 'out';
@@ -87,6 +92,10 @@ export interface PlayerState {
   ride: { t: number; to: number; elev: number } | null;
   exposure: number;
   kills: number;
+  /** points and run stats (sim/score.ts) */
+  score: RunScore;
+  /** set for AI squadmates; absent for people */
+  bot?: BotInfo;
   input: PlayerInput;
   last: PlayerInput; // last processed press counters
   prompt: string;

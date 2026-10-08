@@ -30,7 +30,7 @@ export class ClientView implements ViewSource {
   objective = { uploadStarted: false, uploadT: 60, done: false };
   phase: 'playing' | 'won' | 'lost' = 'playing';
   lostReason = '';
-  stats = { kills: 0, maxFloor: 0, startT: 0, endT: 0 };
+  stats = { kills: 0, maxFloor: 0, startT: -1, endT: 0 };
   cleared = new Set<string>();
   private floors = new Map<number, FloorState>();
   /** timestamped positions of remote players ('p'+id) and enemies ('e'+id), drawn INTERP_DELAY in the past */

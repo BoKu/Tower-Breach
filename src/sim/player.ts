@@ -2,6 +2,7 @@ import { weapon, KNIFE, AMMO_CAP, isSuppressed, shotNoise, SUPPRESSOR_DAMAGE } f
 import { DRINK_DURATION, DRINK_SPEED, FOOD_HEAL, PLATE_REPAIR, INJURY_SPEED, TORCH_DRAIN_PER_SEC, ITEM_NAMES, GRENADE_NAMES, ItemType } from '../config/items';
 import { clamp, dist, wrapAngle, angleTo, segPointDist } from '../core/math';
 import { moveCircle, collides, BODY_R } from './nav';
+import { newScore, scoreShot } from './score';
 import { idx, S_LOW, FloorLayout } from '../gen/floor';
 import { trace, unaware, damageEnemy, damagePlayer, destroyCamera, breakVending, killPanel, shootLight } from './combat';
 import { currentWeapon, nextItem, nextGrenade, ammoCap } from './inventory';
@@ -31,7 +32,7 @@ export function createPlayer(id: number, slot: number, name: string, lo: Loadout
     items: { medkit: 0, battery: 0, plate: 0, drink: 0, food: 0 }, itemSel: 'medkit', coins: 0, keys: [],
     mods: { ...lo.mods }, torchOn: false, battery: 1, boostT: 0,
     fireCd: 0, reloadT: 0, burstLeft: 0, bloom: 0, meleeCd: 0, triggerHeld: false, muzzleT: -9, stepT: 0,
-    burnT: 0, flashT: 0, hurtT: 0, hold: null, ride: null, exposure: 0.5, kills: 0,
+    burnT: 0, flashT: 0, hurtT: 0, hold: null, ride: null, exposure: 0.5, kills: 0, score: newScore(),
     input: emptyInput(), last: emptyInput(), prompt: '',
   };
   (p as any).vest = lo.armor !== 'none';
@@ -149,7 +150,7 @@ export function updatePlayer(sim: Sim, p: PlayerState, dt: number, externalMove:
   (p as any).stairCd = Math.max(0, ((p as any).stairCd ?? 0) - dt);
   const prevY = (p as any).stairPrevY ?? py;
   (p as any).stairPrevY = p.y;
-  if ((p as any).stairCd <= 0 && p.z <= 0.05 && p.floor >= 1) {
+  if (!p.bot && (p as any).stairCd <= 0 && p.z <= 0.05 && p.floor >= 1) { // bots only change floor with the human (Sim.travel)
     const st = stairAt(L, p.x, p.y);
     if (st && st.t >= 1 && p.y - prevY < -0.005) {
       if ((st.dir > 0 && p.floor < 200) || (st.dir < 0 && p.floor > 1)) { sim.takeStairs(p, st.s.index, st.dir); syncLast(p); return; }
@@ -325,11 +326,13 @@ function fireShot(sim: Sim, p: PlayerState) {
   const aimDist = Math.max(0.25, Math.hypot(p.aimX - ox, p.aimY - oy));
   const baseDz = flat ? 0 : (p.aimZ - gunZ) / aimDist;
   const pellets = new Map<Enemy, number>();
+  let landed = false;
   // damage to an enemy: sneak shots (pistols, snipers) double on the unaware; close shotgun blasts one-shot dogs
   const hitEnemy = (e: Enemy, d: number, t: number) => {
     if ((cat === 'pistol' || cat === 'sniper') && unaware(e)) d *= 2;
     if (cat === 'shotgun' && t <= STAGGER.range && (e.type === 'dog' || e.type === 'dogcyborg')) d = 1e4;
     if (cat === 'shotgun' && t <= STAGGER.range) pellets.set(e, (pellets.get(e) ?? 0) + 1);
+    landed = true;
     damageEnemy(sim, fs, e, d, w.pen, p, 'bullet');
   };
   for (let k = 0; k < w.pellets; k++) {
@@ -363,6 +366,7 @@ function fireShot(sim: Sim, p: PlayerState) {
   // shotgun stagger: enough pellets at close range interrupt the target's aim and fire
   for (const [e, n] of pellets) if (n >= STAGGER.pellets && e.state !== 'dead') { e.stunT = Math.max(e.stunT, STAGGER.time); e.burstLeft = 0; }
   if (!p.cheats?.ammo) wi.mag--;
+  if (p.floor > 0) scoreShot(p.score, landed);
   p.bloom = Math.min(0.25, p.bloom + w.recoil * (p.crouch ? 0.7 : 1) * (p.aiming ? 0.8 : 1));
   p.fireCd = 1 / w.rps;
   if (p.burstLeft > 0) { p.burstLeft--; if (p.burstLeft === 0) p.fireCd = 0.28; }

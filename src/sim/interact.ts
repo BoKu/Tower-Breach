@@ -6,6 +6,7 @@ import { giveLoot, swapWeapon, takeStock } from './inventory';
 import { ITEM_NAMES } from '../config/items';
 import { describeLoot } from '../gen/loot';
 import { applyHack } from './hack';
+import { scoreSearch } from './score';
 import { officerPose, AmbientSpec, FW } from '../gen/floor';
 import { npcFor } from '../config/npcs';
 import type { Sim } from './sim';
@@ -274,6 +275,7 @@ function gather(sim: Sim, p: PlayerState, fs: FloorState): Target[] {
 }
 
 function lootAll(sim: Sim, p: PlayerState, fs: FloorState, c: ContainerState) {
+  if (!c.opened && fs.floor > 0) scoreSearch(p.score, c.kind);
   c.opened = true;
   const key = c.items.find((i) => i.k === 'key');
   const msgs: string[] = [];

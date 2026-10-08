@@ -4,8 +4,10 @@ import '@fontsource/chakra-petch/600.css';
 import '@fontsource/chakra-petch/700.css';
 import { HOLIDAYS, setHolidayOverride, type Holiday } from './config/holiday';
 import { App } from './game/app';
+import { BOT_CLASSES } from './config/bots';
+import type { SquadPick } from './sim/bot';
 
-// Debug / test hook: ?dev=1&floor=N&diff=hard&torch=1&god=1&ammo=1
+// Debug / test hook: ?dev=1&floor=N&diff=hard&torch=1&god=1&ammo=1&squad=medic,gunner,random,recon
 const q = new URLSearchParams(location.search);
 // ?holiday=xmas|easter|halloween|none overrides today's date in any game (normal play or dev);
 // dev sandboxes pick theirs from the floor name: sandbox (plain), sandbox-xmas, sandbox-easter, sandbox-halloween
@@ -34,6 +36,16 @@ if (q.get('dev') === 'portraits') {
     }
     document.body.appendChild(wrap);
   });
+} else if (q.get('dev') === 'credits') {
+  // preview the end credits: a click (needed for sound) plays them, then back to the main menu
+  void import('./ui/credits').then(({ playCredits }) => {
+    const go = document.createElement('button');
+    go.textContent = 'Play the end credits';
+    go.style.cssText = 'position:fixed;z-index:999;left:50%;top:50%;transform:translate(-50%,-50%);padding:14px 28px;font:600 18px sans-serif;background:#35d8ff;border:0;cursor:pointer';
+    go.onclick = () => { go.remove(); const a = (app as any).audio; a.unlock(); a.setMenuMusic(false); playCredits(document.body, a, () => app.mainMenu()); };
+    document.body.appendChild(go);
+  });
 } else if (q.get('dev')) {
-  app.devStart((q.get('diff') as any) || 'normal', sandbox ? -1 : Number(fl), q.get('torch') === '1', sandbox ? { god: true, ammo: true, torch: true } : { god: q.get('god') === '1', ammo: q.get('ammo') === '1', torch: q.get('torch') === '1' });
+  const squad = (q.get('squad') ?? '').split(',').filter(Boolean).slice(0, 4).map((c) => (c === 'random' || (BOT_CLASSES as string[]).includes(c) ? c : null)) as SquadPick[];
+  app.devStart((q.get('diff') as any) || 'normal', sandbox ? -1 : Number(fl), q.get('torch') === '1', sandbox ? { god: true, ammo: true, torch: true } : { god: q.get('god') === '1', ammo: q.get('ammo') === '1', torch: q.get('torch') === '1' }, sandbox ? [] : squad);
 }

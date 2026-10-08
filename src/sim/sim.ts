@@ -13,9 +13,12 @@ import { lightLevel, lightOut, makePanels } from './lights';
 import { createPlayer, updatePlayer } from './player';
 import { enemyStatsFor } from './stats';
 import { makeEnemy, emptyInput } from './state';
-import type { FloorState, Loadout, Mode, PlayerState, SimEvent, TrapState, VendingState, Enemy } from './state';
+import type { BotInfo, FloorState, Loadout, Mode, PlayerState, SimEvent, TrapState, VendingState, Enemy } from './state';
 import { currentHoliday, type Holiday } from '../config/holiday';
 import type { EnemyType } from './types';
+import { scoreFloor, newScore } from './score';
+import { SQUAD_MEMBERS } from '../config/bots';
+import { botKit, botThink } from './bot';
 
 /** friendlyFire: co-op host option (bullets, knife and grenades hurt teammates); off by default */
 /** holiday: the festive theme this run plays under (Halloween turns loyalists and cyborgs into melee zombies). */
@@ -35,7 +38,8 @@ export class Sim {
   events: SimEvent[] = [];
   clearedFlights = new Set<string>();
   objective = { uploadStarted: false, uploadT: SHUTDOWN_SECONDS, done: false, by: -1 };
-  stats = { kills: 0, maxFloor: 0, startT: 0, endT: 0 };
+  /** startT: when the first player entered the building (-1 = still on the street) */
+  stats = { kills: 0, maxFloor: 0, startT: -1, endT: 0 };
   /** players whose movement is authoritative on a remote client */
   external = new Set<number>();
   onTravel: ((p: PlayerState, from: number, to: number) => void) | null = null;
@@ -73,6 +77,20 @@ export class Sim {
     this.players.push(p);
     return p;
   }
+
+  /** Single player: an AI squadmate (sim/bot.ts) with a free class kit, the member's fixed look, checked in. */
+  addBot(info: BotInfo): PlayerState {
+    const kit = botKit(info.cls, this.cfg.difficulty, new Rng(hash(this.cfg.seed, 0xb07, info.member)));
+    const p = this.addPlayer(100 + info.member, `${info.rank} ${info.surname}`, kit);
+    p.bot = { ...info };
+    p.look = { ...SQUAD_MEMBERS[info.member].look };
+    p.checkedIn = true;
+    return p;
+  }
+  /** Single player with a squad: quitting while downed would dodge the loss, so it counts as one. */
+  quitCountsAsLoss(): boolean { const me = this.cfg.mode === 'single' ? this.human() : undefined; return !!me && me.life === 'down'; }
+  /** The person playing (single player): the first non-bot player. */
+  human(): PlayerState | undefined { return this.players.find((p) => !p.bot); }
 
   player(id: number) { return this.players.find((p) => p.id === id); }
 
@@ -128,7 +146,7 @@ export class Sim {
   tick(dt: number) {
     if (this.phase !== 'playing') return;
     this.t += dt;
-    for (const p of this.players) updatePlayer(this, p, dt, this.external.has(p.id));
+    for (const p of this.players) { if (p.bot) botThink(this, p, dt); updatePlayer(this, p, dt, this.external.has(p.id)); }
     const active = new Set<number>();
     for (const p of this.players) if (p.life !== 'out' && p.connected) active.add(p.floor);
     for (const f of active) this.updateFloor(this.floorState(f), dt);
@@ -358,6 +376,8 @@ export class Sim {
     (p as any).tp = ((p as any).tp ?? 0) + 1;
     (p as any).stairCd = 1.2; // don't immediately walk back onto a flight after arriving
     this.emit({ e: 'travel', pid: p.id, from, to, via });
+    if (!p.bot && to >= 1 && this.stats.startT < 0) this.stats.startT = this.t;
+    if (!p.bot && to >= 1) scoreFloor(p.score, to, this.t);
     if (to > this.stats.maxFloor) {
       this.stats.maxFloor = to;
       const bi = bracketInfo(to);
@@ -367,6 +387,8 @@ export class Sim {
         this.msg(null, `Floor ${to}: ${bi.name}. ${bi.desc}`, 'warn');
       }
     }
+    // the squad never gets left behind: every bot not out arrives beside the human (downed ones too, to be revived)
+    if (!p.bot && from !== to) for (const b of this.players) if (b.bot && b.life !== 'out' && b.floor !== to) this.travel(b, to, tag, 'follow');
     this.onTravel?.(p, from, to);
   }
 
@@ -377,7 +399,8 @@ export class Sim {
     p.torchOn = false;
     p.hold = null;
     p.ride = null;
-    if (this.cfg.mode === 'single') {
+    const solo = this.cfg.mode === 'single' && !p.bot && !this.players.some((b) => b.bot && b.life === 'alive');
+    if (solo) {
       p.life = 'out';
       this.emit({ e: 'out', pid: p.id });
     } else {
@@ -409,10 +432,14 @@ export class Sim {
     if (this.phase !== 'playing' || !this.players.length) return;
     const alive = this.players.filter((p) => p.life === 'alive' && p.connected);
     const pending = this.players.filter((p) => p.life === 'down' && p.connected);
-    if (!alive.length) {
+    const me = this.cfg.mode === 'single' ? this.human() : undefined;
+    const squad = this.players.some((p) => p.bot);
+    if (!alive.length || (me && me.life === 'out')) {
       this.phase = 'lost';
       this.stats.endT = this.t;
-      this.lostReason = this.cfg.mode === 'single' ? 'Killed in action. One life — the run is over.' : pending.length ? 'The whole squad is down. Nobody left to revive.' : 'Squad wiped out.';
+      this.lostReason = me && me.life === 'out' && squad && alive.length ? 'You bled out. The squad pulls back without you.'
+        : this.cfg.mode === 'single' && !squad ? 'Killed in action. One life — the run is over.'
+        : pending.length || squad ? 'The whole squad is down. Nobody left to revive.' : 'Squad wiped out.';
     }
   }
 
@@ -516,8 +543,12 @@ export class Sim {
       player: {
         name: p.name, hp: p.hp, armor: p.armor, helmet: p.helmet, injured: p.injured, vest: (p as any).vest,
         weapons: JSON.parse(JSON.stringify(p.weapons)), sel: p.sel, ammo: { ...p.ammo }, grenades: { ...p.grenades }, items: { ...p.items },
-        mods: { ...p.mods }, battery: p.battery, kills: p.kills, checkedIn: p.checkedIn, loadout: p.loadout, coins: p.coins, keys: [...p.keys], look: p.look,
+        mods: { ...p.mods }, battery: p.battery, kills: p.kills, score: { ...p.score }, checkedIn: p.checkedIn, loadout: p.loadout, coins: p.coins, keys: [...p.keys], look: p.look,
       },
+      bots: this.players.filter((b) => b.bot && b.life !== 'out').map((b) => ({
+        bot: b.bot!, life: b.life as 'alive' | 'down', downT: b.downT, hp: b.hp, armor: b.armor, helmet: b.helmet, injured: b.injured, vest: (b as any).vest,
+        weapons: JSON.parse(JSON.stringify(b.weapons)), sel: b.sel, ammo: { ...b.ammo }, grenades: { ...b.grenades }, items: { ...b.items }, mods: { ...b.mods }, battery: b.battery, kills: b.kills,
+      })),
     };
   }
   static fromSave(s: ReturnType<Sim['exportSave']>, id: number): Sim {
@@ -528,10 +559,16 @@ export class Sim {
     p.checkedIn = (s.player as any).checkedIn ?? true; // saves from before check-in existed were already kitted
     p.loadout = (s.player as any).loadout;
     if (s.player.look) p.look = sanitizeLook(s.player.look);
+    p.score = { ...newScore(), ...(s.player as any).score };
     p.coins = s.player.coins ?? 0; p.keys = s.player.keys ?? []; // older saves had neither
     for (const c of s.cleared) sim.clearedFlights.add(c);
     sim.stats = { ...s.stats };
     sim.t = s.t;
+    for (const sb of (s as any).bots ?? []) { // before the resume travel, so the squad arrives with the human
+      const b = sim.addBot(sb.bot);
+      Object.assign(b, { life: sb.life, downT: sb.downT, hp: sb.hp, armor: sb.armor, helmet: sb.helmet, injured: sb.injured, weapons: sb.weapons, sel: sb.sel, ammo: sb.ammo, grenades: sb.grenades, items: sb.items, mods: sb.mods, battery: sb.battery, kills: sb.kills });
+      (b as any).vest = sb.vest;
+    }
     const tag = s.floor === 0 ? 'start' : 'stair0';
     if (s.floor > 0) sim.travel(p, s.floor, tag, 'resume');
     return sim;

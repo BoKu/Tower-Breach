@@ -9,6 +9,7 @@ export interface ViewSource {
   flightCondition(f: number, i: number): StairCondition;
   plan: BuildingPlan;
   objective: { uploadStarted: boolean; uploadT: number; done: boolean };
+  stats: { startT: number; endT: number };
   cfg: { mode: 'single' | 'coop'; difficulty: string; seed: number };
 }
 

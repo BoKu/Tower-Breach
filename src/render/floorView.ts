@@ -53,7 +53,7 @@ function kitOf(key: string, make: () => Parts): Kit {
   let k = kits.get(key);
   if (k) { kits.delete(key); kits.set(key, k); return k; } // most recently used last
   const parts = make();
-  const shared = (g: THREE.BufferGeometry | null) => { if (g) g.userData.shared = true; return g; };
+  const shared = (g: THREE.BufferGeometry | null) => { if (g) { g.userData.shared = true; g.userData.kit = key; } return g; }; // kit = name, for profiling
   k = { solid: shared(merge(parts.solid)), emit: shared(merge(parts.emit)), glass: shared(merge(parts.glass)), screen: parts.screen, mirror: parts.mirror, verts: 0 };
   k.verts = (k.solid?.attributes.position.count ?? 0) + (k.emit?.attributes.position.count ?? 0) + (k.glass?.attributes.position.count ?? 0);
   kits.set(key, k);

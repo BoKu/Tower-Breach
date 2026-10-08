@@ -34,7 +34,8 @@ Three years ago an AI called **SOVEREIGN** took the grid. It runs the country fr
 You carry **LULLABY**, a kill-switch virus on a USB drive. Fight, sneak and hack your way up, floor by floor, then
 plug it into the mainframe. That starts a 60-second shutdown, and everything left in the tower comes for you.
 
-You get one life. Each run is a new tower. You can go in alone or with up to four friends.
+You get one life. Each run is a new tower. You can go in alone, with up to four AI squadmates, or with up to four
+friends.
 
 <p align="center"><img src="docs/screenshots/firefight.jpg" alt="A firefight on floor 12" width="100%"></p>
 
@@ -65,6 +66,13 @@ You get one life. Each run is a new tower. You can go in alone or with up to fou
   (as do SMGs), shotguns stagger and one-shot dogs, sniper rounds pierce two enemies, machine guns pin enemies down.
 - 🎨 **Your operator, your look.** Pick a skin tone, a uniform colour, a camo pattern (woodland, desert digital,
   urban, tiger stripe) and an optional balaclava in the armory, with a live 3D preview. Your squad sees it too.
+- 🪖 **AI squad (single player).** Take up to four squadmates, each with a class: Rifleman, Breacher, Gunner,
+  Commando, Marksman, Grenadier, Medic or Recon. They follow you floor to floor, fight to their class, heal, and
+  revive you (you go down instead of dying while one is standing). Each run gives them a new name and rank.
+- 🏆 **Points and a speedrun clock.** Score for new floors, speed, kills (double for knife kills), accuracy, hacks and
+  searches, plus a bonus for the upload. A discreet `hh:mm:ss.ssss` clock starts at the tower door. Every run, won or
+  lost, goes into the Hall of Records, with a top-score board and a fastest board.
+- 🎬 **End credits.** Win and the story closes with a credits roll, its own closing theme, and a post-credits scene.
 - 👥 **Co-op for up to 5.** Cross-play between the desktop app and the browser, proximity voice chat, and revives
   with a Health Kit. Friendly fire is optional.
 - ✨ **Lighting and reflections.** Every lamp casts its own coloured light, mirrors show you and the enemy, and an

@@ -1,6 +1,6 @@
 {
   "name": "tower-breach",
-  "version": "1.9.2",
+  "version": "1.10.0",
   "private": true,
   "type": "module",
   "description": "TOWER BREACH - isometric co-op tactical survival game (WebGL)",

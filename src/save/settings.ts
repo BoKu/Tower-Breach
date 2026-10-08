@@ -76,12 +76,24 @@ export const loadLook = (): PlayerLook => sanitizeLook(load('look', null));
 export function saveLook(l: PlayerLook) { save('look', l); }
 
 // ------------------------------------------------------------------ score records (Hall of Records)
-/** One finished run. date: ISO 8601 (e.g. 2026-10-01T09:30:00.000Z); time: run length in seconds. */
-export interface ScoreRecord { name: string; difficulty: 'normal' | 'hard' | 'insane'; floor: number; kills: number; time: number; won: boolean; date: string }
-const MAX_RECORDS = 50;
-/** Rank: wins first, then highest floor, then more kills, then faster. */
+/**
+ * One finished run, won or lost. date: ISO 8601 (e.g. 2026-10-01T09:30:00.000Z); time: run clock in seconds
+ * (from entering the tower, fractional). score and the stats after it arrived in 1.10.0; older records lack them.
+ */
+export interface ScoreRecord {
+  name: string; difficulty: 'normal' | 'hard' | 'insane'; floor: number; kills: number; time: number; won: boolean; date: string;
+  score?: number; knife?: number; accuracy?: number; hacks?: number; searches?: number; speed?: number;
+  /** squadmates taken on the run (1.11.0+) */
+  bots?: number;
+}
+const MAX_RECORDS = 100;
+/** Score board: highest score first (records without a score last), then faster. */
 export function rankRecords(a: ScoreRecord, b: ScoreRecord) {
-  return Number(b.won) - Number(a.won) || b.floor - a.floor || b.kills - a.kills || a.time - b.time;
+  return (b.score ?? -1) - (a.score ?? -1) || a.time - b.time;
+}
+/** Speed board: wins first, then furthest floor, then fastest. */
+export function rankBySpeed(a: ScoreRecord, b: ScoreRecord) {
+  return Number(b.won) - Number(a.won) || b.floor - a.floor || a.time - b.time;
 }
 export function loadRecords(): ScoreRecord[] { return load<ScoreRecord[]>('records', []); }
 /** Store a run; returns its 1-based rank within its difficulty. */

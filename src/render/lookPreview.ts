@@ -13,6 +13,7 @@ void main() {
   col = mix(col, l * vec3(0.45, 1.3, 1.45), 0.18); // phosphor cast (the colours stay readable)
   col *= 0.9 + 0.1 * sin(vUv.y * res.y * 1.5708); // scanlines
   col *= 0.97 + 0.03 * sin(t * 61.0) * sin(t * 7.3); // faint flicker
+  col += (fract(sin(dot(floor(vUv * res) + floor(t * 24.0), vec2(12.9898, 78.233))) * 43758.5453) - 0.5) * 0.05; // film grain
   vec2 d = vUv - 0.5;
   col *= 1.0 - dot(d, d) * 1.1; // vignette
   col += vec3(0.0, 0.035, 0.045) * (1.0 - length(d) * 1.6); // screen glow

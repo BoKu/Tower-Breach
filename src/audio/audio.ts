@@ -1,6 +1,7 @@
 import { Synth } from './synth';
 import { Soundscape } from './soundscape';
 import { renderMenuLoop } from './menuMusic';
+import { renderCreditsTheme, renderRootLink } from './creditsMusic';
 import { weapon } from '../config/weapons';
 import { currentHoliday } from '../config/holiday';
 import { dist } from '../core/math';
@@ -27,6 +28,10 @@ export class GameAudio {
   private menuWanted = false;
   private menuBuf: Promise<AudioBuffer> | null = null;
   private menu: { src: AudioBufferSourceNode; g: GainNode } | null = null;
+  private tracks: { credits?: Promise<AudioBuffer>; root?: Promise<AudioBuffer> } = {};
+  private track: { src: AudioBufferSourceNode; g: GainNode } | null = null;
+  /** bumped on every play/stop, so a track still rendering never starts after it was replaced or stopped */
+  private trackTok = 0;
   private street: AudioBuffer | null = null;
   private streetLoad: Promise<AudioBuffer | null> | null = null;
   private tensionGain: GainNode | null = null;
@@ -61,6 +66,31 @@ export class GameAudio {
     // 48 kHz; a buffer source resamples if the device runs at another rate.
     if (on) { this.menuBuf ??= renderMenuLoop(48000); void this.loadStreet(); }
     this.syncMenu();
+  }
+  /** Render the closing theme and post-credits sting ahead of time (offline; no user gesture needed). */
+  prepareCredits() {
+    this.tracks.credits ??= renderCreditsTheme(48000);
+    this.tracks.root ??= renderRootLink(48000);
+  }
+  /** Play one credits track once on the music bus (replacing any other). */
+  playTrack(k: 'credits' | 'root') {
+    this.prepareCredits();
+    this.stopTrack(0.3);
+    const tok = ++this.trackTok;
+    this.tracks[k]!.then((buf) => {
+      const s = this.s; if (!s || tok !== this.trackTok) return;
+      const src = s.ctx.createBufferSource(); src.buffer = buf;
+      const g = s.gain(1);
+      src.connect(g).connect(s.music); src.start();
+      this.track = { src, g };
+    }).catch(() => { this.tracks[k] = undefined; });
+  }
+  stopTrack(fade = 1) {
+    this.trackTok++;
+    const s = this.s, tr = this.track; if (!s || !tr) return;
+    this.track = null;
+    tr.g.gain.cancelScheduledValues(s.now); tr.g.gain.setValueAtTime(tr.g.gain.value, s.now); tr.g.gain.linearRampToValueAtTime(0, s.now + fade);
+    tr.src.stop(s.now + fade + 0.05);
   }
   /** Street ambience recording (public/audio/street.mp3, moddable), made seamlessly loopable. Null if it can't load. */
   loadStreet(): Promise<AudioBuffer | null> {

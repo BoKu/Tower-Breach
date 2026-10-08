@@ -348,6 +348,29 @@ function policeHead(hb: Builder, skin: number, lk: OfficerLook, santa = false, b
 
 const L_UP = 0.3, L_FORE = 0.29, L_THIGH = 0.45, L_SHIN = 0.45;
 
+/** Combat knife along +z (grip centred on the origin): clip-point blade, dark coating with a honed edge, crossguard, ridged grip, pommel. */
+function combatKnife(): Builder {
+  const b = new Builder();
+  // blade outline (length along u, height along v), extruded thin, then turned so its length runs along +z
+  const sh = new THREE.Shape();
+  sh.moveTo(0, -0.015);
+  sh.lineTo(0.11, -0.016);
+  sh.quadraticCurveTo(0.165, -0.012, 0.175, 0.004); // belly up to the tip
+  sh.lineTo(0.13, 0.009); // clip point back to the spine
+  sh.lineTo(0, 0.012);
+  sh.lineTo(0, -0.015);
+  const blade = new THREE.ExtrudeGeometry(sh, { depth: 0.003, bevelEnabled: true, bevelThickness: 0.0012, bevelSize: 0.0015, bevelSegments: 1 });
+  blade.rotateY(-Math.PI / 2);
+  blade.translate(0.0015, 0, 0.058);
+  b.geo(blade, 0x2c3035, 0, 0, 0);
+  b.box(0.0045, 0.004, 0.13, 0, -0.0135, 0.115, 0xc9d0d6); // honed edge
+  b.box(0.012, 0.052, 0.012, 0, -0.002, 0.054, 0x3a3d42); // crossguard
+  b.geo(new THREE.CylinderGeometry(0.0125, 0.0115, 0.1, 12), 0x18191b, 0, 0, 0, Math.PI / 2, 0, 0, 'solid', 0.8, 1, 1); // grip
+  for (const z of [-0.025, 0, 0.025]) b.geo(new THREE.CylinderGeometry(0.0135, 0.0135, 0.006, 12), 0x26282b, 0, 0, z, Math.PI / 2, 0, 0, 'solid', 0.8, 1, 1); // finger ridges
+  b.rbox(0.02, 0.026, 0.014, 0.005, 0, 0, -0.055, 0x3a3d42); // pommel
+  return b;
+}
+
 export class OperatorRig {
   root = new THREE.Group();
   private model = new THREE.Group();
@@ -362,6 +385,8 @@ export class OperatorRig {
   private gun: GunModel | null = null;
   private gunKind: GunKind | null | undefined = undefined;
   private knife: THREE.Group;
+  /** player's right hand: open (holding guns) or a fist (holding the knife) */
+  private hands: { open: THREE.Object3D; fist: THREE.Object3D } | null = null;
   private strobe: THREE.Mesh;
   // animation state
   private phase = 0;
@@ -509,7 +534,6 @@ export class OperatorRig {
     } else if (dentist) {
       // clinic coat (or scrub top): lapels, name badge, breast pocket with pens; cyborgs keep the spine implant and core
       cb.limb(0.145, 0.64, 0, 0.44, 0, D.coat, 0, 0, 1.25, 0.8)
-        .rbox(0.16, 0.06, 0.14, 0.03, 0, 0.47, 0, scrubs ? D.coat2 : D.coat) // collar
         .rbox(0.07, 0.08, 0.012, 0.006, -0.1, 0.24, 0.115, D.coat2) // breast pocket
         .rbox(0.07, 0.022, 0.012, 0.004, 0.1, 0.33, 0.118, D.badge); // name badge
       for (const [x, c] of [[-0.115, 0x2050c0], [-0.095, 0xc02020]] as [number, number][]) cb.geo(new THREE.CylinderGeometry(0.006, 0.006, 0.06, 6), c, x, 0.29, 0.118);
@@ -539,7 +563,6 @@ export class OperatorRig {
         .rbox(0.11, 0.025, 0.1, 0.008, 0.2, 0.43, 0, NAVY2).rbox(0.11, 0.025, 0.1, 0.008, -0.2, 0.43, 0, NAVY2) // epaulettes
         .rbox(0.045, 0.065, 0.035, 0.01, -0.13, 0.4, 0.12, P.black) // shoulder mic
         .geo(new THREE.CylinderGeometry(0.004, 0.004, 0.08), P.black, -0.13, 0.46, 0.12)
-        .rbox(0.15, 0.06, 0.13, 0.03, 0, 0.47, 0, NAVY) // collar
         .rbox(0.02, 0.2, 0.012, 0.005, 0, 0.3, 0.125, 0x10182e); // tie/placket
     } else if (zom) {
       // torn shirt: rotting skin through the rips, blood down the front, rags hanging off the hem
@@ -547,8 +570,7 @@ export class OperatorRig {
         .rbox(0.12, 0.1, 0.02, 0.03, 0.07, 0.3, 0.115, skin, 0, 0, 0.4).rbox(0.09, 0.07, 0.02, 0.02, -0.12, 0.1, 0.11, skin, 0, 0, -0.3)
         .rbox(0.07, 0.04, 0.012, 0.01, 0.07, 0.3, 0.126, ROT, 0, 0, 0.4) // wound
         .rbox(0.1, 0.2, 0.012, 0.02, -0.04, 0.24, 0.123, BLOOD, 0, 0, 0.15).rbox(0.05, 0.12, 0.012, 0.015, 0.1, 0.05, 0.12, BLOOD)
-        .rbox(0.07, 0.1, 0.02, 0.01, -0.13, -0.03, 0.09, P.uniform, 0.25, 0, 0.3).rbox(0.06, 0.09, 0.02, 0.01, 0.1, -0.04, -0.09, P.uniform, -0.25, 0, -0.2) // rags
-        .rbox(0.16, 0.06, 0.14, 0.03, 0, 0.47, 0, P.uniform2); // collar
+        .rbox(0.07, 0.1, 0.02, 0.01, -0.13, -0.03, 0.09, P.uniform, 0.25, 0, 0.3).rbox(0.06, 0.09, 0.02, 0.01, 0.1, -0.04, -0.09, P.uniform, -0.25, 0, -0.2) // rags;
       if (cyb) {
         // flesh peeled off the implants: bare metal ribs, cables and a cracked core
         for (let i = 0; i < 3; i++) cb.rbox(0.15, 0.022, 0.03, 0.01, -0.09, 0.32 - i * 0.065, 0.1, 0x8a9096, 0, 0, -0.12);
@@ -557,7 +579,7 @@ export class OperatorRig {
         cb.rbox(0.05, 0.05, 0.015, 0.01, 0.04, 0.3, 0.13, 0xff2020, 0, 0, 0.5, 'emit');
       }
     } else if (op) {
-      camo(cb, true, () => cb.limb(0.15, 0.64, 0, 0.44, 0, P.uniform, 0, 0, 1.28, 0.8).rbox(0.16, 0.06, 0.14, 0.03, 0, 0.47, 0, P.uniform2)); // shirt, collar
+      camo(cb, true, () => cb.limb(0.15, 0.64, 0, 0.44, 0, P.uniform, 0, 0, 1.28, 0.8)); // shirt
       // shaped plate carrier: front bag with a tapered top, back plate, cummerbund wrapping the sides
       cb.rbox(0.38, 0.3, 0.1, 0.035, 0, 0.22, 0.1, KIT.plate).rbox(0.3, 0.07, 0.09, 0.03, 0, 0.39, 0.095, KIT.plate)
         .rbox(0.36, 0.3, 0.08, 0.03, 0, 0.24, -0.1, KIT.plate).rbox(0.29, 0.07, 0.07, 0.03, 0, 0.4, -0.095, KIT.plate)
@@ -587,8 +609,7 @@ export class OperatorRig {
         .rbox(0.36, 0.05, 0.22, 0.02, 0, 0.1, 0, P.strap) // cummerbund
         .rbox(0.075, 0.11, 0.05, 0.015, -0.12, 0.16, 0.17, P.pouch).rbox(0.075, 0.11, 0.05, 0.015, 0, 0.16, 0.17, P.pouch).rbox(0.075, 0.11, 0.05, 0.015, 0.12, 0.16, 0.17, P.pouch)
         .rbox(0.07, 0.06, 0.04, 0.012, -0.11, 0.3, 0.16, P.pouch) // radio/admin
-        .rbox(0.04, 0.12, 0.03, 0.01, -0.12, 0.36, 0.14, P.black) // radio antenna base
-        .rbox(0.16, 0.06, 0.14, 0.03, 0, 0.47, 0, P.uniform2); // collar
+        .rbox(0.04, 0.12, 0.03, 0.01, -0.12, 0.36, 0.14, P.black) // radio antenna base;
       if (loy) cb.rbox(0.2, 0.2, 0.08, 0.03, 0, 0.2, -0.16, P.pouch); // small daypack
       if (cyb) {
         // spinal implant, cable bundles and a glowing chest core
@@ -601,11 +622,11 @@ export class OperatorRig {
     this.chest.add(meshes(cb, M.gear, 1));
     // head
     this.chest.add(this.neck);
-    this.neck.position.set(0, 0.5, 0.01);
+    this.neck.position.set(0, 0.455, 0.01); // head low on the shoulders: a long bare neck read as a stalk under the chunky heads and helmets
     this.neck.add(this.head);
     this.head.position.y = 0.1;
     const hb = new Builder()
-      .limb(0.056, 0.2, 0, 0.02, 0, skin) // neck: reaches into the collar so head and torso read as one
+      .limb(0.064, 0.2, 0, 0.02, 0, skin) // neck: reaches into the collar so head and torso read as one
       .geo(new THREE.SphereGeometry(0.105, 16, 12), skin, 0, 0.06, 0.01, 0, 0, 0, 'solid', 0.9, 1.05, 1);
     if (cop) {
       policeHead(hb, skin, opts.look ?? {}, santa, bunny ? SUIT : undefined);
@@ -691,7 +712,7 @@ export class OperatorRig {
       if (lk.balaclava) {
         // black knit balaclava over head and neck: only an eye band of skin shows (the helmet sits on top)
         const KNIT = 0x16181b;
-        hb.limb(0.062, 0.2, 0, 0.02, 0, KNIT) // neck
+        hb.limb(0.07, 0.2, 0, 0.02, 0, KNIT) // neck
           .geo(new THREE.SphereGeometry(0.112, 16, 12), KNIT, 0, 0.06, 0.012, 0, 0, 0, 'solid', 0.92, 1.06, 1.02) // head
           .geo(new THREE.SphereGeometry(0.074, 12, 9), KNIT, 0, 0.018, 0.04, 0, 0, 0, 'solid', 1.07, 0.8, 1.02) // jaw
           .rbox(0.104, 0.04, 0.02, 0.014, 0, 0.074, 0.112, skin); // eye opening, just proud of the knit
@@ -744,7 +765,18 @@ export class OperatorRig {
       }
       if (dentist && metal) { hb2.geo(new THREE.CylinderGeometry(0.012, 0.012, 0.03, 8), 0x3a3e44, 0.02, -0.095, 0.02); spike(hb2, EA.chrome, V(0.02, -0.11, 0.02), DOWN, 0.06, 0.007, 0.002, 6); } // drill-tipped finger
       if (zom) for (const fx of [-0.022, 0, 0.022]) hb2.limb(0.009, 0.07, fx, -0.08, 0.02, metal ? 0x8a9096 : 0x2a2618, 0.5); // claws
-      a.hand.add(meshes(hb2, M.cloth));
+      const open = meshes(hb2, M.cloth);
+      a.hand.add(open);
+      if (op && side === 'R') {
+        // knife hand: a closed fist around the grip (swapped in while the knife is out)
+        const fb = new Builder().rbox(0.068, 0.062, 0.042, 0.018, 0, -0.03, 0.005, hand);
+        [-0.024, -0.008, 0.008, 0.024].forEach((fx) => fb.limb(0.0095, 0.05, fx, -0.052, 0.0, skin, -1.75)); // fingers curled forward over the grip
+        fb.limb(0.0095, 0.045, -sgn * 0.03, -0.035, 0.02, skin, -0.9, -sgn * 0.35); // thumb wrapped over the fingers
+        const fist = meshes(fb, M.cloth);
+        fist.visible = false;
+        a.hand.add(fist);
+        this.hands = { open, fist };
+      }
     }
     // legs
     for (const side of ['L', 'R'] as const) {
@@ -790,10 +822,10 @@ export class OperatorRig {
       l.foot.add(meshes(ftb, M.gear));
     }
     this.chest.add(this.gunHolder);
-    const kb = new Builder().rbox(0.025, 0.03, 0.1, 0.008, 0, 0, 0, P.black).geo(new THREE.BoxGeometry(0.006, 0.03, 0.16), 0xb8c0c8, 0, 0.005, 0.12);
-    this.knife = meshes(kb, gunMat);
-    this.knife.rotation.x = 0.4;
-    this.knife.position.set(0, -0.08, 0.03);
+    this.knife = meshes(combatKnife(), gunMat);
+    // forward grip: the handle runs across the fist, the blade comes out of the thumb side
+    this.knife.rotation.set(0, -Math.PI / 2, 0);
+    this.knife.position.set(0.006, -0.066, 0.03);
     this.knife.visible = false;
     this.arm.R.hand.add(this.knife);
   }
@@ -806,6 +838,7 @@ export class OperatorRig {
     this.gun = kind ? buildGun(kind, true, suppressed) : null;
     if (this.gun) this.gunHolder.add(this.gun.g);
     this.knife.visible = !kind && this.outfit === 'operator';
+    if (this.hands) { this.hands.fist.visible = this.knife.visible; this.hands.open.visible = !this.knife.visible; }
   }
 
   private firedT = 0;
@@ -850,6 +883,7 @@ export class OperatorRig {
   }
 
   update(r: RigInput) {
+    this.arm.R.hand.rotation.set(0, 0, 0); // only the knife guard twists the wrist
     const dt = Math.max(1e-4, r.dt), k = (rate: number) => 1 - Math.exp(-dt * rate);
     this.root.position.set(r.x, 0, r.y);
     this.root.rotation.y = -r.facing + Math.PI / 2;
@@ -986,9 +1020,11 @@ export class OperatorRig {
     } else {
       // knife: guard stance, slash on melee
       const q = this.slashT > 0 ? 1 - this.slashT / 0.3 : -1;
-      const right = q >= 0 ? V(0.28 - q * 0.45, 0.32 - q * 0.08, 0.12 + Math.sin(q * Math.PI) * 0.42) : V(0.16, 0.12 + breathe, 0.3);
+      // fighting guard: knife hand forward and low, the other hand up and open to parry
+      const right = q >= 0 ? V(0.28 - q * 0.45, 0.32 - q * 0.08, 0.12 + Math.sin(q * Math.PI) * 0.42) : V(0.2, 0.06 + breathe, 0.36);
       this.ik('R', right, poleR);
-      this.ik('L', this.throwT > 0 ? V(-0.1, 0.45, 0.5) : V(-0.14, 0.16, 0.3), poleL);
+      this.arm.R.hand.rotation.set(0, Math.PI / 2, 0.75); // wrist turned thumb-up so the blade rises forward out of the fist
+      this.ik('L', this.throwT > 0 ? V(-0.1, 0.45, 0.5) : V(-0.1, 0.34 + breathe, 0.28), poleL);
     }
     if (this.slashT > 0 && this.gun) {
       // rifle-butt / knife jab with the gun up: quick forward lunge of the torso

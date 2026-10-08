@@ -11,6 +11,7 @@ import { parseArgs } from 'node:util';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { SquadAuthority } from '../net/authority';
 import { NET_VERSION, sameRelease, versionMismatch, cleanName } from '../net/protocol';
+import { runTime } from '../sim/score';
 import { startTunnel, publicIp, reachesUs, type Tunnel } from './tunnel';
 import { DEDICATED_PORT } from '../net/transport';
 import { VOICE, VOICE_UP, packVoice } from '../net/voice';
@@ -252,7 +253,7 @@ class DedicatedSquad extends SquadAuthority {
       if (sim.stats.maxFloor > this.maxFloor) { this.maxFloor = sim.stats.maxFloor; this.log(`Squad reached floor ${this.maxFloor}`); }
       if (sim.phase !== 'playing' && !this.endAt) {
         this.endAt = Date.now() + END_HOLD_MS;
-        const secs = Math.round(sim.stats.endT - sim.stats.startT);
+        const secs = Math.round(runTime(sim.stats, sim.t));
         this.log(`Run ${sim.phase === 'won' ? 'WON' : `lost (${sim.lostReason})`} · highest floor ${sim.stats.maxFloor} · ${sim.stats.kills} kills · ${Math.floor(secs / 60)}m${secs % 60}s`);
       }
       // run over and its end screen shown, or everyone has left (mid-run too): reset for a new round

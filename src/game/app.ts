@@ -15,7 +15,11 @@ import { Sim } from '../sim/sim';
 import { HostSession } from '../net/host';
 import { ClientSession, ClientView } from '../net/client';
 import { defaultServerUrl, normalizeServerAddress } from '../net/transport';
-import { loadSettings, saveSettings, Settings, ACTION_LABEL, DEFAULT_BINDINGS, keyLabel, Action, loadRecords, addRecord, loadLook } from '../save/settings';
+import { loadSettings, saveSettings, Settings, ACTION_LABEL, DEFAULT_BINDINGS, keyLabel, Action, loadRecords, addRecord, loadLook, rankRecords, rankBySpeed, type ScoreRecord } from '../save/settings';
+import { finalScore, runTime, fmtRunTime, scoreRows } from '../sim/score';
+import { playCredits } from '../ui/credits';
+import { makeSquad, type SquadPick } from '../sim/bot';
+import { BOT_CLASS, BOT_CLASSES, SQUAD_MEMBERS } from '../config/bots';
 import { load, save, remove, storageAvailable } from '../save/storage';
 import { randomSeed } from '../core/rng';
 import { DIFFICULTIES, Difficulty, DIFF_BASE, FINAL_FLOOR } from '../config/difficulty';
@@ -95,7 +99,7 @@ export class App {
   private paused = false;
   private acc = 0;
   private last = performance.now();
-  private overlay = { vignette: h('div', { class: 'vignette' }), hurt: h('div', { class: 'hurtflash' }), white: h('div', { class: 'whiteflash' }), low: h('div', { class: 'lowhp' }), grain: h('div', { class: 'grain' }), scan: h('div', { class: 'scan' }) };
+  private overlay = { vignette: h('div', { class: 'vignette' }), hurt: h('div', { class: 'hurtflash' }), white: h('div', { class: 'whiteflash' }), low: h('div', { class: 'lowhp' }) };
   private crosshair = h('div', { class: 'crosshair' }, h('div', { class: 'ring' }), h('div', { class: 'dot' }));
   private cursor = h('div', { class: 'cursor' });
   private tags = new NameTags();
@@ -136,8 +140,7 @@ export class App {
       throw e;
     }
     this.audio.setVolumes(this.settings.masterVol, this.settings.sfxVol, this.settings.musicVol);
-    this.overlay.grain.style.backgroundImage = `url(${this.grainUrl()})`;
-    this.ui.append(this.tags.root, this.overlay.vignette, this.overlay.scan, this.overlay.grain, this.overlay.low, this.overlay.hurt, this.overlay.white, this.crosshair, this.cursor);
+    this.ui.append(this.tags.root, this.overlay.vignette, this.overlay.low, this.overlay.hurt, this.overlay.white, this.crosshair, this.cursor);
     this.input.onAction = (a) => this.onAction(a);
     window.addEventListener('pointerdown', () => { this.audio.unlock(); this.voice?.resume(); }, { capture: true });
     window.addEventListener('keydown', () => { this.audio.unlock(); this.voice?.resume(); }, { capture: true });
@@ -155,16 +158,6 @@ export class App {
     requestAnimationFrame((t) => this.frame(t));
     // Browsers stop requestAnimationFrame in background tabs; a co-op host must keep simulating.
     setInterval(() => { if (document.hidden && this.session && this.session.kind !== 'local') this.frame(performance.now(), true); }, 33);
-  }
-
-  private grainUrl(): string {
-    const c = document.createElement('canvas');
-    c.width = c.height = 128;
-    const g = c.getContext('2d')!;
-    const img = g.createImageData(128, 128);
-    for (let i = 0; i < img.data.length; i += 4) { const v = Math.random() * 255; img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255; }
-    g.putImageData(img, 0, 0);
-    return c.toDataURL();
   }
 
   private fatal(msg: string) {
@@ -217,7 +210,7 @@ export class App {
       h('div', { class: 'subtitle' }, 'Two hundred floors between you and the mainframe.'),
       h('div', { class: 'menu' },
         saveData ? this.btn(`Continue — Floor ${saveData.floor} (${saveData.difficulty})`, () => this.continueRun(saveData), 'primary') : null,
-        this.btn('Single Player', () => this.difficultyScreen((d) => this.spStart(d))),
+        this.btn('Single Player', () => this.difficultyScreen((d) => this.squadScreen(d))),
         this.btn('Co-op (up to 5)', () => this.coopScreen()),
         this.btn('Hall of Records', () => this.recordsScreen(() => this.mainMenu())),
         this.btn('Settings', () => this.settingsScreen(() => this.mainMenu())),
@@ -240,8 +233,35 @@ export class App {
     this.show(el);
   }
 
+  /** Single player: up to four AI squadmates, then the street. The choice is remembered. */
+  private squadScreen(diff: Difficulty) {
+    const picks: SquadPick[] = [...load<SquadPick[]>('squad', [])].slice(0, 4);
+    while (picks.length < 4) picks.push(null);
+    const opts: [string, string][] = [['', 'Empty'], ['random', 'Random class'], ...BOT_CLASSES.map((c) => [c, BOT_CLASS[c].name] as [string, string])];
+    // who is in the squad this run: the same seed startLocal uses, so these are exactly the people who deploy
+    const ids = makeSquad(this.nextSeed, ['random', 'random', 'random', 'random']);
+    const card = (i: number) => {
+      const desc = h('div', { class: 'sq-desc' });
+      const el = h('div', { class: 'sq-card' });
+      const paint = () => { const v = picks[i]; desc.textContent = !v ? 'Slot empty.' : v === 'random' ? 'A random class each run.' : BOT_CLASS[v].desc; el.classList.toggle('empty', !v); };
+      const sel = h('select', { class: 'text', onchange: () => { picks[i] = (sel.value || null) as SquadPick; paint(); } },
+        ...opts.map(([v, t]) => h('option', { value: v, selected: (picks[i] ?? '') === v }, t))) as HTMLSelectElement;
+      el.append(h('img', { class: 'sq-pic', alt: '', src: `${import.meta.env.BASE_URL}portraits/${SQUAD_MEMBERS[i].portrait}` }),
+        h('div', { class: 'sq-name' }, h('span', {}, ids[i].rank), ids[i].surname), sel, desc);
+      paint();
+      return el;
+    };
+    this.show(h('div', { class: 'screen' },
+      h('div', { class: 'h2' }, 'Squad'),
+      h('div', { class: 'hint' }, 'Take up to four squadmates. They follow you floor to floor, fight, heal and revive you. Leave every slot empty to go in alone (one life).'),
+      h('div', { class: 'sq-cards' }, ...[0, 1, 2, 3].map(card)),
+      h('div', { class: 'menu' },
+        this.btn('Deploy', () => { save('squad', picks); this.spStart(diff, picks); }, 'primary'),
+        this.btn('Back', () => this.difficultyScreen((d) => this.squadScreen(d)), 'small'))));
+  }
+
   /** Single player: straight to the street. Check in at the command tent, then gear up at the armory. */
-  private spStart(diff: Difficulty) { this.startLocal(diff, emptyLoadout()); }
+  private spStart(diff: Difficulty, squad: SquadPick[] = []) { this.startLocal(diff, emptyLoadout(), squad); }
 
   /** Street armory for the local player (opened by Police Chief Hollis after check-in; re-openable while on the street). */
   private openArmory(p: PlayerState, diff: Difficulty) {
@@ -269,15 +289,27 @@ export class App {
     this.show(shop.root);
   }
 
-  private recordsScreen(back: () => void) {
-    const recs = loadRecords();
+  /** Hall of Records: every finished run, won or lost. Score board or speed board; click a run for its stats. */
+  private recordsScreen(back: () => void, board: 'score' | 'speed' = 'score') {
+    const recs = [...loadRecords()].sort(board === 'score' ? rankRecords : rankBySpeed);
+    const detail = (r: ScoreRecord) => r.score === undefined ? `${r.kills} kills · recorded before scores` :
+      `${r.kills} kills (${r.knife ?? 0} knife) · ${Math.round((r.accuracy ?? 0) * 100)}% accuracy · ${r.hacks ?? 0} hacks · ${r.searches ?? 0} searched · speed +${(r.speed ?? 0).toLocaleString('en-US')} · ${new Date(r.date).toLocaleDateString()}`;
     const table = (d: Difficulty) => {
-      const rows = recs.filter((r) => r.difficulty === d).slice(0, 10);
+      const rows = recs.filter((r) => r.difficulty === d).slice(0, 15);
       return h('div', { class: 'rec-col' }, h('h3', {}, d),
-        rows.length ? h('div', { class: 'rec-list' }, ...rows.map((r, i) => h('div', { class: `rec ${r.won ? 'won' : ''}` }, h('span', { class: 'rk' }, String(i + 1)), h('span', { class: 'nm' }, r.name), h('span', { class: 'fl' }, r.won ? 'WON' : `F${r.floor}`), h('span', { class: 'kl' }, `${r.kills} kills`), h('span', { class: 'tm' }, fmtTime(r.time)))))
+        rows.length ? h('div', { class: 'rec-list' }, ...rows.map((r, i) => {
+          const row = h('div', { class: `rec ${r.won ? 'won' : ''}`, title: detail(r), onclick: () => row.classList.toggle('open') },
+            h('span', { class: 'rk' }, String(i + 1)), h('span', { class: 'nm' }, r.name, r.bots ? h('small', { class: 'rec-bots' }, ` +${r.bots} bots`) : null), h('span', { class: 'fl' }, r.won ? 'WON' : `F${r.floor}`),
+            h('span', { class: 'kl' }, r.score === undefined ? '—' : r.score.toLocaleString('en-US')), h('span', { class: 'tm' }, r.score === undefined ? fmtTime(r.time) : fmtRunTime(r.time)),
+            h('div', { class: 'det' }, detail(r)));
+          return row;
+        }))
           : h('div', { class: 'hint' }, 'No runs yet.'));
     };
-    this.show(h('div', { class: 'screen' }, h('div', { class: 'h2' }, 'Hall of Records'), h('div', { class: 'rec-cols' }, ...DIFFICULTIES.map(table)), this.btn('Back', back, 'small')));
+    const tab = (b: 'score' | 'speed', label: string) => this.btn(label, () => this.recordsScreen(back, b), `small ${board === b ? 'primary' : ''}`);
+    this.show(h('div', { class: 'screen' }, h('div', { class: 'h2' }, 'Hall of Records'),
+      h('div', { class: 'rec-tabs' }, tab('score', 'Top scores'), tab('speed', 'Fastest')),
+      h('div', { class: 'rec-cols' }, ...DIFFICULTIES.map(table)), this.btn('Back', back, 'small')));
   }
 
   private continueRun(s: any) {
@@ -292,17 +324,19 @@ export class App {
     }
   }
 
-  devStart(diff: Difficulty, floor: number, torch: boolean, cheats: { god?: boolean; ammo?: boolean; torch?: boolean } = {}) {
-    this.startLocal(diff, { primary: "sr4", secondary: "p9", armor: "vesthelm", grenades: { frag: 1, flash: 1, smoke: 1 }, items: { medkit: 2, battery: 1 }, mods: { bypass: true, torchmod: false, pouch: false } });
+  /** squad: dev test squad (?squad=medic,gunner,random,...); bots arrive on the dev floor with you */
+  devStart(diff: Difficulty, floor: number, torch: boolean, cheats: { god?: boolean; ammo?: boolean; torch?: boolean } = {}, squad: SquadPick[] = []) {
+    this.startLocal(diff, { primary: "sr4", secondary: "p9", armor: "vesthelm", grenades: { frag: 1, flash: 1, smoke: 1 }, items: { medkit: 2, battery: 1 }, mods: { bypass: true, torchmod: false, pouch: false } }, squad);
     const s = this.session;
     if (s && s.kind === "local") { const p = s.sim.players[0]; p.checkedIn = true; if (floor !== 0) s.sim.travel(p, floor, floor < 0 ? "start" : "stair0", "debug"); p.torchOn = torch; p.cheats = cheats; if (cheats.ammo) p.grenades = { frag: 1, flash: 2, smoke: 1, incendiary: 1, decoy: 1 }; if (cheats.god || cheats.ammo || cheats.torch) this.hud.message(`Dev mode:${cheats.god ? ' GOD' : ''}${cheats.ammo ? ' INFINITE AMMO' : ''}${cheats.torch ? ' INFINITE TORCH' : ''}`, 'good'); }
   }
 
-  private startLocal(diff: Difficulty, lo: Loadout) {
+  private startLocal(diff: Difficulty, lo: Loadout, squad: SquadPick[] = []) {
     const sim = new Sim({ seed: this.nextSeed, difficulty: diff, mode: 'single', holiday: currentHoliday() });
     this.nextSeed = randomSeed();
     const p = sim.addPlayer(1, 'Operator', lo); // callsign is registered fresh at the Chief's check-in
     p.look = loadLook();
+    for (const info of makeSquad(sim.cfg.seed, squad)) sim.addBot(info);
     this.beginSession({ kind: 'local', sim });
     this.hud.showBanner('POLICE CORDON', lo.primary ? 'Safe zone. Breach the tower when ready.' : 'Check in with Police Chief Hollis at the blue tent, then gear up.', '警察封鎖線');
     this.saveRun();
@@ -624,6 +658,7 @@ export class App {
   private pauseMenu() {
     if (!this.session) return;
     const local = this.session.kind === 'local';
+    const downedQuit = this.session.kind === 'local' && this.session.sim.quitCountsAsLoss();
     this.paused = local;
     const el = h('div', { class: 'screen' },
       h('div', { class: 'h2' }, local ? 'Paused' : 'Menu (game continues)'),
@@ -631,7 +666,7 @@ export class App {
         this.btn('Resume', () => this.resume(), 'primary'),
         this.btn('Settings', () => this.settingsScreen(() => this.pauseMenu())),
         this.btn('Controls', () => this.controlsScreen(() => this.pauseMenu())),
-        this.btn(local ? 'Save & quit to menu' : 'Leave squad', () => { if (local) this.saveRun(); this.mainMenu(); }, 'danger'),
+        this.btn(local ? (downedQuit ? 'Quit (you are down: counts as KIA)' : 'Save & quit to menu') : 'Leave squad', () => { if (local) { if (downedQuit) remove('run'); else this.saveRun(); } this.mainMenu(); }, 'danger'),
         local ? this.btn('Quit to menu without saving', () => this.quitNoSave(), 'danger') : null));
     this.show(el);
   }
@@ -891,27 +926,63 @@ export class App {
     const won = phase === 'won';
     if (this.session?.kind === 'local') remove('run');
     const kills = view.players.reduce((a, p) => a + p.kills, 0);
-    // on the record: your callsign, best floor, kills and time (Hall of Records)
-    const rank = addRecord({ name: me.name || this.callsign || 'Operator', difficulty: view.cfg.difficulty as Difficulty, floor: Math.max(stats.maxFloor, me.floor), kills: view.cfg.mode === 'single' ? kills : me.kills, time: Math.round((stats.endT || 0) - (stats.startT || 0)), won, date: new Date().toISOString() });
+    const bots = view.players.filter((p) => p.bot).length;
+    const floor = Math.max(stats.maxFloor, me.floor);
+    const time = runTime(stats, view.t);
+    const fin = finalScore(me.score, won);
+    // every finished run goes on the record, won or lost, so players can track their improvement (Hall of Records)
+    const rank = addRecord({
+      name: me.name || this.callsign || 'Operator', difficulty: view.cfg.difficulty as Difficulty, floor, kills: me.kills, time, won, date: new Date().toISOString(),
+      score: fin.total, knife: me.score.knife, accuracy: fin.accuracy, hacks: me.score.hacks, searches: me.score.searches, speed: me.score.speed, bots: bots || undefined,
+    });
+    const breakdown = () => h('div', { class: 'score-break' }, ...scoreRows(me.score, won).flatMap(([k, v]) => [h('span', {}, k), h('span', {}, v)]));
+    const statLines = () => [
+      h('div', { class: 'score-total' }, `${fin.total.toLocaleString('en-US')} PTS`),
+      breakdown(),
+      h('div', {}, `Run time: ${fmtRunTime(time)} · Highest floor ${floor} / ${FINAL_FLOOR}${view.players.length === 1 ? '' : ` · Squad kills ${kills}`}`),
+      h('div', {}, `Difficulty: ${view.cfg.difficulty.toUpperCase()} · Tower seed ${view.cfg.seed}`),
+      rank > 0 ? h('div', { style: { color: 'var(--cyan)' } }, `${me.name}: #${rank} in the ${view.cfg.difficulty} Hall of Records`) : null,
+    ];
+    const sess = this.session;
+    // after the credits: home (dedicated-server players: the server's armory), unless a new run already started meanwhile
+    const leave = () => { if (this.session !== sess) return; if (sess?.kind === 'client' && sess.client.server) this.backToServerLobby(); else this.mainMenu(); };
+    if (won) {
+      // upload done and the floor is dead: 3 s, congratulations, then fade to black and roll the credits
+      this.audio.prepareCredits();
+      setTimeout(() => {
+        let rolled = false;
+        const roll = () => {
+          if (rolled) return;
+          rolled = true;
+          this.show(null);
+          this.input.enabled = false;
+          playCredits(this.ui, this.audio, leave);
+        };
+        this.show(h('div', { class: 'screen congrats' },
+          h('div', { class: 'big-jp', style: { color: 'var(--good)' } }, '任務完了'),
+          h('h1', { class: 'big green' }, 'AI SHUTDOWN'),
+          h('div', { class: 'subtitle' }, `Well done, ${me.name || 'Operator'}. LULLABY is in, SOVEREIGN is gone and the tower is dark. Mission complete.`),
+          h('div', { class: 'stats' }, ...statLines()),
+          h('div', { class: 'menu' }, this.btn('Continue', roll, 'primary'))));
+        this.audio.stinger('victory');
+        setTimeout(roll, 9000);
+      }, 3000);
+      return;
+    }
     setTimeout(() => {
       const el = h('div', { class: 'screen' },
-        h('div', { class: 'big-jp', style: { color: won ? 'var(--good)' : 'var(--magenta)' } }, won ? '任務完了' : view.cfg.mode === 'single' ? '戦死' : '作戦失敗'),
-        h('h1', { class: `big ${won ? 'green' : 'red'}` }, won ? 'AI SHUTDOWN' : view.cfg.mode === 'single' ? 'KILLED IN ACTION' : 'SQUAD LOST'),
-        h('div', { class: 'subtitle' }, won ? 'The virus is in. The tower goes dark. Mission complete.' : reason),
-        h('div', { class: 'stats' },
-          h('div', {}, `Highest floor: ${Math.max(stats.maxFloor, me.floor)} / ${FINAL_FLOOR}`),
-          h('div', {}, `Hostiles neutralised: ${kills}`),
-          h('div', {}, `Mission time: ${fmtTime((stats.endT || 0) - (stats.startT || 0))}`),
-          h('div', {}, `Difficulty: ${view.cfg.difficulty.toUpperCase()} · Tower seed ${view.cfg.seed}`),
-          rank > 0 ? h('div', { style: { color: 'var(--cyan)' } }, `${me.name}: #${rank} in the ${view.cfg.difficulty} Hall of Records`) : null),
+        h('div', { class: 'big-jp', style: { color: 'var(--magenta)' } }, view.cfg.mode === 'single' ? '戦死' : '作戦失敗'),
+        h('h1', { class: 'big red' }, view.cfg.mode === 'single' ? 'KILLED IN ACTION' : 'SQUAD LOST'),
+        h('div', { class: 'subtitle' }, reason),
+        h('div', { class: 'stats' }, ...statLines()),
         h('div', { class: 'menu' },
-          view.cfg.mode === 'single' ? this.btn('New run (new tower)', () => { const d = view.cfg.difficulty as Difficulty; this.endSession(); this.spStart(d); }, 'primary') : null,
+          view.cfg.mode === 'single' ? this.btn('New run (new tower)', () => { const d = view.cfg.difficulty as Difficulty; this.endSession(); this.spStart(d, load<SquadPick[]>('squad', [])); }, 'primary') : null,
           this.session?.kind === 'client' && this.session.client.server ? this.btn('Back to server lobby', () => this.backToServerLobby(), 'primary') : null,
           this.btn('Hall of Records', () => this.recordsScreen(() => this.mainMenu())),
           this.btn('Main menu', () => this.mainMenu())));
       this.show(el);
-      this.audio.stinger(won ? 'victory' : 'death');
-    }, won ? 1500 : 2200);
+      this.audio.stinger('death');
+    }, 2200);
   }
 
   /** Dedicated server: stay connected after a run and go back to its armory for the next one. */

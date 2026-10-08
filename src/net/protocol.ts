@@ -10,7 +10,7 @@ export const DOOR_MODES: DoorMode[] = ['open', 'closed', 'locked'];
 
 export const SNAP_HZ = 15;
 /** Wire protocol version: bump on any incompatible message change. Clients send it on join; servers refuse a mismatch. */
-export const NET_VERSION = 5; // v5: player appearance (look) in ready + snapshots; v4: doors (they change collision), coins + keys; v3 (1.2.0): late join window, proximity voice
+export const NET_VERSION = 6; // v6: run score (sc) in the own-player snapshot, run clock starts at the tower; v5: player appearance (look) in ready + snapshots; v4: doors (they change collision), coins + keys; v3 (1.2.0): late join window, proximity voice
 /** Joins report the protocol (v) and the app release (av): server and every game must be the very same release, 1:1. */
 export const sameRelease = (m: { v?: unknown; av?: unknown }) => m.v === NET_VERSION && m.av === APP_VERSION;
 export const versionMismatch = (theirs: unknown) =>
@@ -31,7 +31,7 @@ export function encodePlayer(p: PlayerState, full: boolean) {
   if (full) {
     Object.assign(base, {
       ammo: p.ammo, gr: p.grenades, gs: p.grenadeSel, it: p.items, is: p.itemSel, boost: r2(p.boostT), rl: r2(p.reloadT), rd: r2(p.reloadDur ?? 0), hold: p.hold,
-      exp: r2(p.exposure), pr: p.prompt, panel: (p as any).panel, vest: (p as any).vest, fl: r2(p.flashT), burn: r2(p.burnT), co: p.coins, ky: p.keys,
+      exp: r2(p.exposure), pr: p.prompt, sc: p.score, panel: (p as any).panel, vest: (p as any).vest, fl: r2(p.flashT), burn: r2(p.burnT), co: p.coins, ky: p.keys,
     });
   }
   return base;
@@ -47,7 +47,7 @@ export function decodePlayer(p: PlayerState, o: any, isLocal: boolean) {
   p.look = lookFromWire(o.lk);
   if (o.ammo) {
     p.ammo = o.ammo; p.grenades = o.gr; p.grenadeSel = o.gs; p.items = o.it; p.itemSel = o.is; p.boostT = o.boost; p.reloadT = o.rl; p.reloadDur = o.rd; p.hold = o.hold;
-    p.exposure = o.exp; p.prompt = o.pr; (p as any).panel = o.panel; (p as any).vest = o.vest; p.flashT = o.fl; p.burnT = o.burn; p.coins = o.co ?? 0; p.keys = o.ky ?? [];
+    p.exposure = o.exp; p.prompt = o.pr; (p as any).panel = o.panel; (p as any).vest = o.vest; p.flashT = o.fl; p.burnT = o.burn; p.coins = o.co ?? 0; p.keys = o.ky ?? []; if (o.sc) p.score = o.sc;
   }
 }
 

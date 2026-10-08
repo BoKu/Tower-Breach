@@ -8,6 +8,8 @@ import { TEAM_CSS, teamColorIndex, ViewSource } from '../render/view';
 import { keyLabel, Settings, Action } from '../save/settings';
 import type { SimEvent, PlayerState } from '../sim/state';
 import { currentHoliday, HOLIDAY_NAME } from '../config/holiday';
+import { runTime, fmtRunTime } from '../sim/score';
+import { BOT_CLASS, SQUAD_MEMBERS } from '../config/bots';
 import { torchCapacityMul } from '../sim/player';
 
 /** Line icons for the item belt (24×24 viewBox, stroke = currentColor). */
@@ -49,6 +51,9 @@ export class HUD {
   private batBox = h('div', { class: 'vbar bat' }, this.batBar);
   private hpTxt = h('span'); private arTxt = h('span'); private batTxt = h('span');
   private status = h('div', { class: 'status' });
+  /** speedrun clock + score, under the vitals */
+  private runEl = h('div', { class: 'runclock' });
+  private clk = { t: NaN, at: 0 };
   private belt = h('div', { class: 'belt' });
   private wn = h('div', { class: 'wn' });
   private wimg = h('img', { class: 'wimg', alt: '' }) as HTMLImageElement;
@@ -91,7 +96,7 @@ export class HUD {
           h('div', { class: 'vrow' }, h('span', {}, 'HEALTH'), this.hpBox, this.hpTxt),
           h('div', { class: 'vrow' }, h('span', {}, 'ARMOUR'), this.arBox, this.arTxt),
           h('div', { class: 'vrow' }, h('span', {}, 'TORCH'), this.batBox, this.batTxt),
-          this.status),
+          this.status, this.runEl),
         this.belt),
       h('div', { class: 'br' }, h('div', { class: 'weapon' }, h('span', { class: 'jp right' }, '武装'), this.wimg, this.wn, this.am, this.sub, h('div', { class: 'rl' }, this.rl), this.slots, this.gren), h('div', { class: 'minimap' }, h('span', { class: 'jp right' }, '地図'), this.minimap.canvas, this.mapFloor)),
       this.prompt, this.hold, this.center, this.banner, this.spect, this.fps, this.sbxBtn,
@@ -160,8 +165,9 @@ export class HUD {
         const d = p.floor - me.floor;
         const where = !p.connected ? 'OFFLINE' : d === 0 ? `FL ${p.floor} · here` : `FL ${p.floor} ${d > 0 ? '▲' : '▼'}${Math.abs(d)}`;
         const state = p.life === 'down' ? `DOWN ${Math.ceil(p.downT)}s` : p.life === 'out' ? 'KIA' : '';
-        this.teamEl.append(h('div', { class: `tm ${p.life}` }, h('i', { class: 'sw', style: { background: col } }),
-          h('span', { class: 'n', style: { color: col } }, p.name), h('span', { class: 'f' }, state || where),
+        const pic = p.bot ? h('img', { class: 'tm-pic', alt: '', src: `${import.meta.env.BASE_URL}portraits/${SQUAD_MEMBERS[p.bot.member].portrait}` }) : h('i', { class: 'sw', style: { background: col } });
+        this.teamEl.append(h('div', { class: `tm ${p.life}${p.bot ? ' bot' : ''}` }, pic,
+          h('span', { class: 'n', style: { color: col } }, p.name, p.bot ? h('small', {}, ` · ${BOT_CLASS[p.bot.cls].name}`) : null), h('span', { class: 'f' }, state || where),
           h('div', { class: 'hb' }, h('i', { style: { width: `${Math.max(0, p.hp)}%`, background: p.life === 'down' ? '#e04444' : undefined } }))));
       }
     }
@@ -177,6 +183,11 @@ export class HUD {
     this.batBar.style.width = `${me.battery * 100}%`;
     this.batBox.classList.toggle('low', me.battery < 0.15);
     this.set(this.batTxt, 'bat', `${Math.round(me.battery * 240 * torchCapacityMul(me) / 60)}m`);
+    // run clock: smooth between sim ticks / snapshots, never more than 0.1 s ahead of the last authoritative time
+    if (view.t !== this.clk.t) { this.clk.t = view.t; this.clk.at = performance.now(); }
+    const ended = view.stats.endT > 0;
+    const now = ended ? view.t : view.t + Math.min(0.1, (performance.now() - this.clk.at) / 1000);
+    this.set(this.runEl, 'run', fp.floor < 0 ? '' : `<span>${fmtRunTime(runTime(view.stats, now))}</span><span>${me.score.pts.toLocaleString('en-US')} PTS</span>`, true);
     const chips: string[] = [];
     if (me.injured) chips.push(`<span class="chip inj">INJURED −25% SPEED</span>`);
     if (me.boostT > 0) chips.push(`<span class="chip boost">BOOST ${Math.ceil(me.boostT)}s</span>`);

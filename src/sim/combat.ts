@@ -11,6 +11,7 @@ import { IS_CYBORG, NETWORKED, LootItem } from './types';
 import { ammoAmount } from '../gen/loot';
 import { CYBORG_BATTERY_CHANCE } from '../config/items';
 import { Rng } from '../core/rng';
+import { scoreKill } from './score';
 
 export type HitKind = 'wall' | 'enemy' | 'player' | 'camera' | 'vending' | 'mine' | 'panel' | 'light' | 'none' | 'floor';
 export interface Hit { kind: HitKind; t: number; x: number; y: number; z: number; ref: any }
@@ -125,7 +126,7 @@ export function damageEnemy(sim: Sim, fs: FloorState, e: Enemy, dmg: number, pen
   e.hp -= hpD;
   sim.emit({ e: 'hitE', f: fs.floor, id: e.id, x: e.x, y: e.y, metal: st.metal || e.type === 'cyborg' });
   if (e.hp <= 0) {
-    killEnemy(sim, fs, e, attacker);
+    killEnemy(sim, fs, e, attacker, kind === 'melee');
     return true;
   }
   // react: pain + awareness of the attacker
@@ -142,14 +143,14 @@ export function damageEnemy(sim: Sim, fs: FloorState, e: Enemy, dmg: number, pen
   return false;
 }
 
-export function killEnemy(sim: Sim, fs: FloorState, e: Enemy, attacker: PlayerState | null) {
+export function killEnemy(sim: Sim, fs: FloorState, e: Enemy, attacker: PlayerState | null, knife = false) {
   e.state = 'dead';
   e.hp = 0;
   e.deadT = 0;
   e.path = null;
   sim.emit({ e: 'die', f: fs.floor, id: e.id, t: e.type, x: e.x, y: e.y });
   sim.emit({ e: 'bark', f: fs.floor, id: e.id, t: e.type, k: 'die' });
-  if (attacker) { attacker.kills++; sim.stats.kills++; }
+  if (attacker) { attacker.kills++; sim.stats.kills++; if (fs.floor > 0) scoreKill(attacker.score, e.type, e.elite, knife); }
   fs.pings = fs.pings.filter((p) => p.enemyId !== e.id);
   // lootable body
   const items = enemyDrops(sim.rng, e, sim.pressure(fs.floor).loot);

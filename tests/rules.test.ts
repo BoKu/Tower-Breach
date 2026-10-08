@@ -73,7 +73,7 @@ import { Sim } from '../src/sim/sim';
 import { emptyLoadout } from '../src/ui/shop';
 import { officerPose } from '../src/gen/floor';
 import { equipLoadout } from '../src/sim/player';
-import { addRecord, loadRecords } from '../src/save/settings';
+import { addRecord, loadRecords, rankBySpeed } from '../src/save/settings';
 
 describe('check in with Police Chief Hollis before the tower', () => {
   it('single player: the door is shut until check-in; Command opens the check-in panel; the armory re-kits you', () => {
@@ -115,13 +115,19 @@ describe('check in with Police Chief Hollis before the tower', () => {
     const sim = new Sim({ seed: 3, difficulty: 'normal', mode: 'coop' });
     expect(sim.addPlayer(1, 'A', emptyLoadout()).checkedIn).toBe(true);
   });
-  it('Hall of Records ranks wins, then floor, kills, time', () => {
+  it('records keep the bot count', () => {
+    addRecord({ difficulty: 'insane', date: new Date(0).toISOString(), name: 'Sq', floor: 12, kills: 3, time: 100, won: false, score: 1, bots: 3 });
+    expect(loadRecords().find((r) => r.name === 'Sq')?.bots).toBe(3);
+  });
+  it('Hall of Records ranks by score (old unscored records last); the speed board puts wins first, then fastest', () => {
     const base = { difficulty: 'hard' as const, date: new Date(0).toISOString() };
-    addRecord({ ...base, name: 'A', floor: 40, kills: 10, time: 900, won: false });
-    const r = addRecord({ ...base, name: 'B', floor: 200, kills: 90, time: 5000, won: true });
+    addRecord({ ...base, name: 'Old', floor: 200, kills: 90, time: 4000, won: true }); // before 1.10.0: no score
+    addRecord({ ...base, name: 'A', floor: 40, kills: 10, time: 900, won: false, score: 9000 });
+    const r = addRecord({ ...base, name: 'B', floor: 200, kills: 90, time: 5000, won: true, score: 40000 });
     expect(r).toBe(1);
     const hard = loadRecords().filter((x) => x.difficulty === 'hard');
-    expect(hard[0].name).toBe('B');
+    expect(hard.map((x) => x.name)).toEqual(['B', 'A', 'Old']);
+    expect([...hard].sort(rankBySpeed).map((x) => x.name)).toEqual(['Old', 'B', 'A']);
   });
 });
 

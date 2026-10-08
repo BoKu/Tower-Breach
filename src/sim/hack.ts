@@ -1,5 +1,6 @@
 import type { FloorState, HackState, PlayerState } from './state';
 import type { Sim } from './sim';
+import { scoreHack } from './score';
 
 /**
  * Hackable computers. The minigame itself runs in the UI (ui/hack.ts); the sim only applies the outcome, so co-op
@@ -35,6 +36,7 @@ export function applyHack(sim: Sim, p: PlayerState, fs: FloorState, h: HackState
   if (h.state !== 'ready') return;
   if (ok) {
     h.state = 'done';
+    scoreHack(p.score);
     if (h.kind === 'security') { disableSecurity(fs); sim.msg(null, `${p.name} hacked security: CCTV, mines and tripwires offline on floor ${fs.floor}.`, 'good'); }
     else { fixFloorLights(fs); sim.msg(null, `${p.name} restored the lighting grid: floor ${fs.floor} is fully lit.`, 'good'); }
   } else {
