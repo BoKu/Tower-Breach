@@ -80,8 +80,9 @@ friends.
 - 🎃 **Holiday themes.** Halloween, Christmas and Easter versions of the street and the tower.
 - 🖼️ **Wall posters you can swap.** Drop any `.jpg` into `public/posters/` (up to 512 × 512; transparency shows
   black) and it turns up on the tower's walls. In the desktop app that folder sits next to the app (`resources/app.asar.unpacked/dist/posters`).
-- 🎛️ **Everything else is generated in code.** All models, textures, animations and sound effects. The only recorded
-  audio is the street ambience.
+- 🎛️ **Everything else is generated in code.** All models, textures, animations, sound effects and music. The
+  exceptions: the street ambience is a recording, and the character portraits and the squad's radio voices were made
+  with generative tools.
 
 ## Screenshots
 
