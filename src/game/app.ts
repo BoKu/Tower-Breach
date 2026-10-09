@@ -1,3 +1,4 @@
+import { stairAt, stairElevation } from '../sim/stairs';
 import { HackUI } from '../ui/hack';
 import { CheckInUI } from '../ui/checkin';
 import { portraitImg } from '../render/portrait';
@@ -131,6 +132,17 @@ export class App {
     // browsers: closing the tab mid-run (or a stray Ctrl+W) asks first
     if (!isDesktop()) window.addEventListener('beforeunload', (e) => { if (this.session && !this.endShown) { e.preventDefault(); e.returnValue = ''; } });
     this.input = new Input(this.canvas, this.settings);
+    // first-person view (beta, Settings > Gameplay): P (or F5, Minecraft's view key: fn+F5 on a Mac) switches views
+    window.addEventListener('keydown', (e) => {
+      if (!this.settings.firstPerson || (e.code !== 'F5' && e.code !== 'KeyP')) return;
+      if ((e.target as HTMLElement)?.tagName === 'INPUT' || !this.session) return; // not while typing or in menus
+      e.preventDefault();
+      if (!this.input.fp) this.hud.message('First person: P (or F5) switches back. Click to capture the mouse.', 'info');
+      const me = this.view()?.players.find((p) => p.id === this.localId);
+      this.input.fp = !this.input.fp;
+      if (this.input.fp) { this.input.fpYaw = me?.facing ?? 0; this.input.fpPitch = -0.1; void this.canvas.requestPointerLock(); }
+      else if (document.pointerLockElement) document.exitPointerLock();
+    }, true);
     this.hud = new HUD(this.settings);
     this.hud.onSandboxAnim = (on) => this.renderer.setShowcaseAnim(on);
     try {
@@ -528,7 +540,9 @@ export class App {
         h('div', { class: 'hint', style: { margin: '-2px 0 10px' } }, 'Mouse: the crosshair snaps to a visible enemy when it is close to them on screen. Off = exact aim.'),
         toggle('Controller aim assist', s.aimAssist, (x) => (s.aimAssist = x)),
         h('div', { class: 'hint', style: { margin: '-2px 0 10px' } }, 'Gamepad: stick aim snaps to the nearest visible enemy in the direction you push.'),
-        slider('Stick deadzone', s.deadzone, (x) => (s.deadzone = Math.max(0.05, Math.min(0.5, x)))));
+        slider('Stick deadzone', s.deadzone, (x) => (s.deadzone = Math.max(0.05, Math.min(0.5, x)))),
+        toggle('First person mode (beta)', s.firstPerson, (x) => (s.firstPerson = x)),
+        h('div', { class: 'hint', style: { margin: '-2px 0 10px' } }, 'Adds an eye-level view. During a run, press P (or F5; fn+F5 on a Mac) to switch between overhead and first person. Click the game to capture the mouse and look around; Esc lets go of it, and menus release it on their own. Controller: right stick looks. The view is still a work in progress: expect rough edges.'));
     } else {
       for (const a of Object.keys(ACTION_LABEL) as Action[]) {
         const b = h('button', { class: 'bind', onclick: () => {
@@ -769,6 +783,7 @@ export class App {
     const view = this.view()!;
     const me = view.players.find((p) => p.id === this.localId);
     if (!me) return;
+    this.renderer.fp = this.input.fp ? { yaw: this.input.fpYaw, pitch: this.input.fpPitch } : null;
     const ground = (x: number, y: number) => this.renderer.groundPoint(x, y, view, this.localId);
     let events;
     if (s.kind === 'client') {
@@ -791,6 +806,29 @@ export class App {
       if (s.kind === 'host') { s.host.distribute(events); s.host.update(dt); }
     }
     if (background) return; // hidden tab: keep the authoritative sim + network alive, skip presentation
+    if (this.input.fp && !this.settings.firstPerson) { this.input.fp = false; if (document.pointerLockElement) document.exitPointerLock(); }
+    if (this.input.fp) {
+      // menus (armory, terminals, pause) need the mouse: let go of it; the next click on the game takes it back
+      if (!this.input.enabled && document.pointerLockElement) document.exitPointerLock();
+      // a new floor: look where you're heading. Stairs: along the flight toward the floor (the switchback), or away
+      // from the stairwell if you landed beside it; a lift: out of its doors
+      for (const ev of events) if (ev.e === 'travel' && ev.pid === this.localId) {
+        this.input.fpPitch = -0.1;
+        const L = view.floorState(ev.to).L;
+        if (ev.via === 'stairs') {
+          const on = stairAt(L, me.x, me.y);
+          if (on) this.input.fpYaw = Math.abs(stairElevation(L, me.x, me.y + 0.5)) <= Math.abs(stairElevation(L, me.x, me.y - 0.5)) ? Math.PI / 2 : -Math.PI / 2;
+          else {
+            const s = L.stairs.reduce((b, l) => (Math.hypot(l.cx - me.x, l.cy - me.y) < Math.hypot(b.cx - me.x, b.cy - me.y) ? l : b), L.stairs[0]);
+            if (s) this.input.fpYaw = Math.atan2(me.y - s.cy, me.x - s.cx);
+          }
+        } else if (ev.via === 'elevator') {
+          const lifts = L.elevators;
+          const e = lifts.reduce((b, l) => (Math.hypot(l.cx - me.x, l.cy - me.y) < Math.hypot(b.cx - me.x, b.cy - me.y) ? l : b), lifts[0]);
+          if (e) this.input.fpYaw = Math.atan2(e.doorY - e.cy, e.doorX - e.cx);
+        }
+      }
+    }
     if (this.input.zoomSteps) { this.renderer.setZoom(this.renderer.zoom + this.input.zoomSteps * 0.06); this.input.zoomSteps = 0; }
     if (!this.settings.screenShake) this.renderer.fx.shake = 0;
     this.renderer.update(view, this.localId, dt, events);
@@ -830,6 +868,7 @@ export class App {
     this.crosshair.style.display = show ? 'block' : 'none';
     if (show) {
       let x = this.input.mousePx.x, y = this.input.mousePx.y;
+      if (this.input.fp) { x = this.canvas.clientWidth / 2; y = this.canvas.clientHeight / 2; } // first person: aim is the screen centre
       if (this.input.usingPad) { const p = this.renderer.worldToScreen(me.aimX, me.aimY, 0.9); x = p.x; y = p.y; }
       this.crosshair.style.left = x + 'px'; this.crosshair.style.top = y + 'px';
       const wi = me.sel === 'knife' ? null : me.weapons[me.sel];

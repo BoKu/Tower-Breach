@@ -874,12 +874,15 @@ export class OperatorRig {
 
   /** Unarmed arm behaviour: walking swing, or a held pose (guarding, talking, briefing, leaning), radio call. */
   private freeArms(r: RigInput, ph: number, moveK: number, breathe: number) {
-    const poleR = V(0.4, -0.2, -0.55), poleL = V(-0.4, -0.2, -0.55);
+    let poleR = V(0.4, -0.2, -0.55), poleL = V(-0.4, -0.2, -0.55);
     let R = V(0.22, -0.22 + breathe, 0.04 + Math.sin(ph) * 0.2 * moveK);
     let Lh = V(-0.22, -0.22 + breathe, 0.04 - Math.sin(ph) * 0.2 * moveK);
     const t = r.t;
     const pose = moveK > 0.4 ? 'swing' : r.pose ?? 'swing';
-    if (pose === 'fold') { R = V(-0.08, 0.18 + breathe, 0.2); Lh = V(0.08, 0.2 + breathe, 0.19); }
+    if (pose === 'fold') { // forearms stacked in front of the chest, elbows out to the sides (reads up close too)
+      R = V(-0.15, 0.1 + breathe, 0.25); Lh = V(0.15, 0.14 + breathe, 0.21);
+      poleR = V(0.6, -0.15, 0.3); poleL = V(-0.6, -0.15, 0.3);
+    }
     else if (pose === 'talk') { R = V(0.16, 0.08 + Math.max(0, Math.sin(t * 2.3)) * 0.12, 0.28 + Math.sin(t * 1.3) * 0.05); Lh = V(-0.2, -0.18, 0.08); }
     else if (pose === 'brief') { R = V(0.14, -0.05, 0.42 + Math.sin(t * 0.9) * 0.04); Lh = V(-0.14, -0.06, 0.4); this.spine.rotation.x += 0.35; }
     else if (pose === 'lean') { R = V(0.2, -0.02, -0.02); Lh = V(-0.22, -0.2, 0.08); this.spine.rotation.z += 0.1; }

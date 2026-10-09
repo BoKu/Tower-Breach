@@ -5,15 +5,16 @@ import { SSRPass } from './ssr';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { FloorView, prefetchKit, type ViewCtx } from './floorView';
+import { FloorView, prefetchKit, WALL_H, type ViewCtx } from './floorView';
 import { BuildingPlan } from '../gen/building';
-import { buildGun, OperatorRig } from './operator';
+import { buildGun, OperatorRig, type GunKind } from './operator';
+import { gunKindOf } from './models';
 import { Pigeon, Rat } from './critters';
 import { armoryArt } from './armoryArt';
 import { generateFloor, FW, FH, type FloorLayout } from '../gen/floor';
 import { enemyRig } from './entities';
 import { FINAL_FLOOR, type Difficulty } from '../config/difficulty';
-import { Entities } from './entities';
+import { Entities, SELF } from './entities';
 import { FX } from './fx';
 import { cutUniforms } from './cutaway';
 import { beamMaterial } from './beam';
@@ -26,13 +27,15 @@ import { ENEMY_STATS } from '../sim/stats';
 import { stairElevation } from '../sim/stairs';
 import { lightLevel, lightOut } from '../sim/lights';
 import { dist, clamp } from '../core/math';
-import { weapon } from '../config/weapons';
+import { weapon, isSuppressed } from '../config/weapons';
 import type { ViewSource } from './view';
 import { currentHoliday } from '../config/holiday';
 import { Snowfall } from './christmas';
 import { Petals } from './easter';
 import { perfBegin, perfTime, perfWatchGL, perfIdle } from '../core/perf';
-import type { SimEvent, PlayerState } from '../sim/state';
+import { fpAim } from './firstPerson';
+import { ViewModel } from './viewmodel';
+import type { SimEvent, PlayerState, FloorState } from '../sim/state';
 
 export type Quality = 'low' | 'medium' | 'high' | 'ultra';
 export const QUALITY: Record<Quality, { ratio: number; lights: number; bloom: boolean; shadows: boolean; aa: boolean }> = {
@@ -56,6 +59,7 @@ const LASER = 2;
 function eyeLevelMirror(main: THREE.Camera): Reflector {
   const r = new Reflector(new THREE.PlaneGeometry(1, 1), { textureWidth: 512, textureHeight: 512, clipBias: 0.003, color: 0xf4f7fa });
   const eye = new THREE.PerspectiveCamera(60, 1, 0.1, 60);
+  eye.layers.enable(SELF); // first person: you see yourself in the mirror (the Reflector clones this camera)
   const n = new THREE.Vector3(), side = new THREE.Vector3(), p = new THREE.Vector3(), d = new THREE.Vector3();
   const draw = r.onBeforeRender;
   r.onBeforeRender = function (renderer, scene, camera, ...rest) {
@@ -102,6 +106,10 @@ export class GameRenderer {
   /** Easter street petals (built on first use) */
   private petals: Petals | null = null;
   zoom = 1;
+  /** first-person view (spike): mouse-look angles from Input, or null for the normal overhead camera */
+  fp: { yaw: number; pitch: number } | null = null;
+  private ceiling: THREE.Mesh | null = null;
+  private viewModel: ViewModel | null = null;
   /** virtual ceiling-lamp height; strength is scaled to keep floor illuminance equal to a 2.3 m lamp (decay 1.6) */
   lampY = 3.4;
   private aimMark: THREE.Mesh;
@@ -199,8 +207,29 @@ export class GameRenderer {
    * Mouse (NDC) -> world aim point: the enemy / camera / breaker panel under the cursor if any,
    * otherwise the floor point under the cursor.
    */
+  /**
+   * Eye height in the drawn world (characters are drawn ~1.25x life size), kept between knee height and just under the
+   * ceiling: a flight rises or sinks a whole storey, which would put the camera above the walls or under the floor.
+   * dark: how far past those limits the stairs carry you (0..1), faded to black as you leave the floor.
+   */
+  private eye(fs: FloorState, p: PlayerState): { h: number; dark: number } {
+    const h = stairElevation(fs.L, p.x, p.y) + (p.crouch ? 1.3 : 1.8);
+    const lo = 0.6, hi = WALL_H - 0.15, c = Math.min(hi, Math.max(lo, h));
+    const jump = c + p.z * 1.25; // a jump lifts you, but never through a ceiling (the street has none)
+    return { h: fs.floor > 0 ? Math.min(hi, jump) : jump, dark: Math.min(1, Math.abs(h - c) / 0.8) };
+  }
+
   groundPoint(ndcX: number, ndcY: number, view?: ViewSource, localId?: number): { x: number; y: number; h: number } {
     const focus = view && localId !== undefined ? this.focusPlayer(view, localId) : undefined;
+    if (this.fp && view && focus && focus.id === localId) { // first person: whatever the centre of the screen is on
+      const fs = view.floorState(focus.floor);
+      const foes = fs.enemies.filter((e) => e.state !== 'dead' && this.entities.isVisible(e.id));
+      const fixtures = [ // what an aimed shot can hit up high (heights as in the sim's trace)
+        ...fs.cameras.filter((c) => c.alive).map((c) => ({ x: c.x, y: c.y, lo: 2.05, hi: 2.75 })),
+        ...fs.L.lights.flatMap((l, i) => ((l.kind === 'ceiling' || l.kind === 'emergency') && !fs.lights[i].broken && !fs.lights[i].cut ? [{ x: l.x, y: l.y, lo: 2.35, hi: 2.65 }] : [])),
+      ];
+      return fpAim(fs.L, foes, focus.x, focus.y, this.eye(fs, focus).h, this.fp.yaw, this.fp.pitch, fixtures);
+    }
     if (!view || !focus) {
       const r = screenAim(this.camera, ndcX, ndcY, [], this.canvas.clientWidth || window.innerWidth, this.canvas.clientHeight || window.innerHeight);
       return Number.isNaN(r.x) ? { x: this.camTarget.x, y: this.camTarget.z, h: NaN } : r;
@@ -279,7 +308,10 @@ export class GameRenderer {
       this.camTarget.set(focus.x, 0, focus.y);
       this.ahead.reset(view, focus.floor);
     }
-    for (const ev of events) this.fx.onEvent(ev, focus.floor, localId, (src, id) => this.entities.muzzleOf(src, id));
+    if (this.fp && !this.viewModel) { this.scene.add(this.camera); this.viewModel = new ViewModel(this.camera, OVERLAY); }
+    for (const ev of events) if (ev.e === 'shot' && ev.src === 'p' && ev.id === localId) this.viewModel?.onShot();
+    // trails leave the gun you see: in first person, your own shots start at the view-model's muzzle
+    for (const ev of events) this.fx.onEvent(ev, focus.floor, localId, (src, id) => (this.fp && src === 'p' && id === localId ? this.viewModel?.muzzleWorld() ?? null : this.entities.muzzleOf(src, id)));
     this.floorView!.update(fs, view.t, dt);
     perfTime(switched ? 'entities (1st)' : '', () => this.entities.update(view, localId, fs, dt, events));
     {
@@ -317,8 +349,36 @@ export class GameRenderer {
     this.camTarget.z += (ty - this.camTarget.z) * k;
     const off = CAM_OFFSET.clone().multiplyScalar(this.zoom * (focus.aiming && wi && weapon(wi.id).lookAhead > 6 ? 1.15 : 1));
     const sh = this.fx.shake;
-    this.camera.position.set(this.camTarget.x + off.x + (Math.random() - 0.5) * sh, off.y + (Math.random() - 0.5) * sh, this.camTarget.z + off.z + (Math.random() - 0.5) * sh);
-    this.camera.lookAt(this.camTarget.x, 0, this.camTarget.z);
+    const fp = this.fp && focus.id === localId && focus.life === 'alive' ? this.fp : null;
+    this.entities.hidden = fp ? localId : -1;
+    if (this.floorView) this.floorView.firstPerson = !!fp;
+    cutUniforms.uCutOn.value = fp ? 0 : 1; // walls stay whole at eye level
+    if (fp) {
+      const { h: eye, dark } = this.eye(fs, focus);
+      const fade = dark > 0.01 ? `brightness(${(1 - dark).toFixed(2)})` : '';
+      if (this.canvas.style.filter !== fade) this.canvas.style.filter = fade;
+      const cp = Math.cos(fp.pitch);
+      if (this.camera.fov !== 72) { this.camera.fov = 72; this.camera.near = 0.05; this.camera.updateProjectionMatrix(); }
+      this.camera.position.set(focus.x + (Math.random() - 0.5) * sh * 0.2, eye, focus.y + (Math.random() - 0.5) * sh * 0.2);
+      this.camera.lookAt(focus.x + Math.cos(fp.yaw) * cp, eye + Math.sin(fp.pitch), focus.y + Math.sin(fp.yaw) * cp);
+      this.camTarget.set(focus.x, 0, focus.y);
+      const w = wi ? weapon(wi.id) : null;
+      this.viewModel?.set(w ? (gunKindOf(w.category) as GunKind) : null, !!w && isSuppressed(w, focus.mods));
+      this.viewModel?.update(dt, true, focus.reloadT > 0 && w ? 1 - focus.reloadT / (focus.reloadDur || w.reload) : -1, focus.moving, focus.aiming);
+    } else {
+      this.viewModel?.update(dt, false, -1, false, false);
+      if (this.canvas.style.filter) this.canvas.style.filter = '';
+      if (this.camera.fov !== 35) { this.camera.fov = 35; this.camera.near = 0.5; this.camera.updateProjectionMatrix(); }
+      this.camera.position.set(this.camTarget.x + off.x + (Math.random() - 0.5) * sh, off.y + (Math.random() - 0.5) * sh, this.camTarget.z + off.z + (Math.random() - 0.5) * sh);
+      this.camera.lookAt(this.camTarget.x, 0, this.camTarget.z);
+    }
+    // a plain ceiling over interior floors (the game was built to be seen from above, so floors have none)
+    if (!this.ceiling) {
+      this.ceiling = new THREE.Mesh(new THREE.PlaneGeometry(FW, FH), new THREE.MeshStandardMaterial({ color: 0x3a3c40, roughness: 0.95, side: THREE.DoubleSide }));
+      this.ceiling.rotation.x = Math.PI / 2; this.ceiling.position.set(FW / 2, WALL_H, FH / 2);
+      this.scene.add(this.ceiling);
+    }
+    this.ceiling.visible = !!fp && fs.floor > 0;
     cutUniforms.uPlayer.value.set(focus.x, 0, focus.y);
     cutUniforms.uCamDir.value.set(off.x, off.z).normalize();
     // ---- ambient light: darkness progression (floor 20+ dims up to 50%)
@@ -473,7 +533,7 @@ export class GameRenderer {
       // aim marker and laser on top, after reflections and bloom
       const ac = this.renderer.autoClear, su = this.renderer.shadowMap.autoUpdate;
       this.renderer.autoClear = false; this.renderer.shadowMap.autoUpdate = false;
-      if (this.composer) this.renderer.clearDepth(); // the composer's depth is not on the canvas
+      this.renderer.clearDepth(); // on top of the world (the first-person gun still sorts against itself)
       this.camera.layers.set(OVERLAY);
       this.renderer.render(this.scene, this.camera);
       this.camera.layers.set(0); this.camera.layers.enable(LASER);

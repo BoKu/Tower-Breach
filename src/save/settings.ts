@@ -51,12 +51,14 @@ export interface Settings {
   /** microphone deviceId ('' = system default) */
   voiceDevice: string;
   voiceVol: number;
+  /** first-person view (beta): P / F5 switches between overhead and first person during a run */
+  firstPerson: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   quality: 'medium', masterVol: 0.8, sfxVol: 0.9, musicVol: 0.7, crouchToggle: true, aimAssist: true, mouseAimAssist: true, showFps: false,
   bindings: defaultBindings(), deadzone: 0.18, screenShake: true, reflections: 'mirrors',
-  voiceOn: true, voiceMode: 'ptt', voiceDevice: '', voiceVol: 1,
+  voiceOn: true, voiceMode: 'ptt', voiceDevice: '', voiceVol: 1, firstPerson: false,
 };
 
 /** v3 (1.11.0): Minecraft-style defaults (Ctrl sprint, Shift crouch, Q drop, hotbar 1-8). Older saved bindings are reset. */

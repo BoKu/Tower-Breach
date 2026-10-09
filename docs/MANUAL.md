@@ -248,6 +248,12 @@ stick click sprints and the right stick click sneaks, as in Minecraft on console
 **Mac trackpad:** a two-finger tap locks the scope on, so a normal click fires; tap with two fingers again to lower it.
 Ctrl+click (which macOS treats as a right-click) fires while you sprint.
 
+**First person mode (beta):** turn it on under **Settings → Gameplay → First person mode (beta)**. During a run, P (or
+F5; fn+F5 on a Mac) switches between the overhead view and an eye-level view. Click the game to capture the mouse and
+look around, and press Esc to let go of it. Menus such as the armory release the mouse on their own. W A S D move
+relative to where you look, and the crosshair is the centre of the screen. On a controller, the right stick looks
+around. Only the view changes: the game's rules are the same in both views. The view is still a work in progress.
+
 **Controllers:** any standard-mapping USB or Bluetooth pad works, including Xbox, PlayStation and Logitech pads. If the
 game doesn't see your pad, press a button on it. The Controls screen shows the pad it detected. Menus, the lift panel,
 the hacking console and officer conversations all work with a pad: move with the D-pad or left stick, press A to

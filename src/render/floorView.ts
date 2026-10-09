@@ -339,10 +339,13 @@ export class FloorView {
       this.hackMarks.set(hs.id, { g, icon, ring, state: 'ready', kind: hs.kind });
     }
   }
+  /** first person: overhead-view hint icons are hidden (the floor rings stay) */
+  firstPerson = false;
   private updateHackMarkers(fs: FloorState, t: number) {
     for (const hs of fs.hacks) {
       const m = this.hackMarks.get(hs.id);
       if (!m) continue;
+      m.icon.visible = !this.firstPerson;
       if (m.state !== hs.state) {
         m.state = hs.state;
         (m.icon.material as THREE.SpriteMaterial).map = FloorView.hackIcon(m.kind, hs.state);

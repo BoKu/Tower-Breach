@@ -158,6 +158,9 @@ The defaults follow Minecraft's (Ctrl sprints, Shift sneaks, Q drops, a 1–8 ho
 Shift and crouch is C, since browsers keep Ctrl for themselves. You can remap every key under
 **Settings → Controls**. The [manual](docs/MANUAL.md#3-controls) lists every control.
 
+**First person mode (beta):** turn it on under **Settings → Gameplay**, then press P (or F5) during a run to switch
+between the overhead and eye-level views.
+
 ## Holiday themes
 
 Themes switch on automatically at **Halloween**, **Christmas** and **Easter**, on the day and the 3 days before each,

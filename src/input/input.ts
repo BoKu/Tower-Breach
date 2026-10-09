@@ -1,5 +1,6 @@
 import type { PlayerInput, PlayerState } from '../sim/state';
 import { hotbarStep, PAD, grenadeButton, scopeClick, wheelIsZoom } from './hotbar';
+import { fpMove } from '../render/firstPerson';
 import type { Action, Settings } from '../save/settings';
 
 /** Camera-relative movement basis: camera sits at +x,+z looking toward -x,-z. */
@@ -22,6 +23,9 @@ export class Input {
   held = new Set<string>();
   counters: Record<string, number> = {};
   mouseNdc = { x: 0, y: 0 };
+  /** first-person view (spike): mouse look angles; yaw 0 = east, as the sim's facing */
+  fp = false; fpYaw = 0; fpPitch = 0;
+  private lookT = 0;
   mousePx = { x: 0, y: 0 };
   mouseL = false;
   mouseR = false;
@@ -56,12 +60,17 @@ export class Input {
     window.addEventListener('keyup', (e) => this.key(e, false));
     window.addEventListener('blur', () => { this.held.clear(); this.mouseL = this.mouseR = false; this.scope = { latched: false, downAt: 0 }; });
     el.addEventListener('mousemove', (e) => {
+      if (this.fp && document.pointerLockElement === el) { // first person: the mouse turns your head
+        this.fpYaw += e.movementX * 0.0024;
+        this.fpPitch = Math.max(-1.25, Math.min(1.25, this.fpPitch - e.movementY * 0.0024));
+      }
       const r = el.getBoundingClientRect();
       this.mousePx = { x: e.clientX - r.left, y: e.clientY - r.top };
       this.mouseNdc = { x: ((e.clientX - r.left) / r.width) * 2 - 1, y: -((e.clientY - r.top) / r.height) * 2 + 1 };
       this.usingPad = false;
     });
     el.addEventListener('mousedown', (e) => {
+      if (this.fp && this.enabled && document.pointerLockElement !== el) { void el.requestPointerLock(); return; } // first click captures the mouse
       if (this.capture) { this.capture('Mouse' + e.button); this.capture = null; e.preventDefault(); return; }
       // macOS turns Ctrl+click into a right-click; Ctrl is sprint here, so treat it as the left button (fire)
       const btn = e.button === 2 && e.ctrlKey && /Mac/i.test(navigator.platform) ? 0 : e.button;
@@ -158,8 +167,8 @@ export class Input {
     const ax = (this.down('moveRight') ? 1 : 0) - (this.down('moveLeft') ? 1 : 0);
     const ay = (this.down('moveUp') ? 1 : 0) - (this.down('moveDown') ? 1 : 0);
     if (!this.enabled) { inp.mx = 0; inp.my = 0; inp.fire = false; inp.aim = false; inp.interact = false; inp.sprint = false; return; }
-    mx = RIGHT.x * ax + UP.x * ay;
-    my = RIGHT.y * ax + UP.y * ay;
+    if (this.fp) { const m = fpMove(ax, ay, this.fpYaw); mx = m.x; my = m.y; } // relative to where you look
+    else { mx = RIGHT.x * ax + UP.x * ay; my = RIGHT.y * ax + UP.y * ay; }
     let fire: boolean = this.mouseL;
     let aim = this.mouseR || this.scope.latched;
     let sprint = this.down('sprint');
@@ -179,8 +188,14 @@ export class Input {
       if (freshButton || stickActive) this.usingPad = true;
       if (this.usingPad) {
         if (!ax && !ay) {
-          mx = RIGHT.x * lx + UP.x * -ly;
-          my = RIGHT.y * lx + UP.y * -ly;
+          if (this.fp) { const m = fpMove(lx, -ly, this.fpYaw); mx = m.x; my = m.y; }
+          else { mx = RIGHT.x * lx + UP.x * -ly; my = RIGHT.y * lx + UP.y * -ly; }
+        }
+        if (this.fp) { // first person: the right stick turns your head
+          const now = performance.now(), ldt = Math.min(0.1, (now - (this.lookT || now)) / 1000);
+          this.lookT = now;
+          this.fpYaw += rx * 2.6 * ldt;
+          this.fpPitch = Math.max(-1.25, Math.min(1.25, this.fpPitch - ry * 1.8 * ldt));
         }
         if (rx || ry) {
           const dx = RIGHT.x * rx + UP.x * -ry, dy = RIGHT.y * rx + UP.y * -ry;
@@ -191,8 +206,10 @@ export class Input {
           if (l > 0.3 && !b[6]) this.padAim = { x: mx / l, y: my / l };
         }
         const reach = b[6] ? 11 : 7;
-        aimPt = { x: p.x + this.padAim.x * reach, y: p.y + this.padAim.y * reach, h: NaN }; // stick aim fires flat
-        if (this.settings.aimAssist && assist) { const t = assist(this.padAim.x, this.padAim.y); if (t) aimPt = { ...t, h: NaN }; }
+        if (!this.fp) { // first person aims at the screen centre (ground() already gave it)
+          aimPt = { x: p.x + this.padAim.x * reach, y: p.y + this.padAim.y * reach, h: NaN }; // stick aim fires flat
+          if (this.settings.aimAssist && assist) { const t = assist(this.padAim.x, this.padAim.y); if (t) aimPt = { ...t, h: NaN }; }
+        }
         // Minecraft-on-console layout (see PAD in input/hotbar.ts)
         fire = b[PAD.fire] || fire;
         aim = b[PAD.aim] || aim;

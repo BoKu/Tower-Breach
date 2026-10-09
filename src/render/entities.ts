@@ -15,7 +15,10 @@ import { TEAM_COLORS, SELF_COLOR, teamColorIndex, ViewSource } from './view';
 /** humans/cyborgs use the operator rig, everything else a beast rig */
 interface ERig { op: OperatorRig | null; beast: DogRig | DroneRig | WardenRig | null; lastX: number; lastY: number; vis: number; visT: number }
 const rootOf = (r: ERig) => (r.beast ? r.beast.root : r.op!.root);
-interface PRig { rig: OperatorRig; color: number; look: string; ring: THREE.Mesh; downRing: THREE.Mesh; marks: THREE.Group; lastShot: number }
+/** layer of your own body in first person: mirrors see it, the main camera doesn't */
+export const SELF = 3;
+
+interface PRig { rig: OperatorRig; color: number; look: string; ring: THREE.Mesh; downRing: THREE.Mesh; marks: THREE.Group; lastShot: number; self?: boolean }
 
 const pingTexture = (() => {
   const c = document.createElement('canvas');
@@ -63,6 +66,8 @@ export class Entities {
   /** dropped Health Kits: hovering, turning model + a soft shadow */
   private kits = new Map<number, { kit: THREE.Object3D; shadow: THREE.Mesh }>();
   private floor = -1;
+  /** a player not drawn (first person: yourself) */
+  hidden = -1;
 
   reset() {
     for (const r of this.players.values()) { this.group.remove(r.rig.root); this.group.remove(r.marks); }
@@ -198,6 +203,13 @@ export class Entities {
         reload: p.reloadT > 0 && w ? 1 - p.reloadT / (p.reloadDur || w.reload) : -1, hurt: p.hurtT > 0, ground: stairElevation(fs.L, p.x, p.y),
       });
       r.marks.position.set(p.x, stairElevation(fs.L, p.x, p.y), p.y);
+      // first person: you don't see your own body, nor a squadmate pressed up against the camera
+      const eyeP = this.hidden >= 0 ? view.players.find((q) => q.id === this.hidden) : undefined;
+      // (moved to the SELF layer, so mirrors still show them; traversed every frame while hidden as gun models swap)
+      const self = p.id === this.hidden || !!(eyeP && eyeP.floor === p.floor && Math.hypot(p.x - eyeP.x, p.y - eyeP.y) < 0.8);
+      r.marks.visible = !self;
+      if (self || r.self) r.rig.root.traverse((o) => o.layers.set(self ? SELF : 0));
+      r.self = self;
       r.ring.visible = p.life === 'alive';
       r.downRing.visible = p.life === 'down';
       if (p.life === 'down') r.downRing.scale.setScalar(1 + Math.sin(t * 5) * 0.08);
