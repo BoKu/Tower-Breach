@@ -176,7 +176,7 @@ export class Entities {
         if (r) { this.group.remove(r.rig.root); this.group.remove(r.marks); }
         const rig = OperatorRig.make(color, { player: p.look });
         const marks = new THREE.Group();
-        const ring = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.5, 32), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: p.bot ? 0.3 : 0.6, toneMapped: false }) /* bots: half as bright, less distracting */);
+        const ring = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.5, 32), (p.bot ? new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(0.45), transparent: true, opacity: 0.18, depthWrite: false }) /* bots: a faint, toned-down hint */ : new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.6, toneMapped: false })));
         ring.rotation.x = -Math.PI / 2; ring.position.y = 0.03;
         const downRing = new THREE.Mesh(new THREE.RingGeometry(0.9, 1.05, 32), new THREE.MeshBasicMaterial({ color: 0xff3030, transparent: true, opacity: 0.7, toneMapped: false }));
         downRing.rotation.x = -Math.PI / 2; downRing.position.y = 0.04;

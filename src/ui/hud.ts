@@ -1,5 +1,5 @@
-import { h, clear } from './dom';
-import { weapon, AMMO_NAMES } from '../config/weapons';
+import { h, clear, esc } from './dom';
+import { weapon, AMMO_NAMES, isSuppressed } from '../config/weapons';
 import { armoryArt } from '../render/armoryArt';
 import { ITEM_NAMES, GRENADE_NAMES, ItemType, INJURY_THRESHOLD } from '../config/items';
 import { bracketInfo, fmtTimeSafe } from './format';
@@ -216,22 +216,24 @@ export class HUD {
     }
     // weapon
     const wi = me.sel === 'knife' ? null : me.weapons[me.sel];
-    const artId = wi ? wi.id : '';
+    const supArt = !!wi && isSuppressed(weapon(wi.id), me.mods);
+    const artId = wi ? wi.id + (supArt ? ':sup' : '') : '';
     if (artId !== this.wimgId) {
       this.wimgId = artId;
-      const url = artId ? armoryArt(artId, true) : null;
+      const url = wi ? armoryArt(wi.id, true, supArt) : null;
       if (url) this.wimg.src = url;
       this.wimg.style.display = url ? 'block' : 'none';
       this.wimg.parentElement?.classList.toggle('noimg', !url);
     }
     if (wi) {
       const w = weapon(wi.id);
+      const sup = isSuppressed(w, me.mods);
       this.set(this.wn, 'wn', `${w.name}${me.reloadT > 0 ? ' · RELOADING' : ''}`);
       const empty = wi.mag === 0;
       this.am.classList.toggle('empty', empty && me.ammo[w.ammo] === 0);
       this.set(this.am, 'am', `${wi.mag}<small> / ${me.ammo[w.ammo]}</small>`, true);
       this.rl.style.width = me.reloadT > 0 ? `${(1 - me.reloadT / (me.reloadDur || w.reload)) * 100}%` : '0%';
-      this.set(this.sub, 'sub', `${AMMO_NAMES[w.ammo]} · knife [${this.k('melee')}]`);
+      this.set(this.sub, 'sub', `${sup ? '<span class="supp">SUPPRESSED</span> ' : ''}${esc(AMMO_NAMES[w.ammo])} · knife [${esc(this.k('melee'))}]`, true);
     } else {
       this.set(this.wn, 'wn', 'COMBAT KNIFE');
       this.am.classList.remove('empty');
@@ -241,12 +243,12 @@ export class HUD {
     }
     // loadout strip
     const P = me.weapons.primary, S = me.weapons.secondary;
-    const sk = `${me.sel}|${P?.id}:${P?.mag}|${S?.id}:${S?.mag}|${P ? me.ammo[weapon(P.id).ammo] : ''}|${S ? me.ammo[weapon(S.id).ammo] : ''}`;
+    const sk = `${me.sel}|${P?.id}:${P?.mag}|${S?.id}:${S?.mag}|${P ? me.ammo[weapon(P.id).ammo] : ''}|${S ? me.ammo[weapon(S.id).ammo] : ''}|${!!me.mods.suppressor}`;
     if (sk !== this.slotsKey) {
       this.slotsKey = sk;
       const chip = (slot: 'primary' | 'secondary' | 'knife', key: string, wi: { id: string; mag: number } | null) => {
         const w = wi ? weapon(wi.id) : null;
-        const url = w ? armoryArt(wi!.id, true) : null;
+        const url = w ? armoryArt(wi!.id, true, isSuppressed(w, me.mods)) : null;
         return h('div', { class: `wslot ${me.sel === slot ? 'on' : ''} ${slot !== 'knife' && !wi ? 'empty' : ''}` },
           h('span', { class: 'k' }, key),
           url ? h('img', { src: url, alt: '' }) : h('span', { class: 'ico' }, slot === 'knife' ? '🗡' : '—'),

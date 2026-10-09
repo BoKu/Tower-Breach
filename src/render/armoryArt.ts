@@ -26,12 +26,13 @@ function part(g: THREE.Group, geo: THREE.BufferGeometry, x: number, y: number, z
 }
 
 // ------------------------------------------------------------------ per-weapon detail on top of the base models
-export function weaponModel(id: string): THREE.Object3D {
+/** suppressed: with the bought suppressor fitted (pistols and SMGs; HUD pictures follow the player's mods) */
+export function weaponModel(id: string, suppressed = false): THREE.Object3D {
   const w = weapon(id);
   const kind = gunKindOf(w.category) as GunKind;
   if (id === 'r357') return revolver();
   const g = new THREE.Group();
-  g.add(buildGun(kind, false).g);
+  g.add(buildGun(kind, false, suppressed).g);
   const X = Math.PI / 2;
   switch (id) {
     case 'sr4s': part(g, cyl(0.022, 0.022, 0.2), 0, 0.008, 0.72, X); break; // integral suppressor
@@ -236,12 +237,12 @@ function draw(obj: THREE.Object3D, side: boolean): string {
 }
 
 /** Data URL of the wireframe drawing for an armory weapon or gear id (null if WebGL is unavailable). */
-export function armoryArt(id: string, isWeapon: boolean): string | null {
-  const key = (isWeapon ? 'w:' : 'g:') + id;
+export function armoryArt(id: string, isWeapon: boolean, suppressed = false): string | null {
+  const key = (isWeapon ? 'w:' : 'g:') + id + (suppressed ? ':sup' : '');
   const hit = cache.get(key);
   if (hit) return hit;
   try {
-    const url = draw(isWeapon ? weaponModel(id) : gearModel(id), isWeapon);
+    const url = draw(isWeapon ? weaponModel(id, suppressed) : gearModel(id), isWeapon);
     cache.set(key, url);
     return url;
   } catch {
